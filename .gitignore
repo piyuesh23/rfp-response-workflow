@@ -1,0 +1,28 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# CARL session files (engagement-specific, not template artifacts)
+.carl/sessions/
+
+# Claude Code local state
+.claude/projects/
+.claude/todos/
+
+# Claude auto-memory (user-specific)
+.claude/projects/*/memory/
+
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Engagement-specific outputs (generated per-engagement, not part of template)
+# Uncomment these in cloned engagements if you don't want to track AI outputs:
+# claude-artefacts/*.md
+# initial_questions/*.md
+# research/*.md
+# research/csv/*.csv
+# estimates/*.md
