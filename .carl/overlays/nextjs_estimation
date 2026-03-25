@@ -1,0 +1,10 @@
+# CARL Next.js Estimation Overlay
+# =================================
+# Next.js-specific estimation rules. Activated by init.sh when tech-stack=nextjs.
+
+NEXTJS_ESTIMATION_RULE_0=Evaluate rendering strategy per page/route: SSG, SSR, ISR, or client-side — each has different performance, hosting cost, and development effort implications
+NEXTJS_ESTIMATION_RULE_1=Identify data source integration complexity: headless CMS (which one?), REST APIs, GraphQL, database direct access
+NEXTJS_ESTIMATION_RULE_2=Account for: image optimization pipeline (next/image config), middleware requirements, edge functions, caching strategy (revalidation intervals) in estimates
+NEXTJS_ESTIMATION_RULE_3=Assess hosting platform implications: Vercel, self-hosted, AWS Amplify — each has different CI/CD, serverless limits, and cost profiles
+NEXTJS_ESTIMATION_RULE_4=For App Router projects: account for server components vs client components boundary decisions, which add architectural complexity
+NEXTJS_ESTIMATION_RULE_5=Identify authentication approach: NextAuth.js, Clerk, custom — each has different integration effort

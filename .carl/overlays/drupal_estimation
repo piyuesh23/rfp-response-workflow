@@ -1,0 +1,11 @@
+# CARL Drupal Estimation Overlay
+# ===============================
+# Drupal-specific estimation rules. Activated by init.sh when tech-stack=drupal.
+
+DRUPAL_ESTIMATION_RULE_0=Evaluate all requirements against Drupal 10/11 core capabilities before suggesting custom development
+DRUPAL_ESTIMATION_RULE_1=For every feature specify: contrib module (with name and drupal.org link), core feature, or custom development required
+DRUPAL_ESTIMATION_RULE_2=Flag integration complexity tiers: Simple (REST API consumer/provider), Medium (OAuth + periodic data sync), Complex (bidirectional real-time sync + custom auth)
+DRUPAL_ESTIMATION_RULE_3=For migrations always assess: source system, content volume, content type mapping complexity, URL redirect requirements, media migration, user migration with roles
+DRUPAL_ESTIMATION_RULE_4=Decoupled/headless architecture adds 30-50% to frontend estimates — always flag this when applicable
+DRUPAL_ESTIMATION_RULE_5=Always account for config management (CMI), deployment scripting, and environment parity in DevOps estimates
+DRUPAL_ESTIMATION_RULE_6=Identify multilingual requirements early — Drupal's i18n adds significant complexity to content types, views, and search

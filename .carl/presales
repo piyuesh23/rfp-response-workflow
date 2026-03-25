@@ -1,0 +1,15 @@
+# CARL Presales Domain
+# ====================
+# Core estimation quality and consistency rules.
+# These are tech-agnostic and apply to all presales engagements.
+
+PRESALES_RULE_0=These rules enforce estimation quality and consistency across all presales engagements. They are always active.
+PRESALES_RULE_1=ALWAYS check for commonly missing estimate categories: PM/Scrum, QA/testing, DevOps/CI-CD, content migration, training, documentation, UAT support, warranty/hypercare, environment setup
+PRESALES_RULE_2=ALWAYS rate every requirement for clarity using the scale: Clear / Needs Clarification / Ambiguous / Missing Detail
+PRESALES_RULE_3=NEVER generate generic questions like "can you elaborate?" — questions must be specific, reference the exact requirement, and propose concrete options (A/B/C)
+PRESALES_RULE_4=ALWAYS map every TOR requirement to an estimate line item — flag unmapped requirements as GAPS
+PRESALES_RULE_5=ALWAYS flag estimate line items not traceable to any TOR requirement as ORPHANS
+PRESALES_RULE_6=Compare effort figures against benchmarks/ directory reference ranges when available
+PRESALES_RULE_7=Categorize requirements by domain: content architecture, integrations, migrations, frontend/theming, DevOps/hosting, SEO, accessibility, performance, security
+PRESALES_RULE_8=Document all assumptions (explicit and implicit) separately from requirements
+PRESALES_RULE_9=After completing any phase, suggest storing key learnings via claude-mem for future engagements

@@ -1,0 +1,10 @@
+# CARL React Estimation Overlay
+# ===============================
+# React-specific estimation rules. Activated by init.sh when tech-stack=react.
+
+REACT_ESTIMATION_RULE_0=Identify state management approach: React context, Redux/RTK, Zustand, Jotai, or server state (React Query/SWR/TanStack Query) — each has different setup and maintenance effort
+REACT_ESTIMATION_RULE_1=Assess component library strategy: existing design system, MUI, Ant Design, Radix/shadcn, or fully custom components — each has drastically different effort profiles
+REACT_ESTIMATION_RULE_2=Account for: build tooling (Vite/Webpack/Turbopack), testing framework setup (Jest/Vitest + Testing Library), CI/CD pipeline in estimates
+REACT_ESTIMATION_RULE_3=Identify routing approach: React Router, TanStack Router, or framework-provided — affects architecture and effort
+REACT_ESTIMATION_RULE_4=For SPAs: account for client-side performance optimization (code splitting, lazy loading, bundle analysis) in estimates
+REACT_ESTIMATION_RULE_5=Assess API integration pattern: REST with fetch/axios, GraphQL with Apollo/urql, or tRPC — each has different boilerplate and type-safety effort

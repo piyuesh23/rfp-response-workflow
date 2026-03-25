@@ -1,0 +1,19 @@
+# CARL Manifest — Pre-Sales Estimation Template
+# ==============
+# Tech overlays are added by init.sh based on selected tech stack.
+
+# ============================================================================
+# SETTINGS
+# ============================================================================
+DEVMODE=false
+
+# ============================================================================
+# PRESALES - Core estimation rules (always loaded, tech-agnostic)
+# ============================================================================
+PRESALES_STATE=active
+PRESALES_ALWAYS_ON=true
+
+# ============================================================================
+# COMMANDS - Star-commands (*checklist, *recap, *benchmark)
+# ============================================================================
+COMMANDS_STATE=active
