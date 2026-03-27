@@ -25,6 +25,8 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - `claude-artefacts/` — All AI-generated analysis artefacts (requirement assessments, gap analysis, review reports).
 - `templates/` — Output structure templates. Each phase artefact should follow the corresponding template.
 - `benchmarks/` — Reference effort ranges for estimation calibration.
+- `scripts/` — Utility scripts (e.g., Excel template population).
+- `estimation_template/` — QED42 Excel estimation template (Backend/Frontend tabs).
 
 ## Workflow Phases
 
@@ -62,6 +64,22 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - Cross-reference research-identified hidden scope items against TOR requirements
 - Generate structured clarifying questions grouped by requirement area (informed by site audit findings)
 - Output: `initial_questions/questions.md` and `claude-artefacts/tor-assessment.md`
+
+### Phase 1A: Optimistic Estimation (No-Response Path)
+**Trigger:** Customer Q&A responses not received / submission deadline approaching
+**Agent Persona:** Senior [TECH_STACK] Architect optimizing for competitive positioning
+**Tools:** CARL presales domain (coverage enforcement), claude-mem smart_search (effort benchmarks from past engagements), benchmarks/ reference ranges
+**Output Template:** `templates/optimistic-estimate-template.md` and `templates/technical-proposal-template.md`
+**Slash Commands:** `/optimistic-estimate`, `/tech-proposal`
+- Alternative path when Phase 2 (customer responses) is not available
+- Convert all Phase 1 clarifying questions into assumptions (select lowest-effort option)
+- Generate optimistic estimates using lower end of benchmark ranges
+- Prefer platform-native/contrib solutions over custom development
+- Every assumption phrased as a change-request boundary to protect against scope creep
+- Populate QED42 Excel template Backend tab via `scripts/populate-estimate-xlsx.py`
+- Generate client-facing Technical Proposal Document
+- Output: `estimates/optimistic-estimate.md`, `claude-artefacts/technical-proposal.md`, populated Excel template
+- After Phase 1A, can optionally flow to Phase 3 (estimate review) for validation
 
 ### Phase 2: Response Integration
 **Trigger:** Customer responses placed in `responses_qna/`
@@ -143,6 +161,8 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - `*checklist` — Run full estimation gap checklist against current artefacts
 - `*recap` — Summarize engagement state across all phases
 - `*benchmark <query>` — Look up effort benchmarks from claude-mem + benchmarks/
+- `*optimistic` — Generate optimistic estimate (no-response path)
+- `*proposal` — Generate Technical Proposal Document
 
 ## File Naming Conventions
 
@@ -154,6 +174,7 @@ Phase transitions are manual. The operator uploads documents and instructs Claud
 
 - **Phase 0:** "Research the customer and audit their existing site based on the TOR in `tor/`"
 - **Phase 1:** "Analyze the TOR in `tor/` and generate clarifying questions"
+- **Phase 1A (no-response path):** "/optimistic-estimate" followed by "/tech-proposal" — generates assumption-heavy estimates and a client-facing proposal without waiting for customer Q&A responses
 - **Phase 2:** "Customer responses are in `responses_qna/`. Analyze them against the TOR and original questions"
 - **Phase 3:** "Estimates are in `estimates/`. Review them against requirements and responses"
 - **Phase 4:** "Generate the gap analysis and revised estimates"

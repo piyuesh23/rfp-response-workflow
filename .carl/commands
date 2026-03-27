@@ -5,3 +5,5 @@
 COMMANDS_RULE_0=*checklist - Run the full estimation gap checklist against all artefacts in claude-artefacts/ and estimates/. Verify: requirement coverage, effort reasonableness, assumption consistency, missing categories (PM, QA, DevOps, migration, training, docs, UAT, warranty, environments)
 COMMANDS_RULE_1=*recap - Read all artefacts in claude-artefacts/, initial_questions/, and estimates/ and summarize: phases completed, open questions count, gaps found, orphan line items, overall confidence level
 COMMANDS_RULE_2=*benchmark <query> - Search claude-mem for historical effort data matching the query, then check benchmarks/ directory for reference ranges. Present results as a comparison table.
+COMMANDS_RULE_3=*optimistic - Run /optimistic-estimate to generate an optimistic, assumption-heavy estimate from TOR + Phase 0/1 artefacts without customer Q&A responses. Produces estimates/optimistic-estimate.md and populates the Excel template.
+COMMANDS_RULE_4=*proposal - Run /tech-proposal to generate a client-facing Technical Proposal Document based on TOR analysis and the optimistic estimate. Produces claude-artefacts/technical-proposal.md.
