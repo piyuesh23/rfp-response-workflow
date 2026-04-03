@@ -26,7 +26,7 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - `templates/` — Output structure templates. Each phase artefact should follow the corresponding template.
 - `benchmarks/` — Reference effort ranges for estimation calibration.
 - `scripts/` — Utility scripts (e.g., Excel template population).
-- `estimation_template/` — QED42 Excel estimation template (Backend/Frontend tabs).
+- `estimation_template/` — QED42 Excel estimation template (Backend/Frontend/Fixed Cost Items/AI tabs).
 
 ## Workflow Phases
 
@@ -76,7 +76,16 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - Generate optimistic estimates using lower end of benchmark ranges
 - Prefer platform-native/contrib solutions over custom development
 - Every assumption phrased as a change-request boundary to protect against scope creep
-- Populate QED42 Excel template Backend tab via `scripts/populate-estimate-xlsx.py`
+- Estimates organized into tabs matching the QED42 Excel template:
+  - **Backend**: CMS/server-side work needing PM+QA overhead (auto-calculated in sheet)
+  - **Frontend**: Component-level UI estimates with visual reference links and exclusions (PM+QA auto-calculated)
+  - **Fixed Cost Items**: Operational items NOT needing QA/PM (deployment, docs, training, onboarding, etc.)
+  - **AI**: AI-powered features (if applicable)
+- Frontend estimates at component level (Header, Footer, Hero, Card, etc.) — never grouped as "theming: X hours"
+- Design system creation or reuse is always included in Frontend tab
+- When designs are unavailable, visual reference links to similar components on comparable sites are mandatory
+- Conf (1-6) assigned per line item reflecting requirement clarity and solution confidence
+- Populate QED42 Excel template all tabs via `scripts/populate-estimate-xlsx.py`
 - Generate client-facing Technical Proposal Document
 - Output: `estimates/optimistic-estimate.md`, `claude-artefacts/technical-proposal.md`, populated Excel template
 - After Phase 1A, can optionally flow to Phase 3 (estimate review) for validation
@@ -140,11 +149,17 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - See `.carl/` for tech-specific assessment rules loaded via CARL overlay
 
 ### Estimate Validation
-- Check for common estimation gaps: project management, QA/testing, deployment/DevOps, content migration, training, documentation, UAT support, warranty/hypercare
+- Verify estimates are organized into correct tabs (Backend/Frontend/Fixed Cost Items/AI)
+- Verify Backend/Frontend items are development tasks needing QA+PM (auto-calculated in sheet)
+- Verify Fixed Cost Items are operational/admin tasks NOT needing QA or PM (deployment, docs, training, onboarding)
+- Verify Frontend estimates are at component level with visual reference links
+- Verify a Design System line item exists in Frontend tab
+- Verify Conf (1-6) is assigned to every line item
+- Check for common estimation gaps: deployment/DevOps, content migration, training, documentation, UAT support, warranty/hypercare (in Fixed Cost Items)
 - Verify estimates account for platform-specific complexity
 - Flag any requirement covered by the TOR but missing from the estimate
 - Flag any estimate line item not traceable to a TOR requirement
-- Compare effort figures against `benchmarks/` reference ranges when available
+- Compare effort figures against `benchmarks/` reference ranges when available (use `benchmarks/frontend-effort-ranges.md` for Frontend tab)
 
 ## Tool Integration
 

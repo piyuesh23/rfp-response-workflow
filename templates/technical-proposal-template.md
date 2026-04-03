@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-[2-3 paragraphs: Demonstrate understanding of the client's business challenge. State what you will deliver. Highlight key differentiators of your approach. End with a confidence statement.]
+[2-3 paragraphs: Demonstrate understanding of the business challenge outlined in the RFP. State what will be delivered. Highlight key differentiators of the proposed approach. End with a confidence statement. Use neutral language — avoid "you"/"your".]
 
 ---
 
@@ -18,7 +18,7 @@
 
 ### 2.1 Business Context
 
-[Client's business, industry, digital maturity, strategic goals — drawn from Phase 0 research and TOR]
+[Organization's business, industry, digital maturity, strategic goals — drawn from Phase 0 research and TOR. Use neutral language: "the organization", "the project", not "you"/"your".]
 
 ### 2.2 Project Objectives
 
@@ -34,7 +34,20 @@
 
 ### 3.1 Architecture Overview
 
-[High-level architecture diagram description — monolith vs decoupled, frontend/backend split, key services]
+[High-level architecture diagram using Mermaid. Example:]
+
+```mermaid
+graph TD
+    A[Client Browser] --> B[CDN / Edge Cache]
+    B --> C[Frontend - Next.js]
+    C --> D[API Layer - GraphQL/REST]
+    D --> E[CMS Backend - Drupal 11]
+    E --> F[Database]
+    E --> G[Search Service]
+    E --> H[External Integrations]
+```
+
+[Accompany the diagram with a brief narrative explaining the architecture — monolith vs decoupled, frontend/backend split, key services]
 
 ### 3.2 Technology Stack
 
@@ -93,40 +106,28 @@
 
 ### 5.2 Phased Delivery Plan
 
-| Phase | Duration | Key Deliverables |
-|-------|----------|-----------------|
-| Discovery & Design | [weeks] | [deliverables] |
-| Development Sprint 1-N | [weeks] | [deliverables] |
-| QA & UAT | [weeks] | [deliverables] |
-| Launch & Hypercare | [weeks] | [deliverables] |
+[Use a Mermaid Gantt chart to illustrate the delivery phases:]
 
-### 5.3 Timeline Summary
+```mermaid
+gantt
+    title Project Delivery Timeline
+    dateFormat  YYYY-MM-DD
+    section Discovery
+    Discovery & Design       :a1, 2026-01-01, 2w
+    section Development
+    Sprint 1 - Core Setup    :a2, after a1, 2w
+    Sprint 2 - Features      :a3, after a2, 2w
+    Sprint 3 - Integrations  :a4, after a3, 2w
+    section Launch
+    QA & UAT                 :a5, after a4, 2w
+    Launch & Hypercare       :a6, after a5, 2w
+```
 
-**Estimated Total Duration:** [weeks/months]
-**Estimated Start Date:** [date or "TBD upon contract signing"]
-**Target Go-Live:** [date or "X weeks from kickoff"]
-
----
-
-## 6. Effort Summary
-
-| Category | Effort (Hours) |
-|----------|---------------|
-| Discovery | [hrs] |
-| Design | [hrs] |
-| Backend Development | [hrs] |
-| Frontend Development | [hrs] |
-| DevOps & Infrastructure | [hrs] |
-| QA & Testing | [hrs] |
-| Project Management | [hrs] |
-| Training & Documentation | [hrs] |
-| UAT Support | [hrs] |
-| Warranty / Hypercare | [hrs] |
-| **Total** | **[hrs]** |
+[Accompany with a brief description of each phase and its key deliverables]
 
 ---
 
-## 7. Team Composition
+## 6. Team Composition
 
 | Role | Seniority | Allocation | Responsibilities |
 |------|-----------|------------|-----------------|
@@ -140,21 +141,21 @@
 
 ---
 
-## 8. Assumptions & Scope Boundaries
+## 7. Assumptions & Scope Boundaries
 
-### 8.1 In-Scope
+### 7.1 In-Scope
 
 [Bulleted list of what IS included — be specific]
 
-### 8.2 Recommended for Phase 2
+### 7.2 Recommended for Phase 2
 
-[Items excluded from this estimate but recommended as future enhancements — framed positively as growth opportunities]
+[Items excluded from this phase but recommended as future enhancements — framed positively as growth opportunities]
 
-| Item | Why Phase 2 | Estimated Effort |
-|------|-------------|-----------------|
-| [feature] | [rationale — e.g., "requires baseline metrics from Phase 1"] | [rough hours] |
+| Item | Why Phase 2 |
+|------|-------------|
+| [feature] | [rationale — e.g., "requires baseline metrics from Phase 1"] |
 
-### 8.3 Key Assumptions
+### 7.3 Key Assumptions
 
 [Numbered list of all assumptions from the estimate, grouped by domain. Each assumption clearly states what is in-scope and what would trigger a change request.]
 
@@ -168,11 +169,11 @@
 1. [assumption with CR boundary]
 
 #### Client Responsibilities
-1. [what the client is expected to provide — content, access, decisions, reviews, feedback timelines]
+1. [what the client organization is expected to provide — content, access, decisions, reviews, feedback timelines]
 
 ---
 
-## 9. Risk Register
+## 8. Risk Register
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|-----------|--------|------------|
@@ -180,13 +181,13 @@
 
 ---
 
-## 10. Why QED42
+## 9. Why QED42
 
 [2-3 paragraphs: Relevant experience, team expertise, similar projects delivered, technology partnerships, client references if applicable]
 
 ---
 
-## 11. Next Steps
+## 10. Next Steps
 
 1. [Proposal review and Q&A session]
 2. [Contract and SOW finalization]
