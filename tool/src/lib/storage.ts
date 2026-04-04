@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -68,4 +69,17 @@ export async function getPresignedUrl(
   });
 
   return getSignedUrl(s3Client, command, { expiresIn });
+}
+
+export async function listObjects(prefix: string): Promise<string[]> {
+  const response = await s3Client.send(
+    new ListObjectsV2Command({
+      Bucket: S3_BUCKET,
+      Prefix: prefix,
+    })
+  );
+
+  return (response.Contents ?? [])
+    .map((obj) => obj.Key!)
+    .filter(Boolean);
 }
