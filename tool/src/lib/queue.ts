@@ -6,6 +6,7 @@ export interface PhaseJobData {
   engagementId: string;
   phaseNumber: number;
   techStack: string;
+  revisionFeedback?: string;
 }
 
 export const redisConnection = {

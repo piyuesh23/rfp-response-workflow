@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { ProgressStream } from "@/components/phase/ProgressStream"
 import { PhaseGate } from "@/components/phase/PhaseGate"
+import type { ArtefactVersion } from "@/components/phase/PhaseGate"
 import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import { PHASE_LABELS } from "@/components/phase/PhaseCard"
 import type { PhaseStatus } from "@/components/phase/PhaseCard"
@@ -14,33 +15,188 @@ const MOCK_PHASE_DATA: Record<
   string,
   {
     status: PhaseStatus
-    artefactContent?: string
     stats?: Record<string, string | number>
-    versions?: number[]
+    versions?: ArtefactVersion[]
     selectedVersion?: number
     description?: string
   }
 > = {
   "0": {
     status: "APPROVED",
-    artefactContent: "## Customer Research\n\nResearch artefact content goes here.",
     stats: { "Pages Discovered": 120, "Integrations Found": 8, "Tech Stack": "Drupal 10" },
-    versions: [1, 2],
     selectedVersion: 2,
+    versions: [
+      {
+        version: 1,
+        createdAt: "2026-03-20",
+        contentMd: `## Customer Research — v1
+
+### Organisation Profile
+
+Acme Corp is a mid-sized B2B SaaS company operating in the logistics sector.
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| CMS | Drupal 9 |
+| Hosting | Acquia Cloud |
+| CDN | Cloudflare |
+
+### Integrations Found
+
+- Salesforce CRM
+- Google Analytics 4
+- Zendesk Support
+`,
+      },
+      {
+        version: 2,
+        createdAt: "2026-03-22",
+        contentMd: `## Customer Research — v2
+
+### Organisation Profile
+
+Acme Corp is a mid-sized B2B SaaS company operating in the logistics sector. Recently acquired LogiStart Ltd (March 2026).
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| CMS | Drupal 9 (migrating to D11) |
+| Hosting | Acquia Cloud |
+| CDN | Cloudflare |
+| Search | Solr 8 |
+
+### Integrations Found
+
+- Salesforce CRM (bidirectional sync)
+- Google Analytics 4
+- Zendesk Support
+- HubSpot Marketing
+
+### Hidden Scope
+
+- LogiStart subdomain requires content migration (~400 nodes)
+- Dual-brand theming needed post-acquisition
+`,
+      },
+    ],
   },
   "1": {
     status: "APPROVED",
-    artefactContent: "## TOR Assessment\n\nTOR analysis artefact content goes here.",
     stats: { "Requirements": 42, "Clear": 28, "Needs Clarification": 10, "Ambiguous": 4 },
-    versions: [1],
     selectedVersion: 1,
+    versions: [
+      {
+        version: 1,
+        createdAt: "2026-03-23",
+        contentMd: `## TOR Assessment — v1
+
+### Requirement Coverage
+
+| Area | Count | Clarity |
+|------|-------|---------|
+| Content Architecture | 12 | Clear |
+| Integrations | 8 | Needs Clarification |
+| Migration | 6 | Ambiguous |
+| Frontend/Theming | 10 | Clear |
+| DevOps | 6 | Clear |
+
+### Key Ambiguities
+
+1. Migration scope undefined — number of content types not specified
+2. SSO integration provider unknown
+3. Accessibility standard not stated (WCAG 2.1 AA assumed)
+`,
+      },
+    ],
   },
   "1A": {
     status: "REVIEW",
-    artefactContent: "## Optimistic Estimate\n\nEstimate artefact content goes here.",
     stats: { "Backend Low": "240h", "Backend High": "320h", "Frontend Low": "180h", "Frontend High": "240h" },
-    versions: [1, 2, 3],
     selectedVersion: 3,
+    versions: [
+      {
+        version: 1,
+        createdAt: "2026-03-24",
+        contentMd: `## Optimistic Estimate — v1
+
+### Backend Tab
+
+| Task | Conf | Low Hrs | High Hrs |
+|------|------|---------|---------|
+| Discovery & Architecture | 5 | 16 | 20 |
+| Environment Setup | 6 | 8 | 8 |
+| Base Drupal Config | 6 | 8 | 8 |
+| Content Types (10) | 4 | 40 | 60 |
+| Migration | 3 | 60 | 90 |
+
+### Assumptions
+
+- Migration covers 500 nodes (assumption — TOR unspecified)
+- SSO via Drupal SAML module (T2 integration)
+`,
+      },
+      {
+        version: 2,
+        createdAt: "2026-03-26",
+        contentMd: `## Optimistic Estimate — v2
+
+### Backend Tab
+
+| Task | Conf | Low Hrs | High Hrs |
+|------|------|---------|---------|
+| Discovery & Architecture | 5 | 16 | 20 |
+| Environment Setup | 6 | 8 | 8 |
+| Base Drupal Config | 6 | 8 | 8 |
+| Content Types (10) | 4 | 40 | 60 |
+| Migration | 3 | 60 | 90 |
+| Dual-brand Theming (new) | 3 | 24 | 40 |
+
+### Assumptions
+
+- Migration covers 500 nodes + 400 LogiStart nodes
+- SSO via Drupal SAML module (T2 integration)
+- Dual-brand theming required post-acquisition
+`,
+      },
+      {
+        version: 3,
+        createdAt: "2026-03-28",
+        contentMd: `## Optimistic Estimate — v3
+
+### Backend Tab
+
+| Task | Conf | Low Hrs | High Hrs |
+|------|------|---------|---------|
+| Discovery & Architecture | 5 | 16 | 20 |
+| Environment Setup | 6 | 8 | 8 |
+| Base Drupal Config | 6 | 8 | 8 |
+| Content Types (12) | 4 | 48 | 72 |
+| Migration | 3 | 80 | 120 |
+| Dual-brand Theming | 3 | 24 | 40 |
+| Solr Search Integration | 4 | 16 | 24 |
+
+### Frontend Tab
+
+| Component | Conf | Low Hrs | High Hrs |
+|-----------|------|---------|---------|
+| Design System | 5 | 24 | 30 |
+| Header / Nav | 5 | 12 | 15 |
+| Hero Banner | 6 | 8 | 8 |
+| Card Component | 6 | 6 | 6 |
+| Search Results Page | 4 | 16 | 24 |
+
+### Assumptions
+
+- Migration: 900 nodes total (500 primary + 400 LogiStart)
+- SSO via Drupal SAML module (T2 integration)
+- Dual-brand theming required post-acquisition
+- Solr 8 already provisioned on Acquia
+`,
+      },
+    ],
   },
   "2": {
     status: "PENDING",
@@ -102,6 +258,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   }
 
   if (data.status === "REVIEW") {
+    const versionCount = data.versions?.length ?? 0
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
@@ -111,6 +268,11 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 text-xs">
             Review
           </Badge>
+          {versionCount > 0 && (
+            <Badge variant="secondary" className="text-xs">
+              {versionCount} {versionCount === 1 ? "version" : "versions"}
+            </Badge>
+          )}
         </div>
         <PhaseGate
           stats={data.stats}
@@ -123,16 +285,13 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           onApprove={() => {
             router.push(`/engagements/${id}`)
           }}
-        >
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <pre className="whitespace-pre-wrap text-sm">{data.artefactContent}</pre>
-          </div>
-        </PhaseGate>
+        />
       </div>
     )
   }
 
   if (data.status === "APPROVED") {
+    const versionCount = data.versions?.length ?? 0
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
@@ -142,6 +301,11 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           <Badge variant="outline" className="bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 text-xs">
             Approved
           </Badge>
+          {versionCount > 0 && (
+            <Badge variant="secondary" className="text-xs">
+              {versionCount} {versionCount === 1 ? "version" : "versions"}
+            </Badge>
+          )}
         </div>
         <PhaseGate
           stats={data.stats}
@@ -149,11 +313,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           selectedVersion={data.selectedVersion}
           readOnly
           onBack={() => router.push(`/engagements/${id}`)}
-        >
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <pre className="whitespace-pre-wrap text-sm">{data.artefactContent}</pre>
-          </div>
-        </PhaseGate>
+        />
       </div>
     )
   }

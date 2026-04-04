@@ -8,7 +8,7 @@ import { PhaseStatus } from "@/generated/prisma/client";
 const worker = new Worker<PhaseJobData>(
   "phase-execution",
   async (job) => {
-    const { phaseId, engagementId, phaseNumber, techStack } = job.data;
+    const { phaseId, engagementId, phaseNumber, techStack, revisionFeedback } = job.data;
 
     await prisma.phase.update({
       where: { id: phaseId },
@@ -24,6 +24,10 @@ const worker = new Worker<PhaseJobData>(
         techStack,
         engagementId
       );
+
+      if (revisionFeedback) {
+        config.userPrompt += `\n\nREVISION FEEDBACK FROM REVIEWER:\n${revisionFeedback}\n\nPlease address the above feedback in your output.`;
+      }
 
       for await (const event of runPhase(config)) {
         await job.updateProgress(event);
