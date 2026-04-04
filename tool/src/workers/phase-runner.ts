@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import { runPhase } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { prisma } from "@/lib/db";
+import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus } from "@/generated/prisma/client";
 
@@ -40,6 +41,12 @@ const worker = new Worker<PhaseJobData>(
           completedAt: new Date(),
         },
       });
+
+      try {
+        await notifyReviewNeeded(engagementId, phaseNumber);
+      } catch {
+        // Notification failure must not break the worker
+      }
     } catch (err) {
       await prisma.phase.update({
         where: { id: phaseId },
@@ -47,6 +54,24 @@ const worker = new Worker<PhaseJobData>(
           status: PhaseStatus.FAILED,
         },
       });
+
+      try {
+        const engagement = await prisma.engagement.findUnique({
+          where: { id: engagementId },
+          select: { clientName: true },
+        });
+        await sendNotification({
+          type: "phase_failed",
+          engagementId,
+          clientName: engagement?.clientName ?? engagementId,
+          phaseNumber,
+          phaseLabel: `Phase ${phaseNumber}`,
+          message: `Phase ${phaseNumber} failed with an error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      } catch {
+        // Notification failure must not break the worker
+      }
+
       throw err;
     }
   },

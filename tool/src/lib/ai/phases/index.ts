@@ -6,6 +6,7 @@ import { getPhase1AProposalConfig } from "@/lib/ai/phases/phase1a-proposal";
 import { getPhase2Config } from "@/lib/ai/phases/phase2-responses";
 import { getPhase3Config } from "@/lib/ai/phases/phase3-review";
 import { getPhase4Config } from "@/lib/ai/phases/phase4-gaps";
+import { getPhase5Config } from "@/lib/ai/phases/phase5-capture";
 
 export function getPhaseConfig(
   phaseNumber: string,
@@ -28,7 +29,7 @@ export function getPhaseConfig(
     case "4":
       return getPhase4Config(engagementId, techStack);
     case "5":
-      throw new Error(`Phase ${phaseNumber} is not yet implemented`);
+      return getPhase5Config(engagementId, techStack);
     default:
       throw new Error(`Phase ${phaseNumber} is not yet implemented`);
   }
