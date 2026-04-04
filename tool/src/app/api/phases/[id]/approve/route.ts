@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { getNextPhase, canAutoStart, PHASE_ORDER } from "@/lib/phase-chain";
+import { PHASE_LABELS } from "@/components/phase/PhaseCard";
 
 export async function POST(
   _request: NextRequest,
@@ -40,5 +42,14 @@ export async function POST(
     data: { status: "APPROVED" },
   });
 
-  return NextResponse.json(updated);
+  const nextNumber = getNextPhase(phase.phaseNumber);
+  const nextPhase = nextNumber !== null
+    ? {
+        number: nextNumber,
+        label: PHASE_LABELS[nextNumber] ?? `Phase ${nextNumber}`,
+        canAutoStart: canAutoStart(nextNumber),
+      }
+    : null;
+
+  return NextResponse.json({ phase: updated, nextPhase });
 }

@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"npx tsc --noEmit 2>&1\",\"timeout\":60000,\"description\":\"Run TypeScript type check\"}",
+  "error": "Exit code 1\nsrc/components/artefact/ArtefactViewer.tsx(202,28): error TS2322: Type '{ children: Element; asChild: true; }' is not assignable to type 'IntrinsicAttributes & Props<unknown>'.\n  Property 'asChild' does not exist on type 'IntrinsicAttributes & Props<unknown>'.",
+  "timestamp": "2026-04-04T07:17:18.890Z",
+  "retry_count": 7
+}
