@@ -45,6 +45,7 @@ export default function EngagementOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [engagement, setEngagement] = React.useState<EngagementData | null>(null)
+  const [stats, setStats] = React.useState<EngagementStatsData>(EMPTY_STATS)
   const [loading, setLoading] = React.useState(true)
   const [actionLoading, setActionLoading] = React.useState(false)
 
@@ -71,6 +72,14 @@ export default function EngagementOverviewPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+
+    // Fetch stats in parallel
+    fetch(`/api/engagements/${id}/stats`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setStats(data)
+      })
+      .catch(() => {})
   }, [id])
 
   React.useEffect(() => {
@@ -353,7 +362,7 @@ export default function EngagementOverviewPage() {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Summary
         </h2>
-        <EngagementStats stats={EMPTY_STATS} />
+        <EngagementStats stats={stats} />
       </div>
     </div>
   )
