@@ -5,7 +5,17 @@ import { getCarlRules } from "@/lib/ai/prompts/carl-rules";
 function getPhase5Prompt(): string {
   return `Conduct Phase 5: Knowledge Capture (Post-Engagement).
 
-Review all artefacts produced during this engagement and capture key learnings for future estimation calibration.
+Start by reading all artefacts produced during this engagement — research, TOR assessment, estimates, responses, gap analysis — to build a complete picture of the workflow.
+
+## Part 1: Engagement Summary
+
+Produce a concise summary of the full engagement flow:
+- **Client & Project**: Name, tech stack, engagement type
+- **Phases Completed**: Which phases ran, which were skipped, which path was taken (no-response / has-response)
+- **Key Metrics**: Total estimated hours (low/high), requirement count, risk count, assumption count
+- **Timeline**: When each phase started and completed
+
+## Part 2: Knowledge Capture
 
 1. Compare actual vs estimated effort where data is available.
    - Identify line items that were significantly over or under estimated.
@@ -23,15 +33,24 @@ Review all artefacts produced during this engagement and capture key learnings f
    - Propose additions or corrections to benchmarks/ reference ranges based on actual effort.
    - Format: Task Type | Category | Low Hrs | High Hrs | Notes | Source Engagement.
 
-5. Store observations via claude-mem for future retrieval.
-   - Tag observations with: tech stack, industry, engagement type, integration types.
-   - Ensure observations are searchable by future engagements with similar profiles.
+## Part 3: Actionable Insights
+
+For EACH insight, clearly state:
+- **Insight**: What was learned
+- **Applies to**: Which phase(s) this could improve (Research, TOR Assessment, Estimation, etc.)
+- **Recommendation**: Specific action to take in future engagements
+- **Confidence**: How confident you are this is generalizable (High / Medium / Low)
+
+Focus on insights that are GENERIC and reusable across engagements, not specific to this client.
+Flag any insight with Low confidence for human review.
 
 Write output to claude-artefacts/knowledge-capture.md with sections:
+- Engagement Summary
 - Estimation Variances (actual vs estimated)
 - Reusable Question Patterns
 - Client & Industry Patterns
 - Benchmark Updates
+- Actionable Insights (with per-insight confidence ratings)
 - Recommendations for Future Engagements`;
 }
 
