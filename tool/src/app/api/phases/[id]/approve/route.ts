@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { getNextPhase, canAutoStart, PHASE_ORDER } from "@/lib/phase-chain";
-import { PHASE_LABELS } from "@/components/phase/PhaseCard";
+import { getNextPhases, getPhaseLabel } from "@/lib/phase-chain";
+import type { WorkflowPath } from "@/lib/phase-chain";
 
 export async function POST(
   _request: NextRequest,
@@ -18,7 +18,13 @@ export async function POST(
   const phase = await prisma.phase.findUnique({
     where: { id },
     include: {
-      engagement: { select: { createdById: true } },
+      engagement: {
+        select: {
+          id: true,
+          createdById: true,
+          workflowPath: true,
+        },
+      },
     },
   });
 
@@ -42,14 +48,28 @@ export async function POST(
     data: { status: "APPROVED" },
   });
 
-  const nextNumber = getNextPhase(phase.phaseNumber);
-  const nextPhase = nextNumber !== null
-    ? {
-        number: nextNumber,
-        label: PHASE_LABELS[nextNumber] ?? `Phase ${nextNumber}`,
-        canAutoStart: canAutoStart(nextNumber),
-      }
-    : null;
+  // Build current phase statuses map
+  const allPhases = await prisma.phase.findMany({
+    where: { engagementId: phase.engagement.id },
+    select: { phaseNumber: true, status: true },
+  });
 
-  return NextResponse.json({ phase: updated, nextPhase });
+  const phaseStatuses: Record<string, string> = {};
+  for (const p of allPhases) {
+    phaseStatuses[p.phaseNumber] = p.status;
+  }
+  // Override with just-approved status
+  phaseStatuses[phase.phaseNumber] = "APPROVED";
+
+  const workflowPath = (phase.engagement.workflowPath as WorkflowPath) ?? null;
+  const nextPhases = getNextPhases(
+    phase.phaseNumber,
+    phaseStatuses,
+    workflowPath
+  ).map((num) => ({
+    number: num,
+    label: getPhaseLabel(num),
+  }));
+
+  return NextResponse.json({ phase: updated, nextPhases });
 }

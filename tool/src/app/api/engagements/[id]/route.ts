@@ -57,10 +57,11 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { clientName, projectName, status } = body as {
+  const { clientName, projectName, status, workflowPath } = body as {
     clientName?: string;
     projectName?: string;
     status?: EngagementStatus;
+    workflowPath?: string;
   };
 
   const updated = await prisma.engagement.update({
@@ -69,6 +70,7 @@ export async function PATCH(
       ...(clientName !== undefined && { clientName }),
       ...(projectName !== undefined && { projectName }),
       ...(status !== undefined && { status }),
+      ...(workflowPath !== undefined && { workflowPath: workflowPath as "NO_RESPONSE" | "HAS_RESPONSE" }),
     },
   });
 

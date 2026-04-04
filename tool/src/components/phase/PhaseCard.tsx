@@ -30,11 +30,11 @@ export interface PhaseCardData {
 
 const PHASE_LABELS: Record<string, string> = {
   "0": "Research",
-  "1": "TOR Analysis",
-  "1A": "Estimation",
+  "1": "TOR Assessment",
+  "1A": "Optimistic Estimate",
   "2": "Responses",
-  "3": "Review",
-  "4": "Gap Analysis",
+  "3": "Estimate",
+  "3R": "Review & Gap Analysis",
   "5": "Knowledge Capture",
 }
 

@@ -4,7 +4,7 @@ export interface NotificationPayload {
   type: "phase_complete" | "review_needed" | "phase_failed";
   engagementId: string;
   clientName: string;
-  phaseNumber: number;
+  phaseNumber: string | number;
   phaseLabel: string;
   message: string;
 }
@@ -199,7 +199,7 @@ export async function sendNotification(payload: NotificationPayload): Promise<vo
 async function buildPayload(
   type: NotificationPayload["type"],
   engagementId: string,
-  phaseNumber: number,
+  phaseNumber: string | number,
   message: string
 ): Promise<NotificationPayload> {
   // Lazy import to avoid circular deps and keep notifications.ts usable outside Next.js
@@ -222,7 +222,7 @@ async function buildPayload(
 
 export async function notifyPhaseComplete(
   engagementId: string,
-  phaseNumber: number
+  phaseNumber: string | number
 ): Promise<void> {
   const payload = await buildPayload(
     "phase_complete",
@@ -235,7 +235,7 @@ export async function notifyPhaseComplete(
 
 export async function notifyReviewNeeded(
   engagementId: string,
-  phaseNumber: number
+  phaseNumber: string | number
 ): Promise<void> {
   const payload = await buildPayload(
     "review_needed",

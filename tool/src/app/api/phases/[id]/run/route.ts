@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { phaseQueue } from "@/lib/queue";
+import { canStartPhase } from "@/lib/phase-chain";
+import type { WorkflowPath } from "@/lib/phase-chain";
 
 export async function POST(
   _request: NextRequest,
@@ -18,7 +20,7 @@ export async function POST(
     where: { id },
     include: {
       engagement: {
-        select: { id: true, techStack: true, createdById: true },
+        select: { id: true, techStack: true, createdById: true, workflowPath: true },
       },
     },
   });
@@ -38,40 +40,37 @@ export async function POST(
     );
   }
 
-  // Check prior phase dependency (phases ordered: 0, 1, 1A, 2, 3, 4, 5)
-  const phaseOrder = ["0", "1", "1A", "2", "3", "4", "5"];
-  const currentIndex = phaseOrder.indexOf(phase.phaseNumber);
+  // Graph-based dependency check
+  const allPhases = await prisma.phase.findMany({
+    where: { engagementId: phase.engagementId },
+    select: { phaseNumber: true, status: true },
+  });
 
-  if (currentIndex > 0) {
-    const priorPhaseNumber = phaseOrder[currentIndex - 1];
-    const priorPhase = await prisma.phase.findUnique({
-      where: {
-        engagementId_phaseNumber: {
-          engagementId: phase.engagementId,
-          phaseNumber: priorPhaseNumber,
-        },
-      },
-      select: { status: true },
-    });
-
-    if (priorPhase && priorPhase.status !== "APPROVED" && priorPhase.status !== "SKIPPED") {
-      return NextResponse.json(
-        {
-          error: `Prior phase (${priorPhaseNumber}) must be APPROVED or SKIPPED before running this phase`,
-        },
-        { status: 422 }
-      );
-    }
+  const phaseStatuses: Record<string, string> = {};
+  for (const p of allPhases) {
+    phaseStatuses[p.phaseNumber] = p.status;
   }
 
-  const phaseNumberAsInt = currentIndex; // use index as numeric representation for queue
+  const workflowPath = (phase.engagement.workflowPath as WorkflowPath) ?? null;
+  const { canStart, reason } = canStartPhase(
+    phase.phaseNumber,
+    phaseStatuses,
+    workflowPath
+  );
+
+  if (!canStart) {
+    return NextResponse.json(
+      { error: reason ?? "Phase cannot start" },
+      { status: 422 }
+    );
+  }
 
   const job = await phaseQueue.add(
     `phase-${phase.phaseNumber}`,
     {
       phaseId: phase.id,
       engagementId: phase.engagementId,
-      phaseNumber: phaseNumberAsInt,
+      phaseNumber: phase.phaseNumber,
       techStack: phase.engagement.techStack,
     },
     { jobId: `phase-${phase.id}` }

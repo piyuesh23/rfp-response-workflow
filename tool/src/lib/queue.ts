@@ -4,7 +4,7 @@ import IORedis from "ioredis";
 export interface PhaseJobData {
   phaseId: string;
   engagementId: string;
-  phaseNumber: number;
+  phaseNumber: string;
   techStack: string;
   revisionFeedback?: string;
 }

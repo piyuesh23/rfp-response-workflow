@@ -12,8 +12,8 @@ const PHASE_ARTEFACT_TYPE: Record<string, ArtefactType> = {
   "1": ArtefactType.TOR_ASSESSMENT,
   "1A": ArtefactType.ESTIMATE,
   "2": ArtefactType.RESPONSE_ANALYSIS,
-  "3": ArtefactType.REVIEW,
-  "4": ArtefactType.GAP_ANALYSIS,
+  "3": ArtefactType.ESTIMATE,
+  "3R": ArtefactType.GAP_ANALYSIS,
   "5": ArtefactType.RESEARCH,
 };
 

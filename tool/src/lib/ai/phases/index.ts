@@ -26,6 +26,22 @@ export function getPhaseConfig(
       return getPhase2Config(engagementId, techStack);
     case "3":
       return getPhase3Config(engagementId, techStack);
+    case "3R": {
+      // Combined Review & Gap Analysis: merge prompts from Phase 3 + Phase 4
+      const reviewConfig = getPhase3Config(engagementId, techStack);
+      const gapConfig = getPhase4Config(engagementId, techStack);
+      return {
+        ...reviewConfig,
+        phase: 3,
+        maxTurns: Math.max(reviewConfig.maxTurns, gapConfig.maxTurns),
+        userPrompt: [
+          reviewConfig.userPrompt,
+          "\n\n---\n\nAfter completing the estimate review above, proceed to produce a full gap analysis:\n\n",
+          gapConfig.userPrompt,
+        ].join(""),
+        tools: [...new Set([...reviewConfig.tools, ...gapConfig.tools])],
+      };
+    }
     case "4":
       return getPhase4Config(engagementId, techStack);
     case "5":
