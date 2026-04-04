@@ -4,7 +4,18 @@ import { getPhaseConfig } from "@/lib/ai/phases";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
-import { PhaseStatus } from "@/generated/prisma/client";
+import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
+
+// Map phase numbers to their primary artefact type
+const PHASE_ARTEFACT_TYPE: Record<string, ArtefactType> = {
+  "0": ArtefactType.RESEARCH,
+  "1": ArtefactType.TOR_ASSESSMENT,
+  "1A": ArtefactType.ESTIMATE,
+  "2": ArtefactType.RESPONSE_ANALYSIS,
+  "3": ArtefactType.REVIEW,
+  "4": ArtefactType.GAP_ANALYSIS,
+  "5": ArtefactType.RESEARCH,
+};
 
 const worker = new Worker<PhaseJobData>(
   "phase-execution",
@@ -30,8 +41,34 @@ const worker = new Worker<PhaseJobData>(
         config.userPrompt += `\n\nREVISION FEEDBACK FROM REVIEWER:\n${revisionFeedback}\n\nPlease address the above feedback in your output.`;
       }
 
+      let finalContent: string | undefined;
       for await (const event of runPhase(config)) {
         await job.updateProgress(event);
+        if (event.type === "complete" && event.content) {
+          finalContent = event.content;
+        }
+      }
+
+      // Persist artefact if the phase produced content
+      if (finalContent) {
+        const artefactType = PHASE_ARTEFACT_TYPE[String(phaseNumber)] ?? ArtefactType.RESEARCH;
+
+        // Determine next version number
+        const latestArtefact = await prisma.phaseArtefact.findFirst({
+          where: { phaseId, artefactType },
+          orderBy: { version: "desc" },
+          select: { version: true },
+        });
+        const nextVersion = (latestArtefact?.version ?? 0) + 1;
+
+        await prisma.phaseArtefact.create({
+          data: {
+            phaseId,
+            artefactType,
+            version: nextVersion,
+            contentMd: finalContent,
+          },
+        });
       }
 
       await prisma.phase.update({

@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize from "rehype-sanitize"
-import { Maximize2Icon } from "lucide-react"
+import { Maximize2Icon, DownloadIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -197,7 +197,24 @@ export function ArtefactViewer({ contentMd, version }: ArtefactViewerProps) {
         {version !== undefined && (
           <span className="text-xs text-muted-foreground">v{version}</span>
         )}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Download as Markdown"
+            onClick={() => {
+              const blob = new Blob([contentMd], { type: "text/markdown;charset=utf-8" })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement("a")
+              a.href = url
+              a.download = `artefact${version !== undefined ? `-v${version}` : ""}.md`
+              a.click()
+              URL.revokeObjectURL(url)
+            }}
+          >
+            <DownloadIcon className="size-4" />
+            <span className="sr-only">Download</span>
+          </Button>
           <Dialog>
             <DialogTrigger
               render={<Button variant="ghost" size="icon-sm" title="View fullscreen" />}

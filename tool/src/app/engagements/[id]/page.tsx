@@ -1,75 +1,16 @@
+"use client"
+
 import * as React from "react"
+import { useParams, useRouter } from "next/navigation"
 import { PhaseTimeline } from "@/components/phase/PhaseTimeline"
 import type { PhaseCardData } from "@/components/phase/PhaseCard"
 import { EngagementStats, type EngagementStatsData } from "@/components/engagement/EngagementStats"
+import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import { ArrowRight, Loader2, CheckCircle2, Eye } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
-const MOCK_PHASES: PhaseCardData[] = [
-  {
-    phaseNumber: "0",
-    status: "APPROVED",
-    startedAt: new Date(Date.now() - 7200000),
-    completedAt: new Date(Date.now() - 6900000),
-    artefactCount: 3,
-  },
-  {
-    phaseNumber: "1",
-    status: "APPROVED",
-    startedAt: new Date(Date.now() - 6800000),
-    completedAt: new Date(Date.now() - 6600000),
-    artefactCount: 2,
-  },
-  {
-    phaseNumber: "1A",
-    status: "REVIEW",
-    startedAt: new Date(Date.now() - 3600000),
-    completedAt: new Date(Date.now() - 1800000),
-    artefactCount: 4,
-  },
-  {
-    phaseNumber: "2",
-    status: "PENDING",
-    artefactCount: 0,
-  },
-  {
-    phaseNumber: "3",
-    status: "PENDING",
-    artefactCount: 0,
-  },
-  {
-    phaseNumber: "4",
-    status: "PENDING",
-    artefactCount: 0,
-  },
-  {
-    phaseNumber: "5",
-    status: "PENDING",
-    artefactCount: 0,
-  },
-]
-
-const MOCK_STATS: EngagementStatsData = {
-  totalHours: { low: 500, high: 680 },
-  hoursByTab: {
-    backend: { low: 200, high: 280 },
-    frontend: { low: 160, high: 220 },
-    fixedCost: { low: 80, high: 80 },
-    ai: { low: 60, high: 100 },
-  },
-  requirementCount: 42,
-  clarityBreakdown: {
-    clear: 28,
-    needsClarification: 10,
-    ambiguous: 3,
-    missingDetail: 1,
-  },
-  confidenceDistribution: {
-    high56: 18,
-    medium4: 16,
-    low123: 8,
-  },
-  riskCount: { total: 11, high: 3, medium: 5, low: 3 },
-  assumptionCount: { total: 24, resolved: 14, open: 10 },
+interface PhaseWithId extends PhaseCardData {
+  id: string
 }
 
 // Derive the "next action" from the current phase statuses.
@@ -79,9 +20,11 @@ interface NextAction {
   variant: NextActionVariant
   title: string
   description: string
+  pendingPhase?: PhaseWithId
+  reviewPhase?: PhaseWithId
 }
 
-function deriveNextAction(phases: PhaseCardData[]): NextAction {
+function deriveNextAction(phases: PhaseWithId[]): NextAction {
   const running = phases.find((p) => p.status === "RUNNING")
   if (running) {
     return {
@@ -107,6 +50,7 @@ function deriveNextAction(phases: PhaseCardData[]): NextAction {
       variant: "review",
       title: `Approve Phase ${inReview.phaseNumber} to continue`,
       description: `${label} artefacts are ready for review. Approve to unlock the next phase.`,
+      reviewPhase: inReview,
     }
   }
 
@@ -135,6 +79,7 @@ function deriveNextAction(phases: PhaseCardData[]): NextAction {
       variant: "pending",
       title: `Run Phase ${nextPending.phaseNumber}: ${label}`,
       description: "The previous phase is approved. Trigger the next phase when ready.",
+      pendingPhase: nextPending,
     }
   }
 
@@ -171,8 +116,76 @@ const NEXT_ACTION_STYLES: Record<
   },
 }
 
+const EMPTY_STATS: EngagementStatsData = {
+  totalHours: { low: 0, high: 0 },
+  hoursByTab: {
+    backend: { low: 0, high: 0 },
+    frontend: { low: 0, high: 0 },
+    fixedCost: { low: 0, high: 0 },
+    ai: { low: 0, high: 0 },
+  },
+  requirementCount: 0,
+  clarityBreakdown: { clear: 0, needsClarification: 0, ambiguous: 0, missingDetail: 0 },
+  confidenceDistribution: { high56: 0, medium4: 0, low123: 0 },
+  riskCount: { total: 0, high: 0, medium: 0, low: 0 },
+  assumptionCount: { total: 0, resolved: 0, open: 0 },
+}
+
 export default function EngagementOverviewPage() {
-  const nextAction = deriveNextAction(MOCK_PHASES)
+  const { id } = useParams<{ id: string }>()
+  const router = useRouter()
+  const [phases, setPhases] = React.useState<PhaseWithId[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [runningPhase, setRunningPhase] = React.useState(false)
+
+  function fetchEngagement() {
+    fetch(`/api/engagements/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.phases) {
+          setPhases(
+            data.phases.map((p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: unknown[] }) => ({
+              id: p.id,
+              phaseNumber: p.phaseNumber,
+              status: p.status,
+              startedAt: p.startedAt ?? null,
+              completedAt: p.completedAt ?? null,
+              artefactCount: p.artefacts?.length ?? 0,
+            }))
+          )
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  React.useEffect(() => {
+    fetchEngagement()
+  }, [id])
+
+  async function handleRunPhase(phaseId: string) {
+    setRunningPhase(true)
+    try {
+      const res = await fetch(`/api/phases/${phaseId}/run`, { method: "POST" })
+      if (!res.ok) {
+        const err = await res.json()
+        console.error("Failed to run phase:", err.error)
+        return
+      }
+      // Refresh phases to show RUNNING status
+      fetchEngagement()
+    } catch (err) {
+      console.error("Failed to run phase:", err)
+    } finally {
+      setRunningPhase(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">Loading...</div>
+  }
+
+  const nextAction = deriveNextAction(phases)
   const actionStyles = NEXT_ACTION_STYLES[nextAction.variant]
 
   return (
@@ -182,20 +195,43 @@ export default function EngagementOverviewPage() {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Phases
         </h2>
-        <PhaseTimeline phases={MOCK_PHASES} />
+        <PhaseTimeline
+          phases={phases}
+          onPhaseClick={(phaseNumber) => router.push(`/engagements/${id}/phases/${phaseNumber}`)}
+        />
 
         {/* Next Action card */}
         <div
           className={`rounded-xl border bg-card p-4 ring-1 ring-foreground/10 ${actionStyles.border}`}
         >
-          <div className="flex items-start gap-2">
-            {actionStyles.icon}
-            <div className="flex flex-col gap-0.5">
-              <p className={`text-sm font-semibold ${actionStyles.titleClass}`}>
-                {nextAction.title}
-              </p>
-              <p className="text-xs text-muted-foreground">{nextAction.description}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              {actionStyles.icon}
+              <div className="flex flex-col gap-0.5">
+                <p className={`text-sm font-semibold ${actionStyles.titleClass}`}>
+                  {nextAction.title}
+                </p>
+                <p className="text-xs text-muted-foreground">{nextAction.description}</p>
+              </div>
             </div>
+            {nextAction.pendingPhase && (
+              <RunPhaseButton
+                phaseNumber={nextAction.pendingPhase.phaseNumber}
+                disabled={runningPhase}
+                onConfirm={() => handleRunPhase(nextAction.pendingPhase!.id)}
+              />
+            )}
+            {nextAction.reviewPhase && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                onClick={() => router.push(`/engagements/${id}/phases/${nextAction.reviewPhase!.phaseNumber}`)}
+              >
+                <Eye className="size-4" />
+                Review Artefacts
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -205,7 +241,7 @@ export default function EngagementOverviewPage() {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Summary
         </h2>
-        <EngagementStats stats={MOCK_STATS} />
+        <EngagementStats stats={EMPTY_STATS} />
       </div>
     </div>
   )
