@@ -13,6 +13,8 @@ export interface PhaseConfig {
   maxTurns: number;
   systemPrompt: string;
   userPrompt: string;
+  /** Override model for this phase (e.g., opus for estimation) */
+  model?: string;
 }
 
 export interface ProgressEvent {
@@ -22,8 +24,138 @@ export interface ProgressEvent {
   content?: string;
 }
 
-const CLAUDE_MODEL =
+const DEFAULT_MODEL =
   process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
+const OPUS_MODEL = "claude-opus-4-20250514";
+
+/** Phases that benefit from Opus-level reasoning */
+const OPUS_PHASES = new Set(["1A", "3", "3R", "4"]);
+
+/**
+ * Determine the model to use for a phase.
+ * Estimation, review, and gap analysis phases use Opus for deeper reasoning.
+ */
+function getModelForPhase(config: PhaseConfig): string {
+  if (config.model) return config.model;
+  if (process.env.CLAUDE_MODEL) return process.env.CLAUDE_MODEL;
+  if (OPUS_PHASES.has(String(config.phase))) return OPUS_MODEL;
+  return DEFAULT_MODEL;
+}
+
+/**
+ * Load benchmark files and inject them into the system prompt.
+ * These provide reference effort ranges for estimation calibration.
+ */
+async function loadBenchmarks(): Promise<string> {
+  const benchmarkDir = "/app/benchmarks";
+  const fallbackDir = path.join(process.cwd(), "benchmarks");
+
+  let dir = benchmarkDir;
+  try {
+    await stat(dir);
+  } catch {
+    dir = fallbackDir;
+    try {
+      await stat(dir);
+    } catch {
+      return "";
+    }
+  }
+
+  const sections: string[] = [];
+  try {
+    const files = await readdir(dir);
+    for (const file of files) {
+      if (!String(file).endsWith(".md") || String(file) === "AGENTS.md") continue;
+      const content = await readFile(path.join(dir, String(file)), "utf-8");
+      sections.push(`### ${String(file).replace(".md", "").replace(/-/g, " ")}\n\n${content}`);
+    }
+  } catch {
+    return "";
+  }
+
+  if (sections.length === 0) return "";
+  return `\n\n---\n\n## Reference Benchmarks\n\nUse these effort ranges to calibrate your estimates. Flag significant deviations.\n\n${sections.join("\n\n")}`;
+}
+
+/**
+ * Load the output template for a specific phase.
+ */
+async function loadTemplate(phaseNumber: string): Promise<string> {
+  const templateMap: Record<string, string> = {
+    "0": "customer-research-template.md",
+    "1": "tor-assessment-template.md",
+    "1A": "optimistic-estimate-template.md",
+    "3": "estimate-review-template.md",
+    "3R": "gap-analysis-template.md",
+    "4": "gap-analysis-template.md",
+  };
+
+  const templateFile = templateMap[phaseNumber];
+  if (!templateFile) return "";
+
+  const templateDir = "/app/templates";
+  const fallbackDir = path.join(process.cwd(), "templates");
+
+  for (const dir of [templateDir, fallbackDir]) {
+    try {
+      const content = await readFile(path.join(dir, templateFile), "utf-8");
+      return `\n\n---\n\n## Output Template\n\nFollow this structure exactly:\n\n${content}`;
+    } catch {
+      continue;
+    }
+  }
+  return "";
+}
+
+/**
+ * Collect prior phase artefacts and format them as context for the current phase.
+ * This ensures phases build on each other's outputs.
+ */
+async function collectPriorContext(
+  engagementId: string,
+  currentPhase: string,
+  workDir: string
+): Promise<string> {
+  // Map of which prior phases to include for each phase
+  const contextMap: Record<string, string[]> = {
+    "1": ["research"],                          // TOR Assessment reads research
+    "1A": ["research", "claude-artefacts"],     // Estimation reads research + TOR assessment
+    "2": ["initial_questions"],                 // Response analysis reads questions
+    "3": ["claude-artefacts", "responses_qna"], // Estimate review reads artefacts + responses
+    "3R": ["claude-artefacts", "responses_qna", "estimates"], // Review+Gap reads everything
+    "4": ["claude-artefacts", "responses_qna", "estimates"],
+    "5": ["claude-artefacts", "research", "estimates"],
+  };
+
+  const dirs = contextMap[currentPhase];
+  if (!dirs || dirs.length === 0) return "";
+
+  const sections: string[] = [];
+
+  for (const dir of dirs) {
+    const dirPath = path.join(workDir, dir);
+    try {
+      const files = await readdir(dirPath);
+      for (const file of files) {
+        const fileName = String(file);
+        if (!fileName.endsWith(".md")) continue;
+        const content = await readFile(path.join(dirPath, fileName), "utf-8");
+        if (content.length > 50000) {
+          // Truncate very large files
+          sections.push(`### Prior Artefact: ${dir}/${fileName} (truncated)\n\n${content.slice(0, 50000)}\n\n[... truncated at 50,000 characters]`);
+        } else {
+          sections.push(`### Prior Artefact: ${dir}/${fileName}\n\n${content}`);
+        }
+      }
+    } catch {
+      // Directory may not exist yet
+    }
+  }
+
+  if (sections.length === 0) return "";
+  return `\n\n---\n\n## Context from Prior Phases\n\nThe following artefacts were produced by earlier phases. Use them to inform your analysis.\n\n${sections.join("\n\n---\n\n")}`;
+}
 
 export async function prepareWorkDir(engagementId: string): Promise<string> {
   const baseDir = path.join("/data/engagements", engagementId);
@@ -183,13 +315,36 @@ export async function* runPhase(
     };
   }
 
-  // 3. Build tool definitions and handlers
+  // 3. Enrich context: benchmarks, templates, prior phase artefacts
+  yield { type: "progress", message: "Loading benchmarks and prior context..." };
+
+  const phaseStr = String(config.phase);
+  const [benchmarks, template, priorContext] = await Promise.all([
+    loadBenchmarks(),
+    loadTemplate(phaseStr),
+    collectPriorContext(config.engagementId, phaseStr, workDir),
+  ]);
+
+  // Enrich system prompt with benchmarks and template
+  const enrichedSystemPrompt = config.systemPrompt + benchmarks + template;
+
+  // Enrich user prompt with prior phase artefacts
+  const enrichedUserPrompt = config.userPrompt + priorContext;
+
+  // Select model (Opus for estimation phases, Sonnet for others)
+  const model = getModelForPhase(config);
+  yield {
+    type: "progress",
+    message: `Using model: ${model}${benchmarks ? " | Benchmarks loaded" : ""}${template ? " | Template loaded" : ""}${priorContext ? " | Prior context injected" : ""}`,
+  };
+
+  // 4. Build tool definitions and handlers
   const tools = getToolDefinitions(config.tools);
   const handlers = getToolHandlers(config.engagementId, workDir);
 
   // 4. Initialize conversation
   const messages: Anthropic.Messages.MessageParam[] = [
-    { role: "user", content: config.userPrompt },
+    { role: "user", content: enrichedUserPrompt },
   ];
 
   let turns = 0;
@@ -205,9 +360,9 @@ export async function* runPhase(
     let response: Anthropic.Messages.Message;
     try {
       response = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
+        model,
         max_tokens: 16384,
-        system: config.systemPrompt,
+        system: enrichedSystemPrompt,
         tools,
         messages,
       });
@@ -303,9 +458,9 @@ export async function* runPhase(
 
   try {
     const finalResponse = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
+      model,
       max_tokens: 16384,
-      system: config.systemPrompt,
+      system: enrichedSystemPrompt,
       messages,
     });
 
