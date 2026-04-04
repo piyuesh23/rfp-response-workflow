@@ -18,6 +18,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Optional prefix to control which subdirectory files land in (default: tor)
+  const prefix = (formData.get("prefix") as string) || "tor";
+  // Sanitize prefix to prevent path traversal
+  const safePrefix = prefix.replace(/\.\./g, "").replace(/^\/+/, "");
+
   const files = formData.getAll("file") as File[];
   if (files.length === 0) {
     return NextResponse.json({ error: "No files provided" }, { status: 400 });
@@ -27,7 +32,7 @@ export async function POST(request: NextRequest) {
 
   for (const file of files) {
     const filename = file.name;
-    const key = `engagements/${engagementId}/tor/${filename}`;
+    const key = `engagements/${engagementId}/${safePrefix}/${filename}`;
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 

@@ -9,7 +9,9 @@ import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import { PHASE_LABELS } from "@/components/phase/PhaseCard"
 import type { PhaseStatus } from "@/components/phase/PhaseCard"
 import { Badge } from "@/components/ui/badge"
-import { Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Loader2, Upload, SkipForward } from "lucide-react"
+import { getPhaseDef } from "@/lib/phase-chain"
 
 interface PhaseArtefact {
   id: string
@@ -34,12 +36,36 @@ interface PhaseDetailPageProps {
   params: Promise<{ id: string; phase: string }>
 }
 
+// Phases that support file upload
+const UPLOAD_PHASES: Record<string, { accept: string; label: string; description: string; s3Prefix: string }> = {
+  "1A": {
+    accept: ".xlsx,.xls,.csv,.md",
+    label: "Upload Estimate Sheet",
+    description: "Upload an existing estimate spreadsheet instead of AI-generating one.",
+    s3Prefix: "estimates",
+  },
+  "2": {
+    accept: ".pdf,.doc,.docx,.md,.txt,.xlsx",
+    label: "Upload Q&A Responses",
+    description: "Upload the customer's responses to clarifying questions.",
+    s3Prefix: "responses_qna",
+  },
+  "3": {
+    accept: ".xlsx,.xls,.csv,.md",
+    label: "Upload Estimate Sheet",
+    description: "Upload the estimate spreadsheet for review and gap analysis.",
+    s3Prefix: "estimates",
+  },
+}
+
 export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const { id, phase } = React.use(params)
   const router = useRouter()
   const [phaseData, setPhaseData] = React.useState<PhaseData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [actionLoading, setActionLoading] = React.useState(false)
+  const [uploading, setUploading] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const fetchPhaseData = React.useCallback(() => {
     fetch(`/api/engagements/${id}`)
@@ -61,6 +87,8 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   }, [fetchPhaseData])
 
   const label = PHASE_LABELS[phase] ?? `Phase ${phase}`
+  const phaseDef = getPhaseDef(phase)
+  const uploadConfig = UPLOAD_PHASES[phase]
 
   if (loading) {
     return (
@@ -74,9 +102,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   if (!phaseData) {
     return (
       <div className="flex flex-col gap-4">
-        <h2 className="text-base font-semibold">
-          Phase {phase}: {label}
-        </h2>
+        <h2 className="text-base font-semibold">Phase {phase}: {label}</h2>
         <p className="text-sm text-muted-foreground">Phase data not found.</p>
       </div>
     )
@@ -84,7 +110,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
 
   const status = phaseData.status
 
-  // Convert artefacts to ArtefactVersion[] for PhaseGate
+  // Convert artefacts to ArtefactVersion[]
   const versions: ArtefactVersion[] = phaseData.artefacts
     .sort((a, b) => a.version - b.version)
     .map((a) => ({
@@ -93,7 +119,6 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
       createdAt: new Date(a.createdAt).toLocaleDateString(),
     }))
 
-  // Build stats from artefact metadata if available
   const latestArtefact = phaseData.artefacts.length > 0
     ? phaseData.artefacts.reduce((latest, a) => a.version > latest.version ? a : latest, phaseData.artefacts[0])
     : null
@@ -106,9 +131,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     if (!phaseData) return
     setActionLoading(true)
     try {
-      const res = await fetch(`/api/phases/${phaseData.id}/approve`, {
-        method: "POST",
-      })
+      const res = await fetch(`/api/phases/${phaseData.id}/approve`, { method: "POST" })
       if (res.ok) {
         router.push(`/engagements/${id}`)
       } else {
@@ -148,9 +171,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     if (!phaseData) return
     setActionLoading(true)
     try {
-      const res = await fetch(`/api/phases/${phaseData.id}/run`, {
-        method: "POST",
-      })
+      const res = await fetch(`/api/phases/${phaseData.id}/run`, { method: "POST" })
       if (res.ok) {
         fetchPhaseData()
       } else {
@@ -164,13 +185,64 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     }
   }
 
+  async function handleSkip() {
+    if (!phaseData) return
+    setActionLoading(true)
+    try {
+      const res = await fetch(`/api/phases/${phaseData.id}/skip`, { method: "POST" })
+      if (res.ok) {
+        router.push(`/engagements/${id}`)
+      } else {
+        const err = await res.json()
+        console.error("Skip failed:", err.error)
+      }
+    } catch (err) {
+      console.error("Skip failed:", err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files
+    if (!files || files.length === 0 || !phaseData) return
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("engagementId", id)
+      formData.append("prefix", uploadConfig?.s3Prefix ?? "uploads")
+      for (const file of Array.from(files)) {
+        formData.append("file", file)
+      }
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!uploadRes.ok) {
+        console.error("Upload failed")
+        return
+      }
+
+      // After upload, run the phase to process the uploaded files
+      await handleRun()
+    } catch (err) {
+      console.error("Upload failed:", err)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  // --- Render by status ---
+
   if (status === "RUNNING") {
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold">
-            Phase {phase}: {label}
-          </h2>
+          <h2 className="text-base font-semibold">Phase {phase}: {label}</h2>
           <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 text-xs">
             Running
           </Badge>
@@ -188,9 +260,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold">
-            Phase {phase}: {label}
-          </h2>
+          <h2 className="text-base font-semibold">Phase {phase}: {label}</h2>
           <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 text-xs">
             Review
           </Badge>
@@ -224,9 +294,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold">
-            Phase {phase}: {label}
-          </h2>
+          <h2 className="text-base font-semibold">Phase {phase}: {label}</h2>
           <Badge variant="outline" className="bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 text-xs">
             Approved
           </Badge>
@@ -246,34 +314,47 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           />
         ) : (
           <div className="rounded-xl border bg-card p-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Phase was approved but has no artefacts to display.
-            </p>
+            <p className="text-sm text-muted-foreground">Phase approved with no artefacts.</p>
           </div>
         )}
       </div>
     )
   }
 
-  // PENDING, FAILED, SKIPPED
+  if (status === "SKIPPED") {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Phase {phase}: {label}</h2>
+          <Badge variant="outline" className="bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 text-xs">
+            Skipped
+          </Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">This phase was skipped.</p>
+        <Button variant="ghost" size="sm" onClick={() => router.push(`/engagements/${id}`)}>
+          Back to overview
+        </Button>
+      </div>
+    )
+  }
+
+  // PENDING or FAILED
   const descriptions: Record<string, string> = {
     "0": "Run customer & site research based on the TOR document.",
     "1": "Analyse the TOR and generate clarifying questions.",
-    "1A": "Generate optimistic estimates without customer Q&A responses.",
-    "2": "Upload customer Q&A responses to responses_qna/, then run this phase to analyse them.",
-    "3": "Review estimates against requirements and customer responses.",
-    "4": "Generate gap analysis and revised estimates.",
-    "5": "Capture learnings after the engagement concludes.",
+    "1A": "Generate optimistic estimates based on assumptions, or upload an existing estimate sheet.",
+    "2": "Upload customer Q&A responses, then run analysis against the TOR and original questions.",
+    "3": "Upload the estimate sheet for review, or generate one from the Q&A analysis.",
+    "3R": "AI reviews the estimate against TOR + Q&A responses. Produces gap analysis and revised estimate.",
+    "5": "Capture learnings from this engagement. Review and edit AI-generated insights.",
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-2">
-        <h2 className="text-base font-semibold">
-          Phase {phase}: {label}
-        </h2>
+        <h2 className="text-base font-semibold">Phase {phase}: {label}</h2>
         <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-xs">
-          {status === "FAILED" ? "Failed" : status === "SKIPPED" ? "Skipped" : "Pending"}
+          {status === "FAILED" ? "Failed" : "Pending"}
         </Badge>
       </div>
 
@@ -281,11 +362,57 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         {descriptions[phase] ?? "No description available for this phase."}
       </p>
 
-      <RunPhaseButton
-        phaseNumber={phase}
-        disabled={status === "SKIPPED" || actionLoading}
-        onConfirm={handleRun}
-      />
+      {/* Hidden file input for upload */}
+      {uploadConfig && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={uploadConfig.accept}
+          className="hidden"
+          onChange={handleFileUpload}
+          multiple
+        />
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Upload button for phases that support it */}
+        {uploadConfig && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={actionLoading || uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Upload className="size-4" />
+            )}
+            {uploading ? "Uploading..." : uploadConfig.label}
+          </Button>
+        )}
+
+        {/* Run AI agent button */}
+        <RunPhaseButton
+          phaseNumber={phase}
+          disabled={actionLoading || uploading}
+          onConfirm={handleRun}
+        />
+
+        {/* Skip button for optional phases */}
+        {phaseDef?.optional && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={actionLoading}
+            onClick={handleSkip}
+          >
+            <SkipForward className="size-4" />
+            Skip this phase
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
