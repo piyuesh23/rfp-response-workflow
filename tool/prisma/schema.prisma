@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String
+  role        UserRole     @default(MANAGER)
+  avatarUrl   String?
+  createdAt   DateTime     @default(now())
+  lastLoginAt DateTime?
+  engagements Engagement[]
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+model Engagement {
+  id             String            @id @default(cuid())
+  clientName     String
+  projectName    String?
+  techStack      TechStack
+  engagementType EngagementType    @default(NEW_BUILD)
+  status         EngagementStatus  @default(DRAFT)
+  createdBy      User              @relation(fields: [createdById], references: [id])
+  createdById    String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  phases         Phase[]
+  assumptions    Assumption[]
+  risks          RiskRegisterEntry[]
+}
+
+enum TechStack {
+  DRUPAL
+  DRUPAL_NEXTJS
+  NEXTJS
+  REACT
+}
+
+enum EngagementType {
+  NEW_BUILD
+  MIGRATION
+  REDESIGN
+  ENHANCEMENT
+}
+
+enum EngagementStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+model Phase {
+  id             String        @id @default(cuid())
+  engagement     Engagement    @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId   String
+  phaseNumber    String
+  status         PhaseStatus   @default(PENDING)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  agentSessionId String?
+  artefacts      PhaseArtefact[]
+
+  @@unique([engagementId, phaseNumber])
+}
+
+enum PhaseStatus {
+  PENDING
+  RUNNING
+  REVIEW
+  APPROVED
+  SKIPPED
+  FAILED
+}
+
+model PhaseArtefact {
+  id           String       @id @default(cuid())
+  phase        Phase        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  phaseId      String
+  artefactType ArtefactType
+  version      Int          @default(1)
+  contentMd    String?
+  fileUrl      String?
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+
+  @@unique([phaseId, artefactType, version])
+}
+
+enum ArtefactType {
+  TOR_ASSESSMENT
+  QUESTIONS
+  ESTIMATE
+  PROPOSAL
+  GAP_ANALYSIS
+  RESEARCH
+  REVIEW
+  RESPONSE_ANALYSIS
+  ESTIMATE_STATE
+}
+
+model Assumption {
+  id            String           @id @default(cuid())
+  engagement    Engagement       @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId  String
+  sourcePhaseId String
+  text          String
+  torReference  String?
+  impactIfWrong String
+  status        AssumptionStatus @default(ACTIVE)
+  confirmedById String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+enum AssumptionStatus {
+  ACTIVE
+  SUPERSEDED
+  CONFIRMED
+  REJECTED
+}
+
+model RiskRegisterEntry {
+  id                String     @id @default(cuid())
+  engagement        Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId      String
+  task              String
+  tab               String
+  conf              Int
+  risk              String
+  openQuestion      String
+  recommendedAction String
+  hoursAtRisk       Float
+  createdAt         DateTime   @default(now())
+}
+
+model Benchmark {
+  id                 String    @id @default(cuid())
+  techStack          TechStack
+  category           String
+  taskType           String
+  lowHours           Float
+  highHours          Float
+  notes              String?
+  sourceEngagementId String?
+  createdAt          DateTime  @default(now())
+
+  @@index([techStack, category])
+}
