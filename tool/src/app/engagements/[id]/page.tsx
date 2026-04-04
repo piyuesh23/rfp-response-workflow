@@ -163,6 +163,34 @@ export default function EngagementOverviewPage() {
     fetchEngagement()
   }, [id])
 
+  // SSE auto-refresh: subscribe to running phase's SSE stream
+  // When the phase completes or fails, re-fetch engagement data
+  React.useEffect(() => {
+    const runningPhaseData = phases.find((p) => p.status === "RUNNING")
+    if (!runningPhaseData) return
+
+    const eventSource = new EventSource(`/api/phases/${runningPhaseData.id}/sse`)
+
+    const handleDone = () => {
+      eventSource.close()
+      fetchEngagement()
+    }
+
+    const handleError = () => {
+      eventSource.close()
+      fetchEngagement()
+    }
+
+    eventSource.addEventListener("done", handleDone)
+    eventSource.addEventListener("error", handleError)
+
+    return () => {
+      eventSource.removeEventListener("done", handleDone)
+      eventSource.removeEventListener("error", handleError)
+      eventSource.close()
+    }
+  }, [phases])
+
   async function handleRunPhase(phaseId: string) {
     setRunningPhase(true)
     try {

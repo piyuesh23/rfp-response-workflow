@@ -6,9 +6,6 @@ import { Progress } from "@/components/ui/progress"
 import { Wrench, CheckCircle, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// Track which entry IDs have already been "seen" so only genuinely new ones animate
-const seenIds = new Set<string>()
-
 export type StreamEntryStatus = "running" | "complete" | "error"
 
 export interface StreamEntry {
@@ -21,8 +18,8 @@ export interface StreamEntry {
 
 interface ProgressStreamProps {
   phaseId: string
-  events?: StreamEntry[]
-  progress?: number
+  onComplete?: () => void
+  onError?: () => void
   className?: string
 }
 
@@ -42,38 +39,94 @@ function formatTime(ts: Date | string): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 }
 
-const MOCK_EVENTS: StreamEntry[] = [
-  {
-    id: "1",
-    toolName: "WebSearch",
-    status: "complete",
-    message: "Customer research completed — 12 results processed",
-    timestamp: new Date(Date.now() - 90000),
-  },
-  {
-    id: "2",
-    toolName: "WebFetch",
-    status: "complete",
-    message: "Site audit completed — headers, stack, sitemap analysed",
-    timestamp: new Date(Date.now() - 60000),
-  },
-  {
-    id: "3",
-    toolName: "sequential-thinking",
-    status: "running",
-    message: "Decomposing TOR requirements into estimation categories…",
-    timestamp: new Date(Date.now() - 5000),
-  },
-]
-
 export function ProgressStream({
-  phaseId: _phaseId,
-  events,
-  progress,
+  phaseId,
+  onComplete,
+  onError,
   className,
 }: ProgressStreamProps) {
-  const entries = events ?? MOCK_EVENTS
+  const [entries, setEntries] = React.useState<StreamEntry[]>([])
+  const [connected, setConnected] = React.useState(false)
   const scrollRef = React.useRef<HTMLDivElement>(null)
+  const entryCountRef = React.useRef(0)
+
+  React.useEffect(() => {
+    const eventSource = new EventSource(`/api/phases/${phaseId}/sse`)
+
+    eventSource.addEventListener("connected", () => {
+      setConnected(true)
+    })
+
+    eventSource.addEventListener("progress", (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        entryCountRef.current += 1
+        const entry: StreamEntry = {
+          id: String(entryCountRef.current),
+          toolName: data.tool ?? "Agent",
+          status: "running",
+          message: data.message ?? "Processing...",
+          timestamp: new Date(),
+        }
+        setEntries((prev) => {
+          // Mark previous running entries as complete
+          const updated = prev.map((e) =>
+            e.status === "running" ? { ...e, status: "complete" as const } : e
+          )
+          return [...updated, entry]
+        })
+      } catch {
+        // Ignore malformed events
+      }
+    })
+
+    eventSource.addEventListener("done", () => {
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.status === "running" ? { ...e, status: "complete" as const } : e
+        )
+      )
+      eventSource.close()
+      onComplete?.()
+    })
+
+    eventSource.addEventListener("error", (event) => {
+      let message = "Phase encountered an error"
+      try {
+        if (event instanceof MessageEvent && event.data) {
+          const data = JSON.parse(event.data)
+          message = data.message ?? message
+        }
+      } catch {
+        // Use default message
+      }
+
+      entryCountRef.current += 1
+      setEntries((prev) => [
+        ...prev.map((e) =>
+          e.status === "running" ? { ...e, status: "complete" as const } : e
+        ),
+        {
+          id: String(entryCountRef.current),
+          toolName: "Error",
+          status: "error",
+          message,
+          timestamp: new Date(),
+        },
+      ])
+      eventSource.close()
+      onError?.()
+    })
+
+    eventSource.addEventListener("timeout", () => {
+      eventSource.close()
+    })
+
+    // Cleanup on unmount
+    return () => {
+      eventSource.close()
+    }
+  }, [phaseId, onComplete, onError])
 
   React.useEffect(() => {
     if (scrollRef.current) {
@@ -82,25 +135,22 @@ export function ProgressStream({
   }, [entries])
 
   const completedCount = entries.filter((e) => e.status === "complete").length
-  const computedProgress =
-    progress !== undefined
-      ? progress
-      : entries.length > 0
-      ? Math.round((completedCount / entries.length) * 100)
-      : 0
-
-  const isActive = computedProgress > 0 && computedProgress < 100
+  const totalCount = entries.length
+  const computedProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+  const isActive = entries.some((e) => e.status === "running")
 
   return (
     <div className={cn("flex flex-col gap-3 rounded-xl border bg-card p-4 ring-1 ring-foreground/10", className)}>
       {/* Overall progress */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="font-medium">Agent progress</span>
-          <span>{computedProgress}%</span>
+          <span className="font-medium">
+            {connected ? "Agent progress" : "Connecting..."}
+          </span>
+          {totalCount > 0 && <span>{completedCount}/{totalCount} steps</span>}
         </div>
         <div className="relative overflow-hidden rounded-full">
-          <Progress value={computedProgress} />
+          <Progress value={isActive ? Math.max(computedProgress, 10) : computedProgress} />
           {isActive && (
             <div className="pointer-events-none absolute inset-0 rounded-full progress-shimmer" />
           )}
@@ -114,17 +164,17 @@ export function ProgressStream({
         aria-live="polite"
         aria-label="Agent activity log"
       >
+        {entries.length === 0 && connected && (
+          <div className="text-xs text-muted-foreground text-center py-4">
+            Waiting for agent to start...
+          </div>
+        )}
         {entries.map((entry) => {
-          const isNew = !seenIds.has(entry.id)
-          if (isNew) seenIds.add(entry.id)
           const Icon = ENTRY_ICONS[entry.status]
           return (
             <div
               key={entry.id}
-              className={cn(
-                "flex items-start gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs",
-                isNew && "animate-slide-in-left"
-              )}
+              className="flex items-start gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs animate-slide-in-left"
             >
               <Icon
                 className={cn(

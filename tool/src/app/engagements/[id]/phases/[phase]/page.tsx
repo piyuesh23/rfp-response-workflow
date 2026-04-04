@@ -175,7 +175,11 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
             Running
           </Badge>
         </div>
-        <ProgressStream phaseId={phaseData.id} />
+        <ProgressStream
+          phaseId={phaseData.id}
+          onComplete={() => fetchPhaseData()}
+          onError={() => fetchPhaseData()}
+        />
       </div>
     )
   }
