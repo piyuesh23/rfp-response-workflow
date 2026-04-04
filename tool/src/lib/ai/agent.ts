@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, writeFile, readFile, readdir, stat } from "fs/promises";
 import path from "path";
-import { listObjects, downloadFile } from "@/lib/storage";
+import { listObjects, downloadFile, uploadFile } from "@/lib/storage";
 import { getToolDefinitions, getToolHandlers } from "@/lib/ai/tools";
 import { summarizeTool } from "@/lib/ai/hooks";
 
@@ -77,6 +77,64 @@ async function syncTorFiles(
   }
 
   return synced;
+}
+
+/**
+ * Sync all files from the local engagement directory back to MinIO/S3.
+ * Called after a phase completes to persist generated artefacts.
+ * Skips the tor/ directory (those are source files, not generated).
+ */
+export async function syncFilesToStorage(
+  engagementId: string,
+  workDir: string
+): Promise<number> {
+  let uploadCount = 0;
+
+  try {
+    const allFiles = await readdir(workDir, { recursive: true });
+
+    for (const relPath of allFiles) {
+      const relStr = String(relPath);
+
+      // Skip tor/ directory (source files, already in MinIO)
+      if (relStr.startsWith("tor/") || relStr.startsWith("tor\\")) continue;
+
+      const absPath = path.join(workDir, relStr);
+
+      // Skip directories
+      try {
+        const stats = await stat(absPath);
+        if (!stats.isFile()) continue;
+      } catch {
+        continue;
+      }
+
+      const s3Key = `engagements/${engagementId}/${relStr.replace(/\\/g, "/")}`;
+      const content = await readFile(absPath);
+
+      // Determine content type
+      const ext = path.extname(relStr).toLowerCase();
+      const contentTypeMap: Record<string, string> = {
+        ".md": "text/markdown",
+        ".csv": "text/csv",
+        ".json": "application/json",
+        ".txt": "text/plain",
+        ".html": "text/html",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".pdf": "application/pdf",
+      };
+      const contentType = contentTypeMap[ext] ?? "application/octet-stream";
+
+      await uploadFile(s3Key, content, contentType);
+      uploadCount++;
+    }
+  } catch (err) {
+    console.warn(
+      `[agent] Could not sync files to storage: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  return uploadCount;
 }
 
 /**

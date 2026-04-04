@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { runPhase } from "@/lib/ai/agent";
+import { runPhase, prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
@@ -69,6 +69,20 @@ const worker = new Worker<PhaseJobData>(
             contentMd: finalContent,
           },
         });
+      }
+
+      // Sync all generated files back to MinIO/S3
+      try {
+        const workDir = `/data/engagements/${engagementId}`;
+        const uploaded = await syncFilesToStorage(engagementId, workDir);
+        if (uploaded > 0) {
+          await job.updateProgress({
+            type: "progress",
+            message: `Synced ${uploaded} file(s) to storage`,
+          });
+        }
+      } catch {
+        // Storage sync failure is non-fatal
       }
 
       await prisma.phase.update({
