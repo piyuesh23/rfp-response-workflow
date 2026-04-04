@@ -7,14 +7,6 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
-// Mock engagement data — replace with real fetch when API is ready
-const MOCK_ENGAGEMENT = {
-  clientName: "Acme Corporation",
-  projectName: "Website Redesign",
-  techStack: "DRUPAL_NEXTJS",
-  status: "IN_PROGRESS",
-}
-
 const TECH_STACK_LABELS: Record<string, string> = {
   DRUPAL: "Drupal",
   DRUPAL_NEXTJS: "Drupal + Next.js",
@@ -38,11 +30,19 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 
 const TAB_ITEMS = [
   { label: "Overview", href: "" },
+  { label: "Files", href: "/files" },
   { label: "Estimate", href: "/estimate" },
   { label: "Proposal", href: "/proposal" },
   { label: "Assumptions", href: "/assumptions" },
   { label: "Risks", href: "/risks" },
 ]
+
+interface Engagement {
+  clientName: string
+  projectName?: string | null
+  techStack: string
+  status: string
+}
 
 interface EngagementLayoutProps {
   children: React.ReactNode
@@ -52,8 +52,26 @@ interface EngagementLayoutProps {
 export default function EngagementLayout({ children, params }: EngagementLayoutProps) {
   const { id } = React.use(params)
   const pathname = usePathname()
-  const engagement = MOCK_ENGAGEMENT
   const basePath = `/engagements/${id}`
+
+  const [engagement, setEngagement] = React.useState<Engagement | null>(null)
+  const [loading, setLoading] = React.useState(true)
+
+  React.useEffect(() => {
+    fetch(`/api/engagements/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setEngagement(data))
+      .catch(() => setEngagement(null))
+      .finally(() => setLoading(false))
+  }, [id])
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">Loading engagement...</div>
+  }
+
+  if (!engagement) {
+    return <div className="flex items-center justify-center py-12 text-sm text-destructive">Engagement not found</div>
+  }
 
   return (
     <div className="flex flex-col gap-0">
