@@ -101,7 +101,9 @@ Only include if the TOR contains AI/ML requirements (chatbots, content generatio
 | **Description** | What this task delivers — 1-3 sentences |
 | **Hours** | Effort in hours — use lower end of benchmark range |
 | **Conf** | Confidence level 1-6 based on clarity of the requirement AND confidence in the proposed solution delivering the outcome |
-| **Assumptions** | All assumptions for this task, each as a CR boundary. **Source assumptions only from TOR sections/clauses or customer Q&A responses — never reference internal analysis artifacts.** |
+| **Low Hrs** | Same as Hours (optimistic base) |
+| **High Hrs** | Hours × (1 + Conf buffer %). Conf 6=0%, 5=+25%, 4=+50%, 3=+50%, 2=+75%, 1=+100% |
+| **Assumptions** | What: assumption as CR boundary, referencing TOR sections/clauses or customer Q&A. Impact if wrong: what changes in the estimate. **Never reference internal analysis artifacts.** |
 | **Proposed Solution** | Specific technical approach — name modules, packages, APIs, architecture patterns |
 | **Reference Links** | Links to contrib modules, documentation, or relevant resources |
 
@@ -112,7 +114,9 @@ Only include if the TOR contains AI/ML requirements (chatbots, content generatio
 | **Description** | Visual and functional description — layout, behavior, responsive notes |
 | **Hours** | Effort in hours — use lower end of `benchmarks/frontend-effort-ranges.md` |
 | **Conf** | Confidence level 1-6 — lower if no designs exist yet |
-| **Assumptions** | Design assumptions, interaction behavior, responsive breakpoints. **Source from TOR/Q&A only.** |
+| **Low Hrs** | Same as Hours |
+| **High Hrs** | Hours × (1 + Conf buffer %) |
+| **Assumptions** | What: design assumptions, interaction behavior, responsive breakpoints (ref TOR/Q&A). Impact if wrong: effort/scope change. |
 | **Exclusions** | What is NOT included (e.g., "Animation beyond CSS transitions", "CMS integration — see Backend tab") |
 | **Reference Links** | **Visual reference links** — URLs of similar components on comparable sites showing how this should look |
 
@@ -123,8 +127,36 @@ Only include if the TOR contains AI/ML requirements (chatbots, content generatio
 | **Description** | What this delivers — sessions, deliverables, scope |
 | **Hours** | Effort in hours |
 | **Conf** | Confidence level 1-6 |
-| **Assumptions** | Scope boundaries. **Source from TOR/Q&A only.** |
+| **Low Hrs** | Same as Hours |
+| **High Hrs** | Hours × (1 + Conf buffer %) |
+| **Assumptions** | What: scope boundaries (ref TOR/Q&A). Impact if wrong: effort/scope change. |
 | **Reference Links** | Relevant documentation or tool links |
+
+### Step 4B: Integration Tier Classification
+For every integration, classify using the tiers in `benchmarks/drupal-effort-ranges.md`:
+- **T1 — Simple** (8-16h): One-way REST, well-documented API, no auth complexity
+- **T2 — Standard** (16-32h): Auth required, field mapping, error handling
+- **T3 — Complex** (32-60h): Bidirectional, real-time, poorly documented API
+
+State the tier in the Description column. If API docs are unknown, bump up one tier.
+
+### Step 4C: Always-Include Task Validation
+Before generating the estimate, verify these tasks are present (from `benchmarks/drupal-effort-ranges.md`):
+
+**Backend (always-include):**
+- [ ] Discovery & Requirements Analysis (8-16h)
+- [ ] Environment Setup (6-12h)
+- [ ] Drupal Installation & Base Configuration (4-8h)
+- [ ] Configuration Management Setup (4-6h)
+- [ ] Roles & Permissions (4-8h)
+- [ ] Media Library Setup (3-6h)
+- [ ] Deployment Pipeline (4-8h)
+- [ ] QA, Bug Fixes & Stabilisation (10-15% of total)
+
+**Frontend (always-include):**
+- [ ] Design System Setup (create new or reuse existing)
+
+If any is missing, add it. These are non-negotiable baseline tasks.
 
 ### Step 5: Confidence (Conf) Guidelines
 Assign Conf values judiciously based on:
@@ -148,24 +180,46 @@ Before finalizing, verify against CARL presales rules:
 - [ ] All TOR requirements mapped to estimate line items across correct tabs (no GAPS)
 - [ ] Each line item placed in correct tab (Backend/Frontend need QA+PM; Fixed Cost = no QA/PM)
 - [ ] Conf values assigned to every line item (1-6 scale)
-- [ ] Frontend estimated at component level with visual reference links
+- [ ] Low Hrs / High Hrs computed using Conf buffer formula for every line item
+- [ ] All Conf ≤ 4 items listed in Risk Register with open questions and de-risk actions
+- [ ] Always-include Backend tasks present (see Step 4C)
+- [ ] Frontend estimated at component level with visual reference links and Exclusions column
 - [ ] Design system creation or reuse line item included in Frontend tab
+- [ ] Integrations classified by tier (T1/T2/T3) with tier stated in Description
 - [ ] Common Fixed Cost categories included: Discovery, Onboarding, Deployment, Documentation, Training, UAT, Warranty, Environments
 - [ ] No development tasks in Fixed Cost Items
 - [ ] Effort figures within benchmark ranges (lower end acceptable, below range NOT acceptable)
-- [ ] All assumptions documented separately and sourced from TOR/Q&A only
+- [ ] All assumptions documented with TOR/Q&A reference AND impact-if-wrong
 
 ### Step 7: Output
 1. Generate `estimates/optimistic-estimate.md` using `templates/optimistic-estimate-template.md`
-2. Run the Excel population script:
+2. Generate state file `estimates/[CLIENT_NAME]-estimate-state.md` with `<!-- OPTIMISTIC-ESTIMATE-STATE -->` marker (see template for structure)
+3. Run the Excel population script:
    ```bash
    python3 scripts/populate-estimate-xlsx.py estimates/optimistic-estimate.md
    ```
-3. Report summary: total hours per tab, category breakdown, assumption count, confidence assessment
+4. Report summary: Low/High/Avg hours per tab, category breakdown, assumption count, risk register count, confidence assessment
 
 ### Step 8: Suggest Next Steps
 - Recommend running `/tech-proposal` to generate the client-facing proposal document
+- If clarification questions were generated, instruct: "Fill in answers in the state file, then re-run `/optimistic-estimate estimates/[CLIENT_NAME]-estimate-state.md` to refine"
 - Suggest storing learnings via claude-mem for future engagements
+
+## Resume Mode
+
+If `$ARGUMENTS` points to a file containing `<!-- OPTIMISTIC-ESTIMATE-STATE -->` at the top, this is a **resume session**:
+
+1. Read the full state file
+2. Identify which clarification questions have been answered (Answer ≠ `PENDING`)
+3. For each answered question, re-evaluate affected tasks:
+   - Answer reduces uncertainty → raise Conf, recalculate Low/High Hrs
+   - Answer reveals complexity → adjust hours upward, keep or lower Conf
+4. Regenerate the full estimate with updated numbers
+5. Update Risk Register — remove resolved items
+6. Overwrite the state file with updated estimate
+7. Re-run the Excel population script
+
+Present a **"What Changed"** summary before the updated tables.
 
 ## Important Rules
 
@@ -178,3 +232,9 @@ Before finalizing, verify against CARL presales rules:
 7. **Frontend = component level** — never group frontend as "theming: 200 hours". Break into individual components with visual references.
 8. **Design system is mandatory** — always include either creating a design system or integrating an existing one. This is not optional.
 9. **Conf reflects solution confidence** — don't default everything to 5. Use the full range based on requirement clarity AND confidence in the technical approach.
+10. **Conf drives buffer math** — every line item needs Low Hrs and High Hrs computed from the Conf buffer formula. This is not optional.
+11. **Risk Register is mandatory** — every Conf ≤ 4 item MUST appear in the Risk Register with an open question that would resolve the uncertainty.
+12. **Always-include tasks are non-negotiable** — if any of the 8 mandatory Backend tasks or the Design System Frontend task is missing, add it before finalizing.
+13. **Integration tiers standardize effort** — classify every integration as T1/T2/T3 and state the tier in the Description column. Don't estimate integrations without tier classification.
+14. **Assumptions need impact analysis** — every assumption must include "Impact if wrong:" stating what changes in the estimate. TOR/Q&A sourcing requirement still applies.
+15. **State file enables iteration** — always write a state file alongside the estimate. This allows refinement when clarification answers arrive.

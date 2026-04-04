@@ -12,9 +12,9 @@ Tab detection: The script looks for '# Backend Tab', '# Frontend Tab',
 '# Fixed Cost Items Tab', and '# AI Tab' section headers in the markdown.
 
 Column mappings per tab:
-    Backend:          B=Task, C=Description, E=Hours, F=Conf, I=Assumptions, J=Proposed Solution, K=Reference Links
-    Frontend:         B=Task, C=Description, E=Hours, F=Conf, I=Assumptions, J=Exclusions, K=Reference Links
-    Fixed Cost Items: B=Task, C=Description, E=Hours, F=Conf, K=Assumptions, M=Reference Links
+    Backend:          B=Task, C=Description, E=Hours, F=Conf, G=Low Hrs, H=High Hrs, I=Assumptions, J=Proposed Solution, K=Reference Links
+    Frontend:         B=Task, C=Description, E=Hours, F=Conf, G=Low Hrs, H=High Hrs, I=Assumptions, J=Exclusions, K=Reference Links
+    Fixed Cost Items: B=Task, C=Description, E=Hours, F=Conf, G=Low Hrs, H=High Hrs, K=Assumptions, M=Reference Links
     AI:               (same as Backend if sheet exists)
 
 Row 6 = header row, data starts at row 7 in all tabs.
@@ -38,6 +38,8 @@ TAB_COLUMNS = {
         'description': 3, # C
         'hours': 5,       # E
         'conf': 6,        # F
+        'low_hrs': 7,     # G
+        'high_hrs': 8,    # H
         'assumptions': 9, # I
         'solution': 10,   # J (Proposed Solution)
         'links': 11,      # K
@@ -47,6 +49,8 @@ TAB_COLUMNS = {
         'description': 3, # C
         'hours': 5,       # E
         'conf': 6,        # F
+        'low_hrs': 7,     # G
+        'high_hrs': 8,    # H
         'assumptions': 9, # I
         'exclusions': 10, # J (Exclusions)
         'links': 11,      # K
@@ -56,6 +60,8 @@ TAB_COLUMNS = {
         'description': 3,  # C
         'hours': 5,        # E
         'conf': 6,         # F
+        'low_hrs': 7,      # G
+        'high_hrs': 8,     # H
         'assumptions': 11, # K
         'links': 13,       # M
     },
@@ -112,18 +118,18 @@ def _parse_tab_section(tab_name: str, content: str) -> list[dict]:
         current_domain = title
 
         # Determine number of expected columns based on tab
-        # Backend/AI: Task | Description | Hours | Conf | Assumptions | Proposed Solution | Reference Links (7 cols)
-        # Frontend: Task | Description | Hours | Conf | Assumptions | Exclusions | Reference Links (7 cols)
-        # Fixed Cost: Task | Description | Hours | Conf | Assumptions | Reference Links (6 cols)
+        # Backend/AI: Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links (9 cols)
+        # Frontend: Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links (9 cols)
+        # Fixed Cost: Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Reference Links (8 cols)
 
         if tab_name == 'Fixed Cost Items':
             row_pattern = re.compile(
-                r'^\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]*)\|$',
+                r'^\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]*)\|$',
                 re.MULTILINE,
             )
         else:
             row_pattern = re.compile(
-                r'^\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]*)\|$',
+                r'^\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]*)\|$',
                 re.MULTILINE,
             )
 
@@ -152,28 +158,44 @@ def _parse_tab_section(tab_name: str, content: str) -> list[dict]:
             if hours == 0 and not description:
                 continue
 
+            # Parse Low Hrs and High Hrs (groups 5 and 6 in all tabs)
+            low_hrs_str = match.group(5).strip()
+            high_hrs_str = match.group(6).strip()
+            try:
+                low_hrs = float(low_hrs_str)
+            except ValueError:
+                low_hrs = hours
+            try:
+                high_hrs = float(high_hrs_str)
+            except ValueError:
+                high_hrs = hours
+
             if tab_name == 'Fixed Cost Items':
-                assumptions = match.group(5).strip()
-                links = match.group(6).strip()
+                assumptions = match.group(7).strip()
+                links = match.group(8).strip()
                 rows.append({
                     'domain': current_domain,
                     'task': task,
                     'description': description,
                     'hours': hours,
                     'conf': conf,
+                    'low_hrs': low_hrs,
+                    'high_hrs': high_hrs,
                     'assumptions': assumptions.replace('<br>', '\n'),
                     'links': links,
                 })
             else:
-                assumptions = match.group(5).strip()
-                col6 = match.group(6).strip()  # Proposed Solution or Exclusions
-                links = match.group(7).strip()
+                assumptions = match.group(7).strip()
+                col6 = match.group(8).strip()  # Proposed Solution or Exclusions
+                links = match.group(9).strip()
                 rows.append({
                     'domain': current_domain,
                     'task': task,
                     'description': description,
                     'hours': hours,
                     'conf': conf,
+                    'low_hrs': low_hrs,
+                    'high_hrs': high_hrs,
                     'assumptions': assumptions.replace('<br>', '\n'),
                     'col6': col6,  # Proposed Solution (Backend/AI) or Exclusions (Frontend)
                     'links': links,
@@ -209,6 +231,8 @@ def populate_tab(wb, tab_name: str, rows: list[dict]) -> None:
         ws.cell(row=row_idx, column=col_map['description'], value=item['description'])
         ws.cell(row=row_idx, column=col_map['hours'], value=item['hours'])
         ws.cell(row=row_idx, column=col_map['conf'], value=item['conf'])
+        ws.cell(row=row_idx, column=col_map['low_hrs'], value=item.get('low_hrs', item['hours']))
+        ws.cell(row=row_idx, column=col_map['high_hrs'], value=item.get('high_hrs', item['hours']))
         ws.cell(row=row_idx, column=col_map['assumptions'], value=item['assumptions'])
 
         # Tab-specific columns
@@ -222,7 +246,10 @@ def populate_tab(wb, tab_name: str, rows: list[dict]) -> None:
 
         row_idx += 1
 
-    print(f"  {tab_name}: {len(rows)} line items, {sum(r['hours'] for r in rows)} hours")
+    low_total = sum(r.get('low_hrs', r['hours']) for r in rows)
+    high_total = sum(r.get('high_hrs', r['hours']) for r in rows)
+    avg_total = (low_total + high_total) / 2 if rows else 0
+    print(f"  {tab_name}: {len(rows)} line items, Low={low_total}h / High={high_total}h / Avg={avg_total}h")
 
 
 def populate_xlsx(tab_data: dict[str, list[dict]], xlsx_path: str) -> str:
@@ -274,11 +301,16 @@ def main():
     output_path = populate_xlsx(tab_data, xlsx_path)
     print(f"\nOutput saved to: {output_path}")
 
-    total_hours = sum(
-        sum(r['hours'] for r in rows)
+    total_low = sum(
+        sum(r.get('low_hrs', r['hours']) for r in rows)
         for rows in tab_data.values()
     )
-    print(f"Total hours: {total_hours}")
+    total_high = sum(
+        sum(r.get('high_hrs', r['hours']) for r in rows)
+        for rows in tab_data.values()
+    )
+    total_avg = (total_low + total_high) / 2
+    print(f"Total: Low={total_low}h / High={total_high}h / Avg={total_avg}h")
 
 
 if __name__ == '__main__':

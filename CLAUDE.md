@@ -85,10 +85,16 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - Design system creation or reuse is always included in Frontend tab
 - When designs are unavailable, visual reference links to similar components on comparable sites are mandatory
 - Conf (1-6) assigned per line item reflecting requirement clarity and solution confidence
+- Conf buffer formula computes Low Hrs / High Hrs per line item (Conf 6=0%, 5=+25%, 4=+50%, 3=+50%, 2=+75%, 1=+100%)
+- Risk Register generated for all Conf ≤ 4 items with open questions and de-risk actions
+- Integration tiers (T1/T2/T3) classify integrations by complexity with standardized effort ranges
+- Always-include Backend tasks validated (Discovery, Environment, Install, CMI, Roles, Media, Deployment, QA)
+- State file written for iterative refinement when clarification answers arrive
 - Populate QED42 Excel template all tabs via `scripts/populate-estimate-xlsx.py`
 - Generate client-facing Technical Proposal Document
-- Output: `estimates/optimistic-estimate.md`, `claude-artefacts/technical-proposal.md`, populated Excel template
+- Output: `estimates/optimistic-estimate.md`, `estimates/[CLIENT]-estimate-state.md`, `claude-artefacts/technical-proposal.md`, populated Excel template
 - After Phase 1A, can optionally flow to Phase 3 (estimate review) for validation
+- State file can be resumed: fill in PENDING answers, re-run `/optimistic-estimate [state-file-path]`
 
 ### Phase 2: Response Integration
 **Trigger:** Customer responses placed in `responses_qna/`
@@ -152,9 +158,14 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - Verify estimates are organized into correct tabs (Backend/Frontend/Fixed Cost Items/AI)
 - Verify Backend/Frontend items are development tasks needing QA+PM (auto-calculated in sheet)
 - Verify Fixed Cost Items are operational/admin tasks NOT needing QA or PM (deployment, docs, training, onboarding)
-- Verify Frontend estimates are at component level with visual reference links
+- Verify Frontend estimates are at component level with visual reference links and Exclusions column
 - Verify a Design System line item exists in Frontend tab
 - Verify Conf (1-6) is assigned to every line item
+- Verify Low Hrs / High Hrs computed using Conf buffer formula (Conf 6=0%, 5=+25%, 4=+50%, 3=+50%, 2=+75%, 1=+100%)
+- Verify all Conf ≤ 4 items appear in Risk Register with open questions and de-risk actions
+- Verify always-include Backend tasks present: Discovery, Environment Setup, Base Config, CMI, Roles & Permissions, Media Library, Deployment Pipeline, QA/Stabilisation
+- Verify integrations classified by tier (T1/T2/T3) per `benchmarks/drupal-effort-ranges.md`
+- Verify assumptions include impact-if-wrong alongside TOR/Q&A references
 - Check for common estimation gaps: deployment/DevOps, content migration, training, documentation, UAT support, warranty/hypercare (in Fixed Cost Items)
 - Verify estimates account for platform-specific complexity
 - Flag any requirement covered by the TOR but missing from the estimate

@@ -91,6 +91,41 @@ Reference ranges for Drupal-specific estimation. Update with actuals via Phase 5
 
 ---
 
+## Integration Tiers
+
+Classify integrations by complexity tier to standardize estimation:
+
+| Tier | Description | Base Effort | Default Conf | Examples |
+|------|-------------|-------------|-------------|----------|
+| T1 — Simple | One-way REST push/pull, well-documented API, no auth complexity | 8-16 hours | 5 | Analytics embed, RSS feed, simple webhook, social media embed |
+| T2 — Standard | Auth required (OAuth/API key), field mapping, error handling, retry logic | 16-32 hours | 4-5 | CRM sync (HubSpot, Salesforce basic), payment gateway, email service (SendGrid), Google Maps |
+| T3 — Complex | Bidirectional sync, real-time/webhooks, poorly documented API, multi-step auth, data transformation | 32-60 hours | 4 | ERP integration (SAP), SSO (SAML/LDAP), real-time inventory sync, custom middleware layer |
+
+**Tier selection rules:**
+- If API documentation is incomplete or unknown → bump up one tier
+- If bidirectional data flow → minimum T2
+- If real-time or webhook-based → minimum T3
+- If integration requires custom middleware/proxy → add 16-24h on top of tier base
+
+---
+
+## Always-Include Tasks (Backend)
+
+These tasks MUST appear in every Drupal backend estimate. If any is missing, flag as a validation error.
+
+| Task | Effort Range | Notes |
+|------|-------------|-------|
+| Discovery & Requirements Analysis | 8-16 hours | Kickoff, TOR deep-dive, architecture decisions |
+| Environment Setup (Lando/DDEV, CI/CD) | 6-12 hours | Local dev environment + basic pipeline |
+| Drupal Installation & Base Configuration | 4-8 hours | Site install, admin config, base modules |
+| Configuration Management Setup (CMI) | 4-6 hours | Config split, environment overrides |
+| Roles & Permissions | 4-8 hours | Role definitions, content access patterns |
+| Media Library Setup | 3-6 hours | Image styles, media types, file management |
+| Deployment Pipeline | 4-8 hours | Deploy scripts, environment promotion |
+| QA, Bug Fixes & Stabilisation | 10-15% of total | End-of-sprint stabilisation, regression testing |
+
+---
+
 ## Notes
 
 - All ranges assume Drupal 10.3+ / Drupal 11. Older versions may need additional upgrade effort.
