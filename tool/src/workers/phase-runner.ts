@@ -51,10 +51,15 @@ const worker = new Worker<PhaseJobData>(
       }
 
       let finalContent: string | undefined;
+      console.log(`[phase-runner] Starting phase ${phaseNumber} for engagement ${engagementId}`);
       for await (const event of runPhase(config)) {
         await job.updateProgress(event);
         if (event.type === "complete" && event.content) {
           finalContent = event.content;
+          console.log(`[phase-runner] Phase ${phaseNumber} agent complete — finalContent: ${event.content.length} chars`);
+        }
+        if (event.type === "error") {
+          console.error(`[phase-runner] Phase ${phaseNumber} agent error: ${event.message}`);
         }
       }
 
@@ -83,12 +88,16 @@ const worker = new Worker<PhaseJobData>(
         try {
           const fileMd = await fs.readFile(`${workDir}/${relPath}`, "utf-8");
           if (fileMd.trim().length > 100) {
+            console.log(`[phase-runner] Phase ${phaseNumber} — using file ${relPath} (${fileMd.length} chars) as artefact content`);
             artefactContent = fileMd;
             break;
           }
         } catch {
-          // File doesn't exist — try next candidate
+          console.log(`[phase-runner] Phase ${phaseNumber} — file ${relPath} not found on disk`);
         }
+      }
+      if (!artefactContent) {
+        console.warn(`[phase-runner] Phase ${phaseNumber} — no file content and no finalContent`);
       }
 
       if (artefactContent) {
@@ -151,6 +160,20 @@ const worker = new Worker<PhaseJobData>(
         // Storage sync failure is non-fatal
       }
 
+      // Check if any artefact was produced — fail if not
+      const artefactCount = await prisma.phaseArtefact.count({
+        where: { phaseId },
+      });
+      if (artefactCount === 0 && !artefactContent) {
+        console.error(`[phase-runner] Phase ${phaseNumber} produced no artefact content — marking as FAILED`);
+        await prisma.phase.update({
+          where: { id: phaseId },
+          data: { status: PhaseStatus.FAILED },
+        });
+        return;
+      }
+
+      console.log(`[phase-runner] Phase ${phaseNumber} complete — ${artefactCount} artefact(s), moving to REVIEW`);
       await prisma.phase.update({
         where: { id: phaseId },
         data: {
