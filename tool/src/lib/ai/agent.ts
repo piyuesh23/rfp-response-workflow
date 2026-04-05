@@ -373,13 +373,15 @@ export async function* runPhase(
 
     let response: Anthropic.Messages.Message;
     try {
-      response = await anthropic.messages.create({
+      // Use streaming to avoid 10-minute timeout on long Opus requests
+      const stream = anthropic.messages.stream({
         model,
         max_tokens: 16384,
         system: enrichedSystemPrompt,
         tools,
         messages,
       });
+      response = await stream.finalMessage();
     } catch (err) {
       yield {
         type: "error",
@@ -471,12 +473,13 @@ export async function* runPhase(
   });
 
   try {
-    const finalResponse = await anthropic.messages.create({
+    const finalStream = anthropic.messages.stream({
       model,
       max_tokens: 16384,
       system: enrichedSystemPrompt,
       messages,
     });
+    const finalResponse = await finalStream.finalMessage();
 
     const finalText = finalResponse.content
       .filter(
