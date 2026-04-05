@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
+import * as fs from "fs/promises";
 
 // Phases that produce estimate content and should auto-generate Excel
 const ESTIMATE_PHASES = new Set(["1A", "3"]);
@@ -87,6 +88,27 @@ const worker = new Worker<PhaseJobData>(
             ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
           },
         });
+      }
+
+      // For Phase 1: also persist questions.md as a separate QUESTIONS artefact
+      // This ensures questions are in the DB regardless of S3 sync success
+      if (String(phaseNumber) === "1") {
+        try {
+          const questionsPath = `/data/engagements/${engagementId}/initial_questions/questions.md`;
+          const questionsMd = await fs.readFile(questionsPath, "utf-8");
+          if (questionsMd.trim()) {
+            await prisma.phaseArtefact.create({
+              data: {
+                phaseId,
+                artefactType: ArtefactType.QUESTIONS,
+                version: 1,
+                contentMd: questionsMd,
+              },
+            });
+          }
+        } catch {
+          // questions.md may not exist — non-fatal
+        }
       }
 
       // Auto-generate Excel for estimation phases and upload to MinIO

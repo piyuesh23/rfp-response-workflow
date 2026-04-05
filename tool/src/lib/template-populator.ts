@@ -239,36 +239,51 @@ ${questionsMarkdown.slice(0, 15000)}
 Respond ONLY with valid JSON in this format:
 { "questions": [ { "topic": "...", "torReference": "...", "question": "...", "impact": "...", "comments": "..." } ] }`;
 
-  try {
-    const anthropic = new Anthropic();
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8000,
-      messages: [{ role: "user", content: prompt }],
-    });
+  const anthropic = new Anthropic();
+  const maxAttempts = 2;
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 8000,
+        messages: [{ role: "user", content: prompt }],
+      });
 
-    // Extract JSON - handle cases where AI wraps in code blocks or adds preamble
-    let jsonStr = text;
-    const jsonMatch = text.match(/\{[\s\S]*"questions"[\s\S]*\}/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[0];
-    } else {
-      jsonStr = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+
+      // Extract JSON - handle cases where AI wraps in code blocks or adds preamble
+      let jsonStr = text;
+      const jsonMatch = text.match(/\{[\s\S]*"questions"[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      } else {
+        jsonStr = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+      }
+
+      const parsed = JSON.parse(jsonStr) as { questions: RewrittenQuestion[] };
+      const questions = parsed.questions ?? [];
+      console.log(`[template-populator] AI rewrote ${questions.length} questions for RFP (attempt ${attempt})`);
+      return questions;
+    } catch (err) {
+      const isTransient =
+        err instanceof Error &&
+        (/timeout|rate.?limit|5\d\d|overloaded|connection/i.test(err.message));
+      console.error(
+        `[template-populator] rewriteQuestionsForRfp attempt ${attempt}/${maxAttempts} failed:`,
+        err instanceof Error ? err.message : err
+      );
+      if (!isTransient || attempt === maxAttempts) {
+        return [];
+      }
+      // Brief pause before retry
+      await new Promise((r) => setTimeout(r, 2000));
     }
-
-    const parsed = JSON.parse(jsonStr) as { questions: RewrittenQuestion[] };
-    const questions = parsed.questions ?? [];
-    console.log(`[template-populator] AI rewrote ${questions.length} questions for RFP`);
-    return questions;
-  } catch (err) {
-    console.error("[template-populator] rewriteQuestionsForRfp failed:", err);
-    return [];
   }
+  return [];
 }
 
 /**
@@ -802,19 +817,43 @@ export async function populateTemplateAfterPhase1(
   });
   if (salesOk) status.salesDetail = true;
 
-  // Find questions markdown from S3 (AI writes directly to disk during phase execution)
+  // Find questions markdown — try DB first (most reliable), then S3, then TOR assessment extraction
   let questionsMd: string | undefined;
+
+  // Source 1: QUESTIONS artefact stored in DB (persisted by phase-runner after Phase 1)
   try {
-    const fileBuffer = await downloadFile(
-      `engagements/${engagementId}/initial_questions/questions.md`
-    );
-    questionsMd = fileBuffer.toString("utf-8");
-    console.log(`[template-populator] Found questions.md (${questionsMd.length} chars)`);
-  } catch (err) {
-    console.log(`[template-populator] questions.md not found in S3, trying TOR assessment artefact`);
-    // Try extracting questions section from the TOR assessment artefact content
-    if (torContent && torContent.includes("larifying")) {
-      // The TOR assessment often contains a "Clarifying Questions" section
+    const questionsArtefact = await prisma.phaseArtefact.findFirst({
+      where: {
+        phase: { engagementId, phaseNumber: "1" },
+        artefactType: "QUESTIONS",
+      },
+      orderBy: { version: "desc" },
+      select: { contentMd: true },
+    });
+    if (questionsArtefact?.contentMd?.trim()) {
+      questionsMd = questionsArtefact.contentMd;
+      console.log(`[template-populator] Found QUESTIONS artefact in DB (${questionsMd.length} chars)`);
+    }
+  } catch {
+    // DB query failure — fall through to S3
+  }
+
+  // Source 2: questions.md file from S3
+  if (!questionsMd) {
+    try {
+      const fileBuffer = await downloadFile(
+        `engagements/${engagementId}/initial_questions/questions.md`
+      );
+      questionsMd = fileBuffer.toString("utf-8");
+      console.log(`[template-populator] Found questions.md in S3 (${questionsMd.length} chars)`);
+    } catch {
+      console.log(`[template-populator] questions.md not found in S3`);
+    }
+  }
+
+  // Source 3: Extract from TOR assessment artefact content
+  if (!questionsMd) {
+    if (torContent && torContent.toLowerCase().includes("clarifying")) {
       const questionsStart = torContent.search(/#+\s*[Cc]larifying\s+[Qq]uestions/);
       if (questionsStart >= 0) {
         questionsMd = torContent.slice(questionsStart);
