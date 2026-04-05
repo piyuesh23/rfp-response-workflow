@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { getNextPhases, getPhaseLabel } from "@/lib/phase-chain";
 import { populateTemplateAfterPhase1, populateTemplateAfterEstimate } from "@/lib/template-populator";
 import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
+import { downloadFile } from "@/lib/storage";
 import type { WorkflowPath } from "@/lib/phase-chain";
 
 export async function POST(
@@ -73,14 +74,50 @@ export async function POST(
     label: getPhaseLabel(num),
   }));
 
-  // Re-extract metadata if artefact has content but zero/missing metadata
+  // Fix artefact content if it's a summary instead of actual output.
+  // The agentic loop captures Claude's final text (a summary) as contentMd,
+  // but the real content was written to files via tool calls. Repair it here.
+  const engagementId = phase.engagement.id;
+  const isEstimatePhase = phase.phaseNumber === "1A" || phase.phaseNumber === "3";
+
   try {
     const artefacts = await prisma.phaseArtefact.findMany({
       where: { phaseId: id },
-      select: { id: true, contentMd: true, metadata: true },
+      select: { id: true, artefactType: true, contentMd: true, metadata: true },
     });
+
     for (const artefact of artefacts) {
       if (!artefact.contentMd) continue;
+
+      let contentMd = artefact.contentMd;
+      let contentUpdated = false;
+
+      // For ESTIMATE artefacts: check if contentMd is just a summary (no table headers)
+      if (artefact.artefactType === "ESTIMATE" && isEstimatePhase) {
+        const hasEstimateTables = /^#\s+(Backend|Frontend|Fixed Cost)/im.test(contentMd);
+        if (!hasEstimateTables) {
+          // Try to read actual estimate file from S3
+          const s3Candidates = [
+            `engagements/${engagementId}/estimates/optimistic-estimate.md`,
+            `engagements/${engagementId}/estimates/revised-estimate.md`,
+          ];
+          for (const candidate of s3Candidates) {
+            try {
+              const buf = await downloadFile(candidate);
+              const fileContent = buf.toString("utf-8");
+              if (/^#\s+(Backend|Frontend|Fixed Cost)/im.test(fileContent)) {
+                contentMd = fileContent;
+                contentUpdated = true;
+                break;
+              }
+            } catch {
+              // Try next candidate
+            }
+          }
+        }
+      }
+
+      // Re-extract metadata if missing/zero or content was updated
       const meta = artefact.metadata as Record<string, unknown> | null;
       const hasZeroHours =
         !meta ||
@@ -90,23 +127,26 @@ export async function POST(
           (meta.totalHours as { high?: number }).high === 0);
       const hasMissingMeta = !meta || Object.keys(meta).length === 0;
 
-      if (hasZeroHours || hasMissingMeta) {
-        const freshMeta = extractMetadataForPhase(phase.phaseNumber, artefact.contentMd);
-        if (freshMeta) {
+      if (contentUpdated || hasZeroHours || hasMissingMeta) {
+        const freshMeta = extractMetadataForPhase(phase.phaseNumber, contentMd);
+        const updateData: Record<string, unknown> = {};
+        if (contentUpdated) updateData.contentMd = contentMd;
+        if (freshMeta) updateData.metadata = freshMeta as unknown as Record<string, never>;
+
+        if (Object.keys(updateData).length > 0) {
           await prisma.phaseArtefact.update({
             where: { id: artefact.id },
-            data: { metadata: freshMeta as unknown as Record<string, never> },
+            data: updateData,
           });
         }
       }
     }
   } catch {
-    // Metadata re-extraction failure is non-fatal
+    // Artefact repair failure is non-fatal
   }
 
   // Populate Master Template tabs based on which phase was approved
   // Awaited so templateStatus is updated before the client fetches engagement data
-  const engagementId = phase.engagement.id;
   try {
     if (phase.phaseNumber === "1") {
       await populateTemplateAfterPhase1(engagementId);

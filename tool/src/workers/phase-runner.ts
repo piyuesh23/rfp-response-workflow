@@ -2,17 +2,11 @@ import { Worker } from "bullmq";
 import { runPhase, prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
-import { parseEstimateMarkdown, estimateDataToExcelTabs } from "@/lib/estimate-parser";
-import { generateEstimateXlsx } from "@/lib/excel-export";
-import { uploadFile } from "@/lib/storage";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
 import * as fs from "fs/promises";
-
-// Phases that produce estimate content and should auto-generate Excel
-const ESTIMATE_PHASES = new Set(["1A", "3"]);
 
 // Map phase numbers to their primary artefact type
 const PHASE_ARTEFACT_TYPE: Record<string, ArtefactType> = {
@@ -65,8 +59,40 @@ const worker = new Worker<PhaseJobData>(
       }
 
       // Persist artefact if the phase produced content
-      if (finalContent) {
-        const artefactType = PHASE_ARTEFACT_TYPE[String(phaseNumber)] ?? ArtefactType.RESEARCH;
+      // The agentic loop's finalContent is Claude's summary text.
+      // The actual artefact content is written to files via tool calls.
+      // We prefer the file content over the summary for DB storage.
+      const phaseStr = String(phaseNumber);
+      const workDir = `/data/engagements/${engagementId}`;
+
+      // Map phases to their primary output file paths (in priority order)
+      const PHASE_OUTPUT_FILES: Record<string, string[]> = {
+        "0": ["research/customer-research.md"],
+        "1": ["claude-artefacts/tor-assessment.md"],
+        "1A": ["estimates/optimistic-estimate.md"],
+        "2": ["claude-artefacts/response-analysis.md"],
+        "3": ["estimates/revised-estimate.md", "estimates/optimistic-estimate.md"],
+        "3R": ["claude-artefacts/gap-analysis.md"],
+        "5": ["claude-artefacts/technical-proposal.md"],
+      };
+
+      // Try to read the actual file content; fall back to finalContent (summary)
+      let artefactContent = finalContent;
+      const outputFiles = PHASE_OUTPUT_FILES[phaseStr] ?? [];
+      for (const relPath of outputFiles) {
+        try {
+          const fileMd = await fs.readFile(`${workDir}/${relPath}`, "utf-8");
+          if (fileMd.trim().length > 100) {
+            artefactContent = fileMd;
+            break;
+          }
+        } catch {
+          // File doesn't exist — try next candidate
+        }
+      }
+
+      if (artefactContent) {
+        const artefactType = PHASE_ARTEFACT_TYPE[phaseStr] ?? ArtefactType.RESEARCH;
 
         // Determine next version number
         const latestArtefact = await prisma.phaseArtefact.findFirst({
@@ -76,15 +102,15 @@ const worker = new Worker<PhaseJobData>(
         });
         const nextVersion = (latestArtefact?.version ?? 0) + 1;
 
-        // Extract structured metadata from the markdown content
-        const metadata = extractMetadataForPhase(String(phaseNumber), finalContent);
+        // Extract structured metadata from the actual content (not summary)
+        const metadata = extractMetadataForPhase(phaseStr, artefactContent);
 
         await prisma.phaseArtefact.create({
           data: {
             phaseId,
             artefactType,
             version: nextVersion,
-            contentMd: finalContent,
+            contentMd: artefactContent,
             ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
           },
         });
@@ -108,40 +134,6 @@ const worker = new Worker<PhaseJobData>(
           }
         } catch {
           // questions.md may not exist — non-fatal
-        }
-      }
-
-      // Auto-generate Excel for estimation phases and upload to MinIO
-      if (finalContent && ESTIMATE_PHASES.has(String(phaseNumber))) {
-        try {
-          const clientName = engagementData?.clientName ?? "engagement";
-          const estimateData = parseEstimateMarkdown(finalContent);
-          const tabs = estimateDataToExcelTabs(estimateData);
-          const excelBuffer = await generateEstimateXlsx(tabs, clientName);
-          const safeClientName = clientName.replace(/[^a-zA-Z0-9-_]/g, "-");
-          const s3Key = `engagements/${engagementId}/estimates/${safeClientName}-estimate.xlsx`;
-          await uploadFile(
-            s3Key,
-            excelBuffer,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          );
-
-          // Save a reference artefact for the Excel file
-          await prisma.phaseArtefact.create({
-            data: {
-              phaseId,
-              artefactType: ArtefactType.ESTIMATE_STATE,
-              version: 1,
-              fileUrl: s3Key,
-            },
-          });
-
-          await job.updateProgress({
-            type: "progress",
-            message: `Generated Excel estimate: ${safeClientName}-estimate.xlsx`,
-          });
-        } catch {
-          // Excel generation failure is non-fatal
         }
       }
 

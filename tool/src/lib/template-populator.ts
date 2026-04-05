@@ -918,19 +918,36 @@ export async function populateTemplateAfterEstimate(
     },
   });
 
-  let estimateMd = phase?.artefacts[0]?.contentMd;
-  if (!estimateMd) {
-    try {
-      const fileBuffer = await downloadFile(
-        `engagements/${engagementId}/estimates/optimistic-estimate.md`
-      );
-      estimateMd = fileBuffer.toString("utf-8");
-    } catch {
-      return; // No estimate content available
+  let estimateMd = phase?.artefacts[0]?.contentMd ?? undefined;
+
+  // Validate that the content actually contains estimate tables (not just a summary)
+  const hasEstimateTables = estimateMd && /^#\s+(Backend|Frontend|Fixed Cost)/im.test(estimateMd);
+
+  if (!hasEstimateTables) {
+    console.log(`[template-populator] DB artefact has no estimate tables (${estimateMd?.length ?? 0} chars), trying S3 files`);
+    const s3Candidates = [
+      `engagements/${engagementId}/estimates/optimistic-estimate.md`,
+      `engagements/${engagementId}/estimates/revised-estimate.md`,
+    ];
+    for (const candidate of s3Candidates) {
+      try {
+        const fileBuffer = await downloadFile(candidate);
+        const content = fileBuffer.toString("utf-8");
+        if (/^#\s+(Backend|Frontend|Fixed Cost)/im.test(content)) {
+          estimateMd = content;
+          console.log(`[template-populator] Found estimate tables in S3: ${candidate} (${content.length} chars)`);
+          break;
+        }
+      } catch {
+        // Try next candidate
+      }
     }
   }
 
-  if (!estimateMd) return;
+  if (!estimateMd || !/^#\s+(Backend|Frontend|Fixed Cost)/im.test(estimateMd)) {
+    console.log(`[template-populator] No valid estimate content found - skipping estimate tabs`);
+    return;
+  }
 
   const status = (engagement.templateStatus as TemplateStatus) ?? {};
   const tabResults = populateEstimateTabs(workbook, estimateMd);
