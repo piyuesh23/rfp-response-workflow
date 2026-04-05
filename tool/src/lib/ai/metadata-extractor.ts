@@ -323,31 +323,92 @@ export function extractEstimateMetadata(contentMd: string): EstimateMetadata {
   return parseEstimateFromLineItems(contentMd);
 }
 
+/** Classify a clarity rating string into a breakdown bucket. */
+function classifyClarity(
+  rating: string,
+  breakdown: AssessmentMetadata["clarityBreakdown"]
+): void {
+  const clarity = rating.toLowerCase().trim();
+  if (clarity.includes("clear") && !clarity.includes("needs")) {
+    breakdown.clear++;
+  } else if (clarity.includes("needs")) {
+    breakdown.needsClarification++;
+  } else if (clarity.includes("ambiguous")) {
+    breakdown.ambiguous++;
+  } else if (clarity.includes("missing")) {
+    breakdown.missingDetail++;
+  } else if (clarity.length > 0) {
+    breakdown.needsClarification++;
+  }
+}
+
 export function extractAssessmentMetadata(contentMd: string): AssessmentMetadata {
   const result: AssessmentMetadata = {
     requirementCount: 0,
     clarityBreakdown: { clear: 0, needsClarification: 0, ambiguous: 0, missingDetail: 0 },
   };
 
-  // Parse the Requirements Assessment table
+  // Strategy 1: Parse "## Requirements Assessment" single table
   const rows = parseTableRows(contentMd, /^##\s+Requirements\s+Assessment/i);
-
   for (const row of rows) {
-    // Clarity Rating is typically column index 3
-    const clarity = (row[3] ?? "").toLowerCase().trim();
+    const clarity = (row[3] ?? "").trim();
+    if (!clarity) continue;
     result.requirementCount++;
+    classifyClarity(clarity, result.clarityBreakdown);
+  }
 
-    if (clarity.includes("clear") && !clarity.includes("needs")) {
-      result.clarityBreakdown.clear++;
-    } else if (clarity.includes("needs clarification")) {
-      result.clarityBreakdown.needsClarification++;
-    } else if (clarity.includes("ambiguous")) {
-      result.clarityBreakdown.ambiguous++;
-    } else if (clarity.includes("missing")) {
-      result.clarityBreakdown.missingDetail++;
-    } else {
-      // Default: needs clarification
-      result.clarityBreakdown.needsClarification++;
+  // Strategy 2: Parse all tables under "## Requirements Analysis by Domain"
+  // Each domain has its own ### sub-heading with a table containing Clarity Rating
+  if (result.requirementCount === 0) {
+    const lines = contentMd.split("\n");
+    let inSection = false;
+    let inTable = false;
+    let clarityColIdx = -1;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // Enter the Requirements Analysis section
+      if (/^##\s+Requirements\s+Analysis/i.test(trimmed)) {
+        inSection = true;
+        continue;
+      }
+
+      // Exit on next ## heading (but not ### sub-headings)
+      if (inSection && /^##\s+[^#]/.test(trimmed) && !/^##\s+Requirements/i.test(trimmed)) {
+        break;
+      }
+
+      if (!inSection) continue;
+
+      // New sub-section table — reset table state
+      if (/^###\s+/.test(trimmed)) {
+        inTable = false;
+        clarityColIdx = -1;
+        continue;
+      }
+
+      // Detect table header with Clarity Rating
+      if (trimmed.startsWith("|") && trimmed.toLowerCase().includes("clarity") && clarityColIdx < 0) {
+        const headers = trimmed.split("|").slice(1, -1).map((h) => h.trim().toLowerCase());
+        clarityColIdx = headers.findIndex((h) => h.includes("clarity"));
+        continue;
+      }
+
+      // Skip separator
+      if (/^\|[\s-:|]+\|$/.test(trimmed)) {
+        if (clarityColIdx >= 0) inTable = true;
+        continue;
+      }
+
+      // Parse data row
+      if (inTable && clarityColIdx >= 0 && trimmed.startsWith("|")) {
+        const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
+        const clarity = cells[clarityColIdx] ?? "";
+        if (!clarity || clarity.startsWith("---")) continue;
+        result.requirementCount++;
+        classifyClarity(clarity, result.clarityBreakdown);
+      }
     }
   }
 
