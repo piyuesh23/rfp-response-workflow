@@ -503,8 +503,42 @@ interface EstimateRow {
 }
 
 /**
+ * Detect column positions from a markdown table header row.
+ * Returns indices keyed by semantic name, or -1 if not found.
+ */
+function findEstimateColumnIndices(headerCells: string[]): {
+  task: number;
+  description: number;
+  hours: number;
+  conf: number;
+  low: number;
+  high: number;
+  assumptions: number;
+  solutionOrExclusions: number;
+  links: number;
+} {
+  const h = headerCells.map((c) => c.toLowerCase().trim());
+  return {
+    task: h.findIndex((c) => c === "task" || c.includes("module")),
+    description: h.findIndex((c) => c.includes("description")),
+    hours: h.findIndex((c) => c === "hours"),
+    conf: h.findIndex((c) => c === "conf"),
+    low: h.findIndex((c) => c.includes("low")),
+    high: h.findIndex((c) => c.includes("high")),
+    assumptions: h.findIndex((c) => c.includes("assumption")),
+    solutionOrExclusions: h.findIndex(
+      (c) => c.includes("solution") || c.includes("exclusion") || c.includes("proposed")
+    ),
+    links: h.findIndex(
+      (c) => c.includes("link") || c.includes("reference") || c.includes("url")
+    ),
+  };
+}
+
+/**
  * Parses estimate markdown into tab-separated row lists.
- * Compatible with the format produced by Phase 1A and Phase 3.
+ * Uses flexible header-based column detection instead of rigid regex.
+ * Compatible with any column count produced by Phase 1A and Phase 3.
  */
 function parseEstimateTabSections(markdown: string): Record<string, EstimateRow[]> {
   const result: Record<string, EstimateRow[]> = {};
@@ -538,56 +572,64 @@ function parseEstimateTabSections(markdown: string): Record<string, EstimateRow[
       if (skipSections.has(title)) continue;
       currentDomain = title;
 
-      // Match table rows
-      const isFixedCost = tabName === "Fixed Cost Items";
-      const rowRegex = isFixedCost
-        ? /^\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]*)\|$/gm
-        : /^\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]*)\|$/gm;
+      let cols: ReturnType<typeof findEstimateColumnIndices> | null = null;
+      let inTable = false;
 
-      for (const match of sub.matchAll(rowRegex)) {
-        const task = match[1].trim();
-        const description = match[2].trim();
-        const hoursStr = match[3].trim();
-        const confStr = match[4].trim();
+      for (const line of subLines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("|")) continue;
+
+        const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
+
+        // Detect header row (contains "Task" or "Hours")
+        if (!cols && (trimmed.toLowerCase().includes("task") || trimmed.toLowerCase().includes("hours"))) {
+          cols = findEstimateColumnIndices(cells);
+          inTable = false;
+          continue;
+        }
+
+        // Skip separator row (|---|---|)
+        if (/^\|[\s-:|]+\|$/.test(trimmed)) {
+          if (cols) inTable = true;
+          continue;
+        }
+
+        if (!inTable || !cols) continue;
+
+        const task = cells[cols.task] ?? "";
+        const description = cells[cols.description] ?? "";
 
         // Skip headers, separators, placeholders
         if (
           task.startsWith("[") || task === "Task" ||
-          task.startsWith("---") || task.startsWith("**")
+          task.startsWith("---") || task.startsWith("**") || !task
         ) {
           continue;
         }
 
-        const hours = parseFloat(hoursStr);
-        const conf = parseFloat(confStr);
+        const hours = parseFloat(cells[cols.hours] ?? "");
+        const conf = parseFloat(cells[cols.conf] ?? "");
+        const lowHrs = parseFloat(cells[cols.low] ?? "") || hours;
+        const highHrs = parseFloat(cells[cols.high] ?? "") || hours;
+
         if (isNaN(hours) && !description) continue;
 
-        const lowHrs = parseFloat(match[5].trim()) || hours;
-        const highHrs = parseFloat(match[6].trim()) || hours;
+        const assumptions = (cells[cols.assumptions] ?? "").replace(/<br>/g, "\n");
+        const col6 = cols.solutionOrExclusions >= 0 ? (cells[cols.solutionOrExclusions] ?? "") : "";
+        const links = cols.links >= 0 ? (cells[cols.links] ?? "") : "";
 
-        if (isFixedCost) {
-          rows.push({
-            domain: currentDomain,
-            task, description,
-            hours: isNaN(hours) ? 0 : hours,
-            conf: isNaN(conf) ? 4 : conf,
-            lowHrs, highHrs,
-            assumptions: match[7].trim().replace(/<br>/g, "\n"),
-            col6: "",
-            links: match[8].trim(),
-          });
-        } else {
-          rows.push({
-            domain: currentDomain,
-            task, description,
-            hours: isNaN(hours) ? 0 : hours,
-            conf: isNaN(conf) ? 4 : conf,
-            lowHrs, highHrs,
-            assumptions: match[7].trim().replace(/<br>/g, "\n"),
-            col6: match[8].trim(),
-            links: match[9]?.trim() ?? "",
-          });
-        }
+        rows.push({
+          domain: currentDomain,
+          task,
+          description,
+          hours: isNaN(hours) ? 0 : hours,
+          conf: isNaN(conf) ? 4 : conf,
+          lowHrs,
+          highHrs,
+          assumptions,
+          col6,
+          links,
+        });
       }
     }
 

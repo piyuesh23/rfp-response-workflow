@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { getNextPhases, getPhaseLabel } from "@/lib/phase-chain";
 import { populateTemplateAfterPhase1, populateTemplateAfterEstimate } from "@/lib/template-populator";
+import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
 import type { WorkflowPath } from "@/lib/phase-chain";
 
 export async function POST(
@@ -71,6 +72,37 @@ export async function POST(
     number: num,
     label: getPhaseLabel(num),
   }));
+
+  // Re-extract metadata if artefact has content but zero/missing metadata
+  try {
+    const artefacts = await prisma.phaseArtefact.findMany({
+      where: { phaseId: id },
+      select: { id: true, contentMd: true, metadata: true },
+    });
+    for (const artefact of artefacts) {
+      if (!artefact.contentMd) continue;
+      const meta = artefact.metadata as Record<string, unknown> | null;
+      const hasZeroHours =
+        !meta ||
+        (meta.totalHours &&
+          typeof meta.totalHours === "object" &&
+          (meta.totalHours as { low?: number }).low === 0 &&
+          (meta.totalHours as { high?: number }).high === 0);
+      const hasMissingMeta = !meta || Object.keys(meta).length === 0;
+
+      if (hasZeroHours || hasMissingMeta) {
+        const freshMeta = extractMetadataForPhase(phase.phaseNumber, artefact.contentMd);
+        if (freshMeta) {
+          await prisma.phaseArtefact.update({
+            where: { id: artefact.id },
+            data: { metadata: freshMeta as unknown as Record<string, never> },
+          });
+        }
+      }
+    }
+  } catch {
+    // Metadata re-extraction failure is non-fatal
+  }
 
   // Populate Master Template tabs based on which phase was approved
   // Awaited so templateStatus is updated before the client fetches engagement data

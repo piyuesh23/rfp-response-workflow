@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
 
 export async function GET(
   _request: NextRequest,
@@ -22,7 +23,7 @@ export async function GET(
           phaseNumber: true,
           status: true,
           artefacts: {
-            select: { metadata: true, artefactType: true },
+            select: { id: true, metadata: true, artefactType: true, contentMd: true },
             orderBy: { version: "desc" },
             take: 1, // latest version only
           },
@@ -129,6 +130,59 @@ export async function GET(
           medium4: cd.medium4 ?? confidenceDistribution.medium4,
           low123: cd.low123 ?? confidenceDistribution.low123,
         };
+      }
+    }
+  }
+
+  // Fallback: if hours are all zeros but artefacts have content, re-extract metadata
+  if (totalHours.low === 0 && totalHours.high === 0) {
+    for (const phase of engagement.phases) {
+      for (const artefact of phase.artefacts) {
+        if (!artefact.contentMd) continue;
+        const freshMeta = extractMetadataForPhase(phase.phaseNumber, artefact.contentMd);
+        if (!freshMeta) continue;
+
+        const fm = freshMeta as Record<string, unknown>;
+        if (fm.totalHours && typeof fm.totalHours === "object") {
+          const th = fm.totalHours as { low?: number; high?: number };
+          if ((th.low ?? 0) > 0 || (th.high ?? 0) > 0) {
+            totalHours = { low: th.low ?? 0, high: th.high ?? 0 };
+          }
+        }
+        if (fm.hoursByTab && typeof fm.hoursByTab === "object") {
+          const hbt = fm.hoursByTab as Record<string, { low?: number; high?: number }>;
+          for (const tab of ["backend", "frontend", "fixedCost", "ai"] as const) {
+            if (hbt[tab]) {
+              hoursByTab[tab] = { low: hbt[tab].low ?? 0, high: hbt[tab].high ?? 0 };
+            }
+          }
+        }
+        if (fm.confidenceDistribution && typeof fm.confidenceDistribution === "object") {
+          const cd = fm.confidenceDistribution as Record<string, number>;
+          confidenceDistribution = {
+            high56: cd.high56 ?? 0,
+            medium4: cd.medium4 ?? 0,
+            low123: cd.low123 ?? 0,
+          };
+        }
+        if (typeof fm.requirementCount === "number") {
+          requirementCount = fm.requirementCount;
+        }
+        if (fm.clarityBreakdown && typeof fm.clarityBreakdown === "object") {
+          const cb = fm.clarityBreakdown as Record<string, number>;
+          clarityBreakdown = {
+            clear: cb.clear ?? 0,
+            needsClarification: cb.needsClarification ?? 0,
+            ambiguous: cb.ambiguous ?? 0,
+            missingDetail: cb.missingDetail ?? 0,
+          };
+        }
+
+        // Persist re-extracted metadata back to artefact for future requests
+        prisma.phaseArtefact.update({
+          where: { id: artefact.id },
+          data: { metadata: freshMeta as unknown as Record<string, never> },
+        }).catch(() => { /* non-fatal */ });
       }
     }
   }

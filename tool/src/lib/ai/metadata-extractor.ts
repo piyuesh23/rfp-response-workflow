@@ -110,8 +110,60 @@ function extractHoursConf(
 
 /** Try to parse the Summary table at the top of the estimate. */
 function parseSummaryTable(markdown: string): EstimateMetadata | null {
-  const summaryRows = parseTableRows(markdown, /^##\s+Summary/);
-  if (summaryRows.length === 0) return null;
+  // Find the Summary section and extract the header row to detect column positions
+  const lines = markdown.split("\n");
+  let inSummary = false;
+  let headerCells: string[] | null = null;
+  let pastSeparator = false;
+  const dataRows: string[][] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^##\s+Summary/i.test(trimmed)) {
+      inSummary = true;
+      headerCells = null;
+      pastSeparator = false;
+      continue;
+    }
+
+    if (inSummary && /^#{1,3}\s/.test(trimmed) && !/^##\s+Summary/i.test(trimmed)) {
+      break; // next section
+    }
+
+    if (!inSummary || !trimmed.startsWith("|")) continue;
+
+    // Separator row
+    if (/^\|[\s-:|]+\|$/.test(trimmed)) {
+      if (headerCells) pastSeparator = true;
+      continue;
+    }
+
+    const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
+
+    if (!headerCells) {
+      headerCells = cells;
+      continue;
+    }
+
+    if (pastSeparator) {
+      dataRows.push(cells);
+    }
+  }
+
+  if (!headerCells || dataRows.length === 0) return null;
+
+  // Detect column positions from header
+  const h = headerCells.map((c) => c.toLowerCase().replace(/\*+/g, "").trim());
+  const tabCol = h.findIndex((c) => c.includes("tab") || c.includes("category") || c.includes("area"));
+  const lowCol = h.findIndex((c) => c.includes("low"));
+  const highCol = h.findIndex((c) => c.includes("high"));
+  const lineItemCol = h.findIndex((c) => c.includes("line") || c.includes("item") || c.includes("count"));
+
+  // Fallback: first column is tab name, then look for numeric columns
+  const tabIdx = tabCol >= 0 ? tabCol : 0;
+  const lowIdx = lowCol >= 0 ? lowCol : 1;
+  const highIdx = highCol >= 0 ? highCol : 2;
 
   const result: EstimateMetadata = {
     totalHours: { low: 0, high: 0 },
@@ -125,11 +177,11 @@ function parseSummaryTable(markdown: string): EstimateMetadata | null {
     lineItemCount: 0,
   };
 
-  for (const row of summaryRows) {
-    const tabName = row[0]?.toLowerCase().replace(/\*+/g, "").trim() ?? "";
-    const lowHrs = parseFloat(row[1]?.replace(/[*,]/g, "") ?? "");
-    const highHrs = parseFloat(row[2]?.replace(/[*,]/g, "") ?? "");
-    const lineItems = parseInt(row[4]?.replace(/[*,]/g, "") ?? "", 10);
+  for (const row of dataRows) {
+    const tabName = (row[tabIdx] ?? "").toLowerCase().replace(/\*+/g, "").trim();
+    const lowHrs = parseFloat((row[lowIdx] ?? "").replace(/[*,]/g, ""));
+    const highHrs = parseFloat((row[highIdx] ?? "").replace(/[*,]/g, ""));
+    const lineItems = lineItemCol >= 0 ? parseInt((row[lineItemCol] ?? "").replace(/[*,]/g, ""), 10) : NaN;
 
     if (tabName.includes("total")) {
       result.totalHours = {
