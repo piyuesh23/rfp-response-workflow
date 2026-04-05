@@ -4,6 +4,8 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
+  CreateBucketCommand,
+  HeadBucketCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -19,11 +21,30 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
+// Auto-create bucket on first use if it doesn't exist
+let bucketChecked = false;
+async function ensureBucket(): Promise<void> {
+  if (bucketChecked) return;
+  try {
+    await s3Client.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
+  } catch {
+    try {
+      await s3Client.send(new CreateBucketCommand({ Bucket: S3_BUCKET }));
+      console.log(`[storage] Created S3 bucket: ${S3_BUCKET}`);
+    } catch (createErr) {
+      // Bucket may have been created by another process
+      console.log(`[storage] Bucket creation note:`, createErr);
+    }
+  }
+  bucketChecked = true;
+}
+
 export async function uploadFile(
   key: string,
   body: Buffer | string,
   contentType: string
 ): Promise<void> {
+  await ensureBucket();
   await s3Client.send(
     new PutObjectCommand({
       Bucket: S3_BUCKET,
@@ -35,6 +56,7 @@ export async function uploadFile(
 }
 
 export async function downloadFile(key: string): Promise<Buffer> {
+  await ensureBucket();
   const response = await s3Client.send(
     new GetObjectCommand({
       Bucket: S3_BUCKET,
@@ -72,6 +94,7 @@ export async function getPresignedUrl(
 }
 
 export async function listObjects(prefix: string): Promise<string[]> {
+  await ensureBucket();
   const response = await s3Client.send(
     new ListObjectsV2Command({
       Bucket: S3_BUCKET,
