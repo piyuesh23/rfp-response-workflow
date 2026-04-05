@@ -47,7 +47,25 @@ Read the TOR document(s) in tor/ and any Phase 0 research in research/.
 
 6. Write outputs:
    - claude-artefacts/tor-assessment.md (following tor-assessment-template.md)
-   - initial_questions/questions.md (following questions-template.md)`;
+   - initial_questions/questions.md (following questions-template.md)
+
+**CRITICAL: Use these EXACT markdown headings in tor-assessment.md. Parsers depend on this format:**
+
+\`\`\`
+## Requirements Assessment
+\`\`\`
+
+The Requirements Assessment section MUST be a markdown table with columns:
+| Requirement ID | Domain | Description | Clarity Rating | Notes |
+
+Where Clarity Rating is one of: Clear, Needs Clarification, Ambiguous, Missing Detail.
+
+Also include a summary section:
+\`\`\`
+## Clarity Assessment Summary
+\`\`\`
+
+As a table: | Clarity Rating | Count | Percentage |`;
 }
 
 export function getPhase1AEstimatePrompt(): string {
@@ -77,16 +95,29 @@ For each assumption, write clearly:
 
 ## Estimate Structure
 
-Produce estimates in four tabs matching the QED42 Excel template:
-- **Backend**: CMS/server-side development tasks requiring PM+QA overhead
-- **Frontend**: Component-level UI estimates (Header, Footer, Hero, Card, etc.) with visual reference links and Exclusions column
-- **Fixed Cost Items**: Operational items NOT needing QA/PM (deployment, docs, training, onboarding)
-- **AI**: AI-powered features (only if the TOR contains AI-related requirements)
+Produce estimates in four tabs matching the QED42 Excel template.
+
+**CRITICAL: Use these EXACT markdown headings for each tab section. Parsers depend on this format:**
+
+\`\`\`
+## Backend Tab
+## Frontend Tab
+## Fixed Cost Items Tab
+## AI Tab
+\`\`\`
+
+Tab descriptions:
+- **Backend Tab**: CMS/server-side development tasks requiring PM+QA overhead
+- **Frontend Tab**: Component-level UI estimates (Header, Footer, Hero, Card, etc.) with visual reference links and Exclusions column
+- **Fixed Cost Items Tab**: Operational items NOT needing QA/PM (deployment, docs, training, onboarding)
+- **AI Tab**: AI-powered features (only if the TOR contains AI-related requirements)
 
 For each line item include these columns in the markdown table:
 - Task, Description (include TOR reference), Hours (base), Conf (1-6), Low Hrs, High Hrs, Assumptions (included/excluded scope), Proposed Solution (technical approach), Reference Links
 - Low Hrs = Hours, High Hrs = Hours x (1 + Conf buffer%)
 - Conf buffer: 6=0%, 5=+25%, 4=+50%, 3=+50%, 2=+75%, 1=+100%
+
+**Do NOT vary these headings.** Do not add extra words like "Development" or "Estimates" to the heading. The heading must be exactly as shown above.
 
 ## Output Summary
 
