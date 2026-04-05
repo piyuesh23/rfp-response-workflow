@@ -15,8 +15,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QED42 Presales Tool",
+  title: "RFP Copilot",
   description: "AI-powered effort estimation from TOR documents",
+  icons: {
+    icon: "/logo.svg",
+  },
 };
 
 export default function RootLayout({

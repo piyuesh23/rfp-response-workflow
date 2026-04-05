@@ -47,7 +47,7 @@ export async function generateEstimateXlsx(
   clientName: string
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "QED42 Presales Tool";
+  workbook.creator = "RFP Copilot";
   workbook.created = new Date();
 
   const tabNames = ["Backend", "Frontend", "Fixed Cost Items", "AI"];

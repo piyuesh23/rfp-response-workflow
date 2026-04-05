@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sheet"
 import { SidebarContent } from "@/components/layout/Sidebar"
 import { Header, type BreadcrumbItem } from "@/components/layout/Header"
+import { useCurrentUser } from "@/hooks/useCurrentUser"
 
 interface AppShellProps {
   children: React.ReactNode
@@ -17,6 +18,19 @@ interface AppShellProps {
 
 export function AppShell({ children, breadcrumbs, actions }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
+  const currentUser = useCurrentUser()
+  const isLoggedIn = !!currentUser
+
+  // No sidebar when logged out
+  if (!isLoggedIn) {
+    return (
+      <div className="flex h-full min-h-screen flex-col">
+        <main className="flex flex-1 flex-col p-6">
+          {children}
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full min-h-screen">

@@ -24,7 +24,7 @@ export function flashTitle(message: string): void {
   let showMessage = true;
 
   flashInterval = setInterval(() => {
-    document.title = showMessage ? message : (originalTitle ?? "QED42 Presales");
+    document.title = showMessage ? message : (originalTitle ?? "RFP Copilot");
     showMessage = !showMessage;
   }, 1500);
 

@@ -16,7 +16,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm shadow-md">
         <CardHeader className="text-center space-y-1 pb-4">
           <CardTitle className="text-2xl font-semibold tracking-tight">
-            QED42 Presales Tool
+            RFP Copilot
           </CardTitle>
           <CardDescription className="text-sm text-zinc-500 dark:text-zinc-400">
             Sign in to access the estimation workspace

@@ -2,7 +2,7 @@ import * as React from "react"
 import { CreateWizard } from "@/components/engagement/CreateWizard"
 
 export const metadata = {
-  title: "Create New Engagement | QED42 Presales Tool",
+  title: "Create New Engagement | RFP Copilot",
 }
 
 export default function NewEngagementPage() {
