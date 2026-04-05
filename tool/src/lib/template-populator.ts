@@ -557,7 +557,7 @@ function findEstimateColumnIndices(headerCells: string[]): {
  */
 function parseEstimateTabSections(markdown: string): Record<string, EstimateRow[]> {
   const result: Record<string, EstimateRow[]> = {};
-  const tabPattern = /^#{1,2}\s+(Backend|Frontend|Fixed Cost Items|AI)[\w\s]*Tab/gim;
+  const tabPattern = /^#{1,2}\s+(Backend|Frontend|Fixed Cost Items?|AI)\s*(?:Development\s+)?(?:Tab|Estimates?|Features?|Items?)?\s*$/gim;
   const matches = [...markdown.matchAll(tabPattern)];
 
   for (let i = 0; i < matches.length; i++) {
@@ -922,7 +922,7 @@ export async function populateTemplateAfterEstimate(
   let estimateMd = phase?.artefacts[0]?.contentMd ?? undefined;
 
   // Validate that the content actually contains estimate tables (not just a summary)
-  const hasEstimateTables = estimateMd && /^#{1,2}\s+(Backend|Frontend|Fixed Cost)/im.test(estimateMd);
+  const hasEstimateTables = estimateMd && /^#{1,2}\s+(Backend|Frontend|Fixed\s+Cost|AI)\b/im.test(estimateMd);
 
   if (!hasEstimateTables) {
     console.log(`[template-populator] DB artefact has no estimate tables (${estimateMd?.length ?? 0} chars), trying S3 files`);
@@ -934,7 +934,7 @@ export async function populateTemplateAfterEstimate(
       try {
         const fileBuffer = await downloadFile(candidate);
         const content = fileBuffer.toString("utf-8");
-        if (/^#{1,2}\s+(Backend|Frontend|Fixed Cost)/im.test(content)) {
+        if (/^#{1,2}\s+(Backend|Frontend|Fixed\s+Cost|AI)\b/im.test(content)) {
           estimateMd = content;
           console.log(`[template-populator] Found estimate tables in S3: ${candidate} (${content.length} chars)`);
           break;
@@ -945,7 +945,7 @@ export async function populateTemplateAfterEstimate(
     }
   }
 
-  if (!estimateMd || !/^#{1,2}\s+(Backend|Frontend|Fixed Cost)/im.test(estimateMd)) {
+  if (!estimateMd || !/^#{1,2}\s+(Backend|Frontend|Fixed\s+Cost|AI)\b/im.test(estimateMd)) {
     console.log(`[template-populator] No valid estimate content found - skipping estimate tabs`);
     return;
   }

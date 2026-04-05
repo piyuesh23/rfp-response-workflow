@@ -218,12 +218,12 @@ function parseEstimateFromLineItems(markdown: string): EstimateMetadata {
     lineItemCount: 0,
   };
 
-  // Identify tab sections: "# Backend Tab", "## Backend Development Tab", etc.
+  // Identify tab sections: "# Backend Tab", "## Backend Development Estimates", etc.
   const tabSections: { tab: keyof typeof result.hoursByTab; pattern: RegExp }[] = [
-    { tab: "backend", pattern: /^#{1,2}\s+Backend[\w\s]*Tab/i },
-    { tab: "frontend", pattern: /^#{1,2}\s+Frontend[\w\s]*Tab/i },
+    { tab: "backend", pattern: /^#{1,2}\s+Backend\b/i },
+    { tab: "frontend", pattern: /^#{1,2}\s+Frontend\b/i },
     { tab: "fixedCost", pattern: /^#{1,2}\s+Fixed\s+Cost/i },
-    { tab: "ai", pattern: /^#{1,2}\s+AI\s+Tab/i },
+    { tab: "ai", pattern: /^#{1,2}\s+AI\b/i },
   ];
 
   const lines = markdown.split("\n");
@@ -366,6 +366,36 @@ export function extractAssessmentMetadata(contentMd: string): AssessmentMetadata
       if (!isNaN(needs)) result.clarityBreakdown.needsClarification += needs;
       if (!isNaN(ambiguous)) result.clarityBreakdown.ambiguous += ambiguous;
       if (!isNaN(missing)) result.clarityBreakdown.missingDetail += missing;
+    }
+  }
+
+  // Fallback: parse "Clarity Assessment Summary" table (Rating | Count format)
+  if (result.requirementCount === 0) {
+    const clarityRows = parseTableRows(contentMd, /^#{2,3}\s+Clarity\s+(?:Assessment\s+)?Summary/i);
+    for (const row of clarityRows) {
+      const rating = (row[0] ?? "").toLowerCase().replace(/\*+/g, "").trim();
+      const count = parseInt((row[1] ?? "").replace(/\*+/g, "").trim(), 10);
+      if (isNaN(count)) continue;
+
+      if (rating.includes("total")) {
+        result.requirementCount = count;
+      } else if (rating === "clear") {
+        result.clarityBreakdown.clear = count;
+      } else if (rating.includes("needs")) {
+        result.clarityBreakdown.needsClarification = count;
+      } else if (rating.includes("ambiguous")) {
+        result.clarityBreakdown.ambiguous = count;
+      } else if (rating.includes("missing")) {
+        result.clarityBreakdown.missingDetail = count;
+      }
+    }
+    // If no total row, sum the breakdown
+    if (result.requirementCount === 0) {
+      result.requirementCount =
+        result.clarityBreakdown.clear +
+        result.clarityBreakdown.needsClarification +
+        result.clarityBreakdown.ambiguous +
+        result.clarityBreakdown.missingDetail;
     }
   }
 

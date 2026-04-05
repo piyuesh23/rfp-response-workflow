@@ -131,28 +131,35 @@ function toLineItems(rows: ParsedRow[], prefix: string): LineItem[] {
 
 /** Parse estimate markdown into EstimateData for the TabbedEstimate component. */
 export function parseEstimateMarkdown(markdown: string): EstimateData {
+  // Match flexible heading patterns: "# Backend Tab", "## Backend Development Estimates", etc.
+  const backendStart = /^#{1,2}\s+Backend\b/i;
+  const frontendStart = /^#{1,2}\s+Frontend\b/i;
+  const fixedStart = /^#{1,2}\s+Fixed\s+Cost/i;
+  const aiStart = /^#{1,2}\s+AI\b/i;
+  const endSections = /^#{1,2}\s+(Risk\s+Register|Assumption|Coverage|State\s+File|Total\s+Effort|Traceability|Integration\s+Req|Key\s+Assumption|Dependencies|Delivery)/i;
+
   const backend = parseTablesInSection(
     markdown,
-    /^#{1,2}\s+Backend[\w\s]*Tab/i,
-    /^#{1,2}\s+(Frontend[\w\s]*Tab|Fixed\s+Cost|AI\s+Tab)/i
+    backendStart,
+    new RegExp(`(${frontendStart.source})|(${fixedStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
   );
 
   const frontend = parseTablesInSection(
     markdown,
-    /^#{1,2}\s+Frontend[\w\s]*Tab/i,
-    /^#{1,2}\s+(Fixed\s+Cost|AI\s+Tab|Risk\s+Register)/i
+    frontendStart,
+    new RegExp(`(${fixedStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
   );
 
   const fixed = parseTablesInSection(
     markdown,
-    /^#{1,2}\s+Fixed\s+Cost/i,
-    /^#{1,2}\s+(AI\s+Tab|Risk\s+Register|Assumption\s+Register)/i
+    fixedStart,
+    new RegExp(`(${aiStart.source})|(${endSections.source})`, "i")
   );
 
   const ai = parseTablesInSection(
     markdown,
-    /^#{1,2}\s+AI\s+Tab/i,
-    /^#{1,2}\s*(Risk\s+Register|Assumption\s+Register|Coverage|State\s+File|Total\s+Effort)/i
+    aiStart,
+    endSections
   );
 
   return {
