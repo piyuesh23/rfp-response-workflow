@@ -133,26 +133,26 @@ function toLineItems(rows: ParsedRow[], prefix: string): LineItem[] {
 export function parseEstimateMarkdown(markdown: string): EstimateData {
   const backend = parseTablesInSection(
     markdown,
-    /^#\s+Backend\s+Tab/i,
-    /^#\s+(Frontend\s+Tab|Fixed\s+Cost|AI\s+Tab)/i
+    /^#{1,2}\s+Backend[\w\s]*Tab/i,
+    /^#{1,2}\s+(Frontend[\w\s]*Tab|Fixed\s+Cost|AI\s+Tab)/i
   );
 
   const frontend = parseTablesInSection(
     markdown,
-    /^#\s+Frontend\s+Tab/i,
-    /^#\s+(Fixed\s+Cost|AI\s+Tab|Risk\s+Register)/i
+    /^#{1,2}\s+Frontend[\w\s]*Tab/i,
+    /^#{1,2}\s+(Fixed\s+Cost|AI\s+Tab|Risk\s+Register)/i
   );
 
   const fixed = parseTablesInSection(
     markdown,
-    /^#\s+Fixed\s+Cost/i,
-    /^#\s+(AI\s+Tab|Risk\s+Register|Assumption\s+Register)/i
+    /^#{1,2}\s+Fixed\s+Cost/i,
+    /^#{1,2}\s+(AI\s+Tab|Risk\s+Register|Assumption\s+Register)/i
   );
 
   const ai = parseTablesInSection(
     markdown,
-    /^#\s+AI\s+Tab/i,
-    /^#\s*(##)?\s*(Risk\s+Register|Assumption\s+Register|Coverage|State\s+File)/i
+    /^#{1,2}\s+AI\s+Tab/i,
+    /^#{1,2}\s*(Risk\s+Register|Assumption\s+Register|Coverage|State\s+File|Total\s+Effort)/i
   );
 
   return {

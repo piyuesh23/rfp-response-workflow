@@ -94,7 +94,7 @@ export async function POST(
 
       // For ESTIMATE artefacts: check if contentMd is just a summary (no table headers)
       if (artefact.artefactType === "ESTIMATE" && isEstimatePhase) {
-        const hasEstimateTables = /^#\s+(Backend|Frontend|Fixed Cost)/im.test(contentMd);
+        const hasEstimateTables = /^#{1,2}\s+(Backend|Frontend|Fixed Cost)/im.test(contentMd);
         if (!hasEstimateTables) {
           // Try to read actual estimate file from S3
           const s3Candidates = [
@@ -105,7 +105,7 @@ export async function POST(
             try {
               const buf = await downloadFile(candidate);
               const fileContent = buf.toString("utf-8");
-              if (/^#\s+(Backend|Frontend|Fixed Cost)/im.test(fileContent)) {
+              if (/^#{1,2}\s+(Backend|Frontend|Fixed Cost)/im.test(fileContent)) {
                 contentMd = fileContent;
                 contentUpdated = true;
                 break;

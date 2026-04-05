@@ -218,12 +218,12 @@ function parseEstimateFromLineItems(markdown: string): EstimateMetadata {
     lineItemCount: 0,
   };
 
-  // Identify tab sections: "# Backend Tab", "# Frontend Tab", etc.
+  // Identify tab sections: "# Backend Tab", "## Backend Development Tab", etc.
   const tabSections: { tab: keyof typeof result.hoursByTab; pattern: RegExp }[] = [
-    { tab: "backend", pattern: /^#\s+Backend\s+Tab/i },
-    { tab: "frontend", pattern: /^#\s+Frontend\s+Tab/i },
-    { tab: "fixedCost", pattern: /^#\s+Fixed\s+Cost/i },
-    { tab: "ai", pattern: /^#\s+AI\s+Tab/i },
+    { tab: "backend", pattern: /^#{1,2}\s+Backend[\w\s]*Tab/i },
+    { tab: "frontend", pattern: /^#{1,2}\s+Frontend[\w\s]*Tab/i },
+    { tab: "fixedCost", pattern: /^#{1,2}\s+Fixed\s+Cost/i },
+    { tab: "ai", pattern: /^#{1,2}\s+AI\s+Tab/i },
   ];
 
   const lines = markdown.split("\n");
