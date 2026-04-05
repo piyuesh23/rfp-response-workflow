@@ -243,7 +243,7 @@ Respond ONLY with valid JSON in this format:
     const anthropic = new Anthropic();
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 4000,
+      max_tokens: 8000,
       messages: [{ role: "user", content: prompt }],
     });
 
@@ -252,10 +252,21 @@ Respond ONLY with valid JSON in this format:
       .map((b) => b.text)
       .join("");
 
-    const jsonStr = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+    // Extract JSON - handle cases where AI wraps in code blocks or adds preamble
+    let jsonStr = text;
+    const jsonMatch = text.match(/\{[\s\S]*"questions"[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[0];
+    } else {
+      jsonStr = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+    }
+
     const parsed = JSON.parse(jsonStr) as { questions: RewrittenQuestion[] };
-    return parsed.questions ?? [];
-  } catch {
+    const questions = parsed.questions ?? [];
+    console.log(`[template-populator] AI rewrote ${questions.length} questions for RFP`);
+    return questions;
+  } catch (err) {
+    console.error("[template-populator] rewriteQuestionsForRfp failed:", err);
     return [];
   }
 }
@@ -430,9 +441,16 @@ Only include the JSON, no other text.`;
       .map((b) => b.text)
       .join("");
 
-    // Parse JSON from response (handle potential markdown code blocks)
-    const jsonStr = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+    // Parse JSON from response (handle code blocks and preamble)
+    let jsonStr = text;
+    const jsonMatch = text.match(/\{[\s\S]*"answers"[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[0];
+    } else {
+      jsonStr = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+    }
     const parsed = JSON.parse(jsonStr) as { answers: Record<string, string> };
+    console.log(`[template-populator] AI populated ${Object.keys(parsed.answers ?? {}).length} Sales Detail rows`);
 
     let anyWritten = false;
     for (const rq of rowQuestions) {
@@ -749,12 +767,27 @@ export async function populateTemplateAfterPhase1(
       `engagements/${engagementId}/initial_questions/questions.md`
     );
     questionsMd = fileBuffer.toString("utf-8");
-  } catch { /* no questions file available */ }
+    console.log(`[template-populator] Found questions.md (${questionsMd.length} chars)`);
+  } catch (err) {
+    console.log(`[template-populator] questions.md not found in S3, trying TOR assessment artefact`);
+    // Try extracting questions section from the TOR assessment artefact content
+    if (torContent && torContent.includes("larifying")) {
+      // The TOR assessment often contains a "Clarifying Questions" section
+      const questionsStart = torContent.search(/#+\s*[Cc]larifying\s+[Qq]uestions/);
+      if (questionsStart >= 0) {
+        questionsMd = torContent.slice(questionsStart);
+        console.log(`[template-populator] Extracted questions from TOR assessment (${questionsMd.length} chars)`);
+      }
+    }
+  }
 
   if (questionsMd) {
-    // AI rewrites questions with options and estimation impact
+    console.log(`[template-populator] Populating Questions for RFP tab...`);
     const questionsOk = await populateQuestionsTab(workbook, questionsMd);
+    console.log(`[template-populator] Questions for RFP result: ${questionsOk}`);
     if (questionsOk) status.questionsRfp = true;
+  } else {
+    console.log(`[template-populator] No questions content found - skipping Questions for RFP tab`);
   }
 
   // Save back to S3
