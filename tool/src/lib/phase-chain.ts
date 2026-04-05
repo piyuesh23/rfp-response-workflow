@@ -3,8 +3,8 @@
  *
  * Phases 0 and 1 can run in parallel.
  * After both are approved, a workflow decision fork determines the path:
- *   - NO_RESPONSE: Phase 1A (optimistic estimate) → Phase 5
- *   - HAS_RESPONSE: Phase 2 (responses) → Phase 3 (estimate upload) → Phase 3R (review + gap) → Phase 5
+ *   - NO_RESPONSE: Phase 1A (optimistic estimate) → Phase 5 (technical proposal)
+ *   - HAS_RESPONSE: Phase 2 (responses) → Phase 3 (estimate upload) → Phase 3R (review + gap) → Phase 5 (technical proposal)
  */
 
 export type WorkflowPath = "NO_RESPONSE" | "HAS_RESPONSE" | null;
@@ -27,7 +27,7 @@ export const PHASE_DEFS: PhaseDef[] = [
   { number: "2",  label: "Responses",             dependsOn: ["0", "1"],  workflowPath: "HAS_RESPONSE", optional: false },
   { number: "3",  label: "Estimate",              dependsOn: ["2"],       workflowPath: "HAS_RESPONSE", optional: false },
   { number: "3R", label: "Review & Gap Analysis", dependsOn: ["3"],       workflowPath: "HAS_RESPONSE", optional: false },
-  { number: "5",  label: "Knowledge Capture",     dependsOn: [],          workflowPath: null,           optional: false },
+  { number: "5",  label: "Technical Proposal",     dependsOn: [],          workflowPath: null,           optional: false },
 ];
 
 /** Get phase definition by number */
@@ -42,13 +42,25 @@ export function getPhaseLabel(phaseNumber: string): string {
 
 /**
  * Get all phases visible for a given workflow path.
- * Phases with workflowPath=null are always visible.
- * Phases with a specific path are only visible when that path is chosen.
+ * All phases are always shown. Phases from the non-chosen path
+ * are returned but will display as "Skipped" in the UI.
  */
-export function getVisiblePhases(workflowPath: WorkflowPath): PhaseDef[] {
-  return PHASE_DEFS.filter(
-    (p) => p.workflowPath === null || p.workflowPath === workflowPath
-  );
+export function getVisiblePhases(_workflowPath: WorkflowPath): PhaseDef[] {
+  return PHASE_DEFS;
+}
+
+/**
+ * Check if a phase is on the inactive workflow path (should show as skipped).
+ * Returns true if a workflow path has been chosen and this phase belongs to the other path.
+ */
+export function isPhasePathSkipped(
+  phaseNumber: string,
+  workflowPath: WorkflowPath
+): boolean {
+  if (workflowPath === null) return false;
+  const def = getPhaseDef(phaseNumber);
+  if (!def || def.workflowPath === null) return false;
+  return def.workflowPath !== workflowPath;
 }
 
 /**
@@ -77,7 +89,7 @@ export function canStartPhase(
     };
   }
 
-  // Phase 5 (Knowledge Capture) has special logic: needs either path to complete
+  // Phase 5 (Technical Proposal) has special logic: needs either path to complete
   if (phaseNumber === "5") {
     if (workflowPath === "NO_RESPONSE") {
       const phase1A = phaseStatuses["1A"];

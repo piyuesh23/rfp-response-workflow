@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { copyMasterTemplate } from "@/lib/template-populator";
 import type { TechStack, EngagementType } from "@/generated/prisma/enums";
 
 export async function GET() {
@@ -64,6 +65,20 @@ export async function POST(request: NextRequest) {
       phases: { orderBy: { phaseNumber: "asc" } },
     },
   });
+
+  // Copy the Master Estimate Template to the engagement's S3 folder
+  try {
+    const templateKey = await copyMasterTemplate(engagement.id);
+    await prisma.engagement.update({
+      where: { id: engagement.id },
+      data: {
+        templateFileUrl: templateKey,
+        templateStatus: {},
+      },
+    });
+  } catch {
+    // Template copy failure is non-fatal - engagement is still usable
+  }
 
   return NextResponse.json(engagement, { status: 201 });
 }

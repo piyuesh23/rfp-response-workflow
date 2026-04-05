@@ -21,19 +21,19 @@ export function AppShell({ children, breadcrumbs, actions }: AppShellProps) {
   return (
     <div className="flex h-full min-h-screen">
       {/* Desktop sidebar — always visible at md+ */}
-      <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 border-r bg-background z-20">
+      <aside className="hidden md:flex md:w-52 md:flex-col md:fixed md:inset-y-0 border-r bg-background z-20">
         <SidebarContent />
       </aside>
 
       {/* Mobile sidebar — Sheet overlay */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" showCloseButton={false} className="w-64 p-0">
+        <SheetContent side="left" showCloseButton={false} className="w-52 p-0">
           <SidebarContent />
         </SheetContent>
       </Sheet>
 
       {/* Main content area — offset by sidebar width on desktop */}
-      <div className="flex flex-1 flex-col md:pl-64">
+      <div className="flex flex-1 flex-col md:pl-52">
         <Header
           breadcrumbs={breadcrumbs}
           actions={actions}

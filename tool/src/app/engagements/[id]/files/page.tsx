@@ -72,16 +72,30 @@ export default function FilesPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  const PREVIEWABLE_EXTS = new Set(["md", "csv", "txt", "json", "html"])
+
   async function handleFileClick(file: FileEntry) {
     const relativePath = file.dir ? `${file.dir}/${file.name}` : file.name
     setSelectedFile(relativePath)
     setPreviewLoading(true)
     setPreview(null)
 
+    const fileUrl = `/api/engagements/${id}/files/${relativePath}`
+
+    // Non-previewable files: show download UI (binary is proxied by API)
+    if (!PREVIEWABLE_EXTS.has(file.ext)) {
+      setPreview({
+        path: relativePath,
+        ext: file.ext,
+        previewable: false,
+        downloadUrl: fileUrl,
+      })
+      setPreviewLoading(false)
+      return
+    }
+
     try {
-      const res = await fetch(
-        `/api/engagements/${id}/files/${relativePath}`
-      )
+      const res = await fetch(fileUrl)
       if (res.ok) {
         const data = await res.json()
         setPreview(data)

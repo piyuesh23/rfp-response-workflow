@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Play } from "lucide-react"
 import { PHASE_LABELS } from "@/components/phase/PhaseCard"
+import { requestNotificationPermission } from "@/hooks/usePhaseNotifications"
 
 const PHASE_DURATIONS: Record<string, string> = {
   "0": "3-8 minutes",
@@ -43,6 +44,8 @@ export function RunPhaseButton({
 
   function handleConfirm() {
     setOpen(false)
+    // Request notification permission on first run (tied to user action)
+    requestNotificationPermission()
     onConfirm?.()
   }
 

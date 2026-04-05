@@ -26,6 +26,7 @@ export interface PhaseCardData {
   startedAt?: Date | string | null
   completedAt?: Date | string | null
   artefactCount?: number
+  summary?: string
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -35,7 +36,7 @@ const PHASE_LABELS: Record<string, string> = {
   "2": "Responses",
   "3": "Estimate",
   "3R": "Review & Gap Analysis",
-  "5": "Knowledge Capture",
+  "5": "Technical Proposal",
 }
 
 const STATUS_CONFIG: Record<
@@ -173,6 +174,9 @@ export function PhaseCard({ phase, onClick, className }: PhaseCardProps) {
               <span>{phase.artefactCount} artefact{phase.artefactCount !== 1 ? "s" : ""}</span>
             )}
           </div>
+        )}
+        {phase.summary && (
+          <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{phase.summary}</p>
         )}
       </div>
     </div>

@@ -25,20 +25,22 @@ enum UserRole {
 }
 
 model Engagement {
-  id             String            @id @default(cuid())
-  clientName     String
-  projectName    String?
-  techStack      TechStack
-  engagementType EngagementType    @default(NEW_BUILD)
-  status         EngagementStatus  @default(DRAFT)
-  workflowPath   WorkflowPath?
-  createdBy      User              @relation(fields: [createdById], references: [id])
-  createdById    String
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  phases         Phase[]
-  assumptions    Assumption[]
-  risks          RiskRegisterEntry[]
+  id              String            @id @default(cuid())
+  clientName      String
+  projectName     String?
+  techStack       TechStack
+  engagementType  EngagementType    @default(NEW_BUILD)
+  status          EngagementStatus  @default(DRAFT)
+  workflowPath    WorkflowPath?
+  templateFileUrl String?
+  templateStatus  Json?             // { questionsRfp?: boolean, salesDetail?: boolean, backend?: boolean, frontend?: boolean, fixedCost?: boolean, ai?: boolean }
+  createdBy       User              @relation(fields: [createdById], references: [id])
+  createdById     String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  phases          Phase[]
+  assumptions     Assumption[]
+  risks           RiskRegisterEntry[]
 }
 
 enum WorkflowPath {

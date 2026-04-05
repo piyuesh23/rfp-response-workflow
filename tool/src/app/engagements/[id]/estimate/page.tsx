@@ -1,164 +1,17 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon } from "lucide-react"
+import { useParams } from "next/navigation"
+import { ChevronDownIcon, ChevronRightIcon, AlertTriangleIcon, Loader2 } from "lucide-react"
 import { TabbedEstimate } from "@/components/estimate/TabbedEstimate"
 import { ExportButtons } from "@/components/estimate/ExportButtons"
 import { ConfBadge, CONF_CONFIG } from "@/components/estimate/ConfBadge"
 import { calcLowHigh } from "@/components/estimate/LineItemRow"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
+import { parseEstimateMarkdown, estimateDataToExcelTabs } from "@/lib/estimate-parser"
 import type { EstimateData } from "@/components/estimate/TabbedEstimate"
 import type { LineItem } from "@/components/estimate/LineItemRow"
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_DATA: EstimateData = {
-  backend: [
-    {
-      id: "be-1",
-      task: "Discovery & Setup",
-      description: "Project kickoff, environment provisioning, repository setup, CI/CD pipeline configuration.",
-      conf: 6,
-      hours: 16,
-      assumptionRef: "TOR §1.1 — Standard onboarding process assumed",
-    },
-    {
-      id: "be-2",
-      task: "Content Architecture",
-      description: "Define and implement content types, taxonomies, fields, and editorial workflows in Drupal.",
-      conf: 4,
-      hours: 40,
-      assumptionRef: "TOR §3.2 — 8–10 content types assumed; final count TBC",
-    },
-    {
-      id: "be-3",
-      task: "Salesforce CRM Integration",
-      description: "Bi-directional sync of lead/contact data between Drupal webforms and Salesforce via REST API.",
-      conf: 3,
-      hours: 48,
-      assumptionRef: "Q&A Q7 — Sandbox access not yet confirmed",
-    },
-    {
-      id: "be-4",
-      task: "Search (Solr)",
-      description: "Apache Solr integration with faceted search, relevance tuning, and content indexing.",
-      conf: 5,
-      hours: 32,
-      assumptionRef: "TOR §4.1 — Acquia Search Solr assumed",
-    },
-    {
-      id: "be-5",
-      task: "Deployment & QA Pipeline",
-      description: "Pantheon multidev setup, automated deployments, smoke tests, and stabilisation sprint.",
-      conf: 6,
-      hours: 24,
-      assumptionRef: "TOR §6 — Pantheon hosting confirmed",
-    },
-  ],
-  frontend: [
-    {
-      id: "fe-1",
-      task: "Design System",
-      description: "Token-based design system setup: typography, colour palette, spacing scale, component primitives in Storybook.",
-      conf: 5,
-      hours: 32,
-      assumptionRef: "TOR §5.1 — Brand guidelines to be provided by client",
-    },
-    {
-      id: "fe-2",
-      task: "Header & Navigation",
-      description: "Responsive mega-nav with mobile drawer, active states, and ARIA landmark roles. Ref: nytimes.com header.",
-      conf: 5,
-      hours: 24,
-      assumptionRef: "TOR §5.2 — Max 3 nav levels assumed",
-    },
-    {
-      id: "fe-3",
-      task: "Hero Component",
-      description: "Full-bleed hero with background image/video, headline, CTA buttons. Ref: stripe.com/en-au homepage hero.",
-      conf: 6,
-      hours: 12,
-      assumptionRef: "TOR §5.3 — Static image variant only; video variant +8 hrs",
-    },
-    {
-      id: "fe-4",
-      task: "Card & Listing Grid",
-      description: "Reusable card component (image, title, summary, tag, CTA) used across news, events, and resources listings.",
-      conf: 4,
-      hours: 20,
-      assumptionRef: "TOR §5.4 — Card variants not fully specified",
-    },
-    {
-      id: "fe-5",
-      task: "Footer",
-      description: "Multi-column footer with social links, newsletter signup, legal links, and accessibility compliance.",
-      conf: 6,
-      hours: 10,
-      assumptionRef: "TOR §5.2 — Standard footer layout assumed",
-    },
-  ],
-  fixed: [
-    {
-      id: "fc-1",
-      task: "Project Management",
-      description: "Fortnightly sprints, stakeholder reporting, risk tracking, and backlog management across engagement.",
-      conf: 6,
-      hours: 30,
-      assumptionRef: "Standard QED42 engagement process",
-    },
-    {
-      id: "fc-2",
-      task: "Content Migration",
-      description: "Migrate existing content from legacy CMS (approx. 500 nodes) via migration scripts with validation.",
-      conf: 3,
-      hours: 40,
-      assumptionRef: "Q&A Q12 — Legacy CMS access and data export format TBC",
-    },
-    {
-      id: "fc-3",
-      task: "Training & Documentation",
-      description: "Editor training session (2 hrs), admin guide, and deployment runbook delivered at project close.",
-      conf: 6,
-      hours: 16,
-      assumptionRef: "TOR §7 — Two training sessions assumed",
-    },
-    {
-      id: "fc-4",
-      task: "Hypercare / Warranty",
-      description: "30-day post-launch support window for critical bug fixes and minor configuration changes.",
-      conf: 5,
-      hours: 20,
-      assumptionRef: "Standard QED42 warranty policy",
-    },
-  ],
-  ai: [
-    {
-      id: "ai-1",
-      task: "AI Content Tagging",
-      description: "LLM-assisted automatic taxonomy tagging on content save using OpenAI API with editor override capability.",
-      conf: 4,
-      hours: 36,
-      assumptionRef: "TOR §8.1 — OpenAI API key to be provided by client",
-    },
-    {
-      id: "ai-2",
-      task: "Semantic Search",
-      description: "Vector embedding pipeline for semantic search using pgvector and Drupal Search API integration.",
-      conf: 3,
-      hours: 48,
-      assumptionRef: "Q&A Q15 — Embedding model and hosting approach TBC",
-    },
-    {
-      id: "ai-3",
-      task: "AI Chatbot Widget",
-      description: "RAG-powered support chatbot trained on site content, embedded as a floating widget with conversation history.",
-      conf: 2,
-      hours: 60,
-      assumptionRef: "TOR §8.3 — Scope, data privacy, and integration points under-defined",
-    },
-  ],
-}
 
 // ─── Risk Register ────────────────────────────────────────────────────────────
 
@@ -186,6 +39,8 @@ interface RiskRegisterProps {
 function RiskRegister({ data }: RiskRegisterProps) {
   const [open, setOpen] = React.useState(false)
   const riskItems = collectRiskItems(data)
+
+  if (riskItems.length === 0) return null
 
   return (
     <div className="rounded-xl border">
@@ -273,8 +128,127 @@ function RiskRegister({ data }: RiskRegisterProps) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+interface Artefact {
+  id: string
+  artefactType: string
+  version: number
+  contentMd: string | null
+  createdAt: string
+}
+
+interface Phase {
+  phaseNumber: string
+  artefacts: Artefact[]
+}
+
+interface EngagementResponse {
+  id: string
+  clientName: string
+  techStack: string
+  engagementType: string
+  updatedAt: string
+  phases: Phase[]
+}
+
 export default function EstimatePage() {
-  const clientName = "Acme Corporation"
+  const { id } = useParams<{ id: string }>()
+  const [estimateData, setEstimateData] = React.useState<EstimateData | null>(null)
+  const [clientName, setClientName] = React.useState("")
+  const [techStack, setTechStack] = React.useState("")
+  const [engagementType, setEngagementType] = React.useState("")
+  const [updatedAt, setUpdatedAt] = React.useState("")
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    fetch(`/api/engagements/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch engagement")
+        return res.json() as Promise<EngagementResponse>
+      })
+      .then((data) => {
+        setClientName(data.clientName)
+        setTechStack(data.techStack.replace(/_/g, " + "))
+        setEngagementType(data.engagementType.replace(/_/g, " "))
+        setUpdatedAt(
+          new Date(data.updatedAt).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        )
+
+        // Find the latest ESTIMATE artefact (from Phase 1A or Phase 3)
+        let estimateContent: string | null = null
+        const estimatePhases = ["1A", "3"]
+        for (const pn of estimatePhases) {
+          const phase = data.phases.find((p) => p.phaseNumber === pn)
+          if (phase) {
+            const artefact = phase.artefacts.find(
+              (a) => a.artefactType === "ESTIMATE" && a.contentMd
+            )
+            if (artefact?.contentMd) {
+              estimateContent = artefact.contentMd
+              break
+            }
+          }
+        }
+
+        if (estimateContent) {
+          setEstimateData(parseEstimateMarkdown(estimateContent))
+        }
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [id])
+
+  async function handleDownloadExcel() {
+    if (!estimateData) return
+
+    const tabs = estimateDataToExcelTabs(estimateData)
+    const res = await fetch("/api/export/excel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tabs, clientName }),
+    })
+
+    if (!res.ok) return
+
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${clientName.replace(/[^a-zA-Z0-9-_]/g, "-")}-estimate.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <p className="text-sm text-destructive">{error}</p>
+      </div>
+    )
+  }
+
+  if (!estimateData) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20">
+        <AlertTriangleIcon className="size-8 text-muted-foreground/50" />
+        <p className="text-sm text-muted-foreground">
+          No estimate artefact found. Run Phase 1A or Phase 3 to generate estimates.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -286,20 +260,20 @@ export default function EstimatePage() {
             <span className="text-primary">{clientName}</span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Drupal + Next.js · New Build · Last updated 4 Apr 2026
+            {techStack} · {engagementType} · Last updated {updatedAt}
           </p>
         </div>
-        <ExportButtons />
+        <ExportButtons onDownloadExcel={handleDownloadExcel} />
       </div>
 
       <Separator className="mb-6" />
 
       {/* Tabbed estimate */}
-      <TabbedEstimate initialData={MOCK_DATA} />
+      <TabbedEstimate initialData={estimateData} />
 
       {/* Risk Register */}
       <div className="mt-6">
-        <RiskRegister data={MOCK_DATA} />
+        <RiskRegister data={estimateData} />
       </div>
     </div>
   )

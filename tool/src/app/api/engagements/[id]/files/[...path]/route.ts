@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { downloadFile, getPresignedUrl } from "@/lib/storage";
+import { downloadFile } from "@/lib/storage";
 
 const PREVIEWABLE_EXTENSIONS = new Set(["md", "csv", "txt", "json", "html"]);
 
@@ -61,16 +61,30 @@ export async function GET(
     }
   }
 
-  // For non-previewable files, return a presigned download URL
+  // For non-previewable files, proxy the binary download through the API
+  // (presigned S3 URLs use internal Docker hostnames that browsers can't reach)
   try {
-    const url = await getPresignedUrl(s3Key, 3600);
-    return NextResponse.json({
-      path: relativePath,
-      ext,
-      downloadUrl: url,
-      previewable: false,
+    const buffer = await downloadFile(s3Key);
+    const filename = relativePath.split("/").pop() ?? "download";
+
+    const contentTypeMap: Record<string, string> = {
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      xls: "application/vnd.ms-excel",
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      doc: "application/msword",
+      zip: "application/zip",
+    };
+    const contentType = contentTypeMap[ext] ?? "application/octet-stream";
+
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": String(buffer.length),
+      },
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       { error: `File not found: ${relativePath}` },
       { status: 404 }

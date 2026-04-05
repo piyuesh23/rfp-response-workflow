@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { getNextPhases, getPhaseLabel } from "@/lib/phase-chain";
+import { populateTemplateAfterPhase1, populateTemplateAfterEstimate } from "@/lib/template-populator";
 import type { WorkflowPath } from "@/lib/phase-chain";
 
 export async function POST(
@@ -70,6 +71,19 @@ export async function POST(
     number: num,
     label: getPhaseLabel(num),
   }));
+
+  // Populate Master Template tabs based on which phase was approved
+  // Awaited so templateStatus is updated before the client fetches engagement data
+  const engagementId = phase.engagement.id;
+  try {
+    if (phase.phaseNumber === "1") {
+      await populateTemplateAfterPhase1(engagementId);
+    } else if (phase.phaseNumber === "1A" || phase.phaseNumber === "3") {
+      await populateTemplateAfterEstimate(engagementId, phase.phaseNumber);
+    }
+  } catch {
+    // Template population failure is non-fatal
+  }
 
   return NextResponse.json({ phase: updated, nextPhases });
 }

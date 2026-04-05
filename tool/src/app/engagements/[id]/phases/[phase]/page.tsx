@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, Upload, SkipForward } from "lucide-react"
 import { getPhaseDef } from "@/lib/phase-chain"
+import { usePhaseNotifications } from "@/hooks/usePhaseNotifications"
 
 interface PhaseArtefact {
   id: string
@@ -64,6 +65,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const [phaseData, setPhaseData] = React.useState<PhaseData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [actionLoading, setActionLoading] = React.useState(false)
+  const [approveMessage, setApproveMessage] = React.useState<string | null>(null)
   const [uploading, setUploading] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -89,6 +91,17 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const label = PHASE_LABELS[phase] ?? `Phase ${phase}`
   const phaseDef = getPhaseDef(phase)
   const uploadConfig = UPLOAD_PHASES[phase]
+
+  // Browser notifications when phase completes while user has tabbed away
+  usePhaseNotifications({
+    phaseId: phaseData?.status === "RUNNING" ? phaseData.id : null,
+    engagementId: id,
+    phaseNumber: phase,
+    phaseLabel: label,
+    enabled: phaseData?.status === "RUNNING",
+    onComplete: fetchPhaseData,
+    onError: fetchPhaseData,
+  })
 
   if (loading) {
     return (
@@ -122,24 +135,34 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const latestArtefact = phaseData.artefacts.length > 0
     ? phaseData.artefacts.reduce((latest, a) => a.version > latest.version ? a : latest, phaseData.artefacts[0])
     : null
-  const stats: Record<string, string | number> | undefined =
-    latestArtefact?.metadata && typeof latestArtefact.metadata === "object"
-      ? (latestArtefact.metadata as Record<string, string | number>)
-      : undefined
+  // engagementId and phase are passed to PhaseGate for its file browser sidebar
+
+  // Phases that trigger template population on approval (takes longer)
+  const TEMPLATE_PHASES = new Set(["1", "1A", "3"])
 
   async function handleApprove() {
     if (!phaseData) return
     setActionLoading(true)
+
+    if (TEMPLATE_PHASES.has(phase)) {
+      setApproveMessage("Approving and populating Presales Sheet...")
+    } else {
+      setApproveMessage("Approving...")
+    }
+
     try {
       const res = await fetch(`/api/phases/${phaseData.id}/approve`, { method: "POST" })
       if (res.ok) {
+        setApproveMessage(null)
         router.push(`/engagements/${id}`)
       } else {
         const err = await res.json()
         console.error("Approve failed:", err.error)
+        setApproveMessage(null)
       }
     } catch (err) {
       console.error("Approve failed:", err)
+      setApproveMessage(null)
     } finally {
       setActionLoading(false)
     }
@@ -272,12 +295,14 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         </div>
         {versions.length > 0 ? (
           <PhaseGate
-            stats={stats}
+            engagementId={id}
+            phaseNumber={phase}
             versions={versions}
             selectedVersion={versions[versions.length - 1]?.version}
             onBack={() => router.push(`/engagements/${id}`)}
             onRequestRevision={handleRevision}
             onApprove={handleApprove}
+            approveMessage={approveMessage}
           />
         ) : (
           <div className="rounded-xl border bg-card p-6 text-center">
@@ -306,7 +331,8 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         </div>
         {versions.length > 0 ? (
           <PhaseGate
-            stats={stats}
+            engagementId={id}
+            phaseNumber={phase}
             versions={versions}
             selectedVersion={versions[versions.length - 1]?.version}
             readOnly
@@ -346,7 +372,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     "2": "Upload customer Q&A responses, then run analysis against the TOR and original questions.",
     "3": "Upload the estimate sheet for review, or generate one from the Q&A analysis.",
     "3R": "AI reviews the estimate against TOR + Q&A responses. Produces gap analysis and revised estimate.",
-    "5": "Capture learnings from this engagement. Review and edit AI-generated insights.",
+    "5": "Generate a client-facing technical proposal based on all prior analysis and estimates.",
   }
 
   return (

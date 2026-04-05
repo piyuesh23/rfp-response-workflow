@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { getPresignedUrl } from "@/lib/storage";
+import { downloadFile } from "@/lib/storage";
 
 export async function GET(
   _request: NextRequest,
@@ -45,15 +45,29 @@ export async function GET(
   }
 
   if (artefact.fileUrl) {
-    const presignedUrl = await getPresignedUrl(artefact.fileUrl);
-    return NextResponse.json({
-      id: artefact.id,
-      artefactType: artefact.artefactType,
-      version: artefact.version,
-      fileUrl: presignedUrl,
-      metadata: artefact.metadata,
-      createdAt: artefact.createdAt,
-    });
+    try {
+      const buffer = await downloadFile(artefact.fileUrl);
+      const filename = artefact.fileUrl.split("/").pop() ?? "download";
+      const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+      const contentTypeMap: Record<string, string> = {
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        xls: "application/vnd.ms-excel",
+        pdf: "application/pdf",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      };
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": contentTypeMap[ext] ?? "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Content-Length": String(buffer.length),
+        },
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "File not found in storage" },
+        { status: 404 }
+      );
+    }
   }
 
   return NextResponse.json({

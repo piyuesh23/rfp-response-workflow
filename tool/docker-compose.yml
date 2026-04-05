@@ -19,6 +19,7 @@ services:
       ALLOWED_EMAIL_DOMAIN: ${ALLOWED_EMAIL_DOMAIN:-qed42.com}
     volumes:
       - engagement-data:/data/engagements
+      - ../templates:/app/templates:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,7 +30,7 @@ services:
 
   worker:
     build: .
-    command: node dist/workers/phase-runner.js
+    command: npx tsx src/workers/phase-runner.ts
     environment:
       DATABASE_URL: postgresql://presales:presales@postgres:5432/presales
       REDIS_HOST: redis

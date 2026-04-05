@@ -9,12 +9,24 @@ import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import {
   ArrowRight, Loader2, CheckCircle2, Eye,
   GitFork, FileQuestion, FileSpreadsheet, SkipForward,
+  Circle, Download, FileDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   getVisiblePhases, shouldShowDecisionFork, canStartPhase, getPhaseLabel,
+  isPhasePathSkipped,
 } from "@/lib/phase-chain"
+import { usePhaseNotifications } from "@/hooks/usePhaseNotifications"
 import type { WorkflowPath } from "@/lib/phase-chain"
+
+interface TemplateStatus {
+  questionsRfp?: boolean
+  salesDetail?: boolean
+  backend?: boolean
+  frontend?: boolean
+  fixedCost?: boolean
+  ai?: boolean
+}
 
 interface PhaseWithId extends PhaseCardData {
   id: string
@@ -22,7 +34,10 @@ interface PhaseWithId extends PhaseCardData {
 
 interface EngagementData {
   id: string
+  projectName?: string | null
   workflowPath: WorkflowPath
+  templateFileUrl?: string | null
+  templateStatus?: TemplateStatus | null
   phases: PhaseWithId[]
 }
 
@@ -41,6 +56,51 @@ const EMPTY_STATS: EngagementStatsData = {
   assumptionCount: { total: 0, resolved: 0, open: 0 },
 }
 
+/** Extract a one-line summary from phase artefact metadata for display in phase cards. */
+function extractPhaseSummary(
+  phaseNumber: string,
+  artefacts: Array<{ metadata?: Record<string, unknown> }>
+): string | undefined {
+  // Find the latest artefact with metadata
+  const meta = artefacts
+    .map((a) => a.metadata)
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === "object")
+    .pop()
+
+  if (!meta) return undefined
+
+  switch (phaseNumber) {
+    case "0": {
+      const integrations = meta.integrationsFound as number | undefined
+      const hidden = meta.hiddenScopeItems as number | undefined
+      const risks = meta.riskCount as number | undefined
+      if (!integrations && !hidden && !risks) return undefined
+      const parts: string[] = []
+      if (integrations) parts.push(`${integrations} integrations`)
+      if (hidden) parts.push(`${hidden} hidden scope items`)
+      if (risks) parts.push(`${risks} risks`)
+      return parts.join(" · ")
+    }
+    case "1": {
+      const reqCount = meta.requirementCount as number | undefined
+      const clarity = meta.clarityBreakdown as { clear?: number; needsClarification?: number; ambiguous?: number; missingDetail?: number } | undefined
+      if (!reqCount) return undefined
+      const clear = clarity?.clear ?? 0
+      const needs = (clarity?.needsClarification ?? 0) + (clarity?.ambiguous ?? 0) + (clarity?.missingDetail ?? 0)
+      return `${reqCount} requirements assessed (${clear} clear, ${needs} need clarification)`
+    }
+    case "1A":
+    case "3": {
+      const total = meta.totalHours as { low?: number; high?: number } | undefined
+      const lineItems = meta.lineItemCount as number | undefined
+      if (!total?.low && !total?.high) return undefined
+      return `${lineItems ?? "?"} line items · ${total?.low ?? 0}–${total?.high ?? 0} hrs`
+    }
+    default:
+      return undefined
+  }
+}
+
 export default function EngagementOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -56,15 +116,19 @@ export default function EngagementOverviewPage() {
         if (data) {
           setEngagement({
             id: data.id,
+            projectName: data.projectName ?? null,
             workflowPath: data.workflowPath ?? null,
+            templateFileUrl: data.templateFileUrl ?? null,
+            templateStatus: data.templateStatus ?? null,
             phases: (data.phases ?? []).map(
-              (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: unknown[] }) => ({
+              (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }> }) => ({
                 id: p.id,
                 phaseNumber: p.phaseNumber,
                 status: p.status,
                 startedAt: p.startedAt ?? null,
                 completedAt: p.completedAt ?? null,
                 artefactCount: p.artefacts?.length ?? 0,
+                summary: extractPhaseSummary(p.phaseNumber, p.artefacts ?? []),
               })
             ),
           })
@@ -87,9 +151,8 @@ export default function EngagementOverviewPage() {
   }, [fetchEngagement])
 
   // SSE auto-refresh for running phases
+  const runningPhase = engagement?.phases.find((p) => p.status === "RUNNING") ?? null
   React.useEffect(() => {
-    if (!engagement) return
-    const runningPhase = engagement.phases.find((p) => p.status === "RUNNING")
     if (!runningPhase) return
 
     const eventSource = new EventSource(`/api/phases/${runningPhase.id}/sse`)
@@ -99,7 +162,16 @@ export default function EngagementOverviewPage() {
     eventSource.addEventListener("error", refresh)
 
     return () => { eventSource.close() }
-  }, [engagement, fetchEngagement])
+  }, [runningPhase?.id, fetchEngagement])
+
+  // Browser notifications for running phase completion
+  usePhaseNotifications({
+    phaseId: runningPhase?.id ?? null,
+    engagementId: id,
+    phaseNumber: runningPhase?.phaseNumber ?? "",
+    phaseLabel: runningPhase ? getPhaseLabel(runningPhase.phaseNumber) : "",
+    enabled: !!runningPhase,
+  })
 
   async function handleRunPhase(phaseId: string) {
     setActionLoading(true)
@@ -166,10 +238,18 @@ export default function EngagementOverviewPage() {
     phaseStatuses[p.phaseNumber] = p.status
   }
 
-  // Filter visible phases based on workflow path
+  // Show all phases - phases from the non-chosen path display as "Skipped"
   const visibleDefs = getVisiblePhases(workflowPath)
   const visiblePhases = visibleDefs
-    .map((def) => phases.find((p) => p.phaseNumber === def.number))
+    .map((def) => {
+      const p = phases.find((ph) => ph.phaseNumber === def.number)
+      if (!p) return undefined
+      // Override status to SKIPPED for phases on the inactive workflow path
+      if (isPhasePathSkipped(p.phaseNumber, workflowPath) && p.status === "PENDING") {
+        return { ...p, status: "SKIPPED" as const }
+      }
+      return p
+    })
     .filter((p): p is PhaseWithId => p !== undefined)
 
   // Determine current state
@@ -357,12 +437,56 @@ export default function EngagementOverviewPage() {
         )}
       </div>
 
-      {/* Right: Summary stats */}
+      {/* Right: Summary stats + template status */}
       <div className="flex flex-col gap-3 md:w-[45%]">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Summary
         </h2>
         <EngagementStats stats={stats} />
+
+        {/* Presales Sheet Status */}
+        {engagement.templateFileUrl && (
+          <div className="rounded-xl border bg-card p-4 ring-1 ring-foreground/10">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <FileDown className="size-4 text-muted-foreground" />
+                <span className="text-sm font-semibold">{engagement.projectName ?? "Project"} Presales Sheet</span>
+              </div>
+              <a
+                href={`/api/engagements/${id}/files/estimates/Master_Estimate_Template.xlsx`}
+                download
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+              >
+                <Download className="size-3.5" />
+                Download
+              </a>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { key: "salesDetail", label: "Sales Detail" },
+                { key: "questionsRfp", label: "Questions for RFP" },
+                { key: "backend", label: "Backend" },
+                { key: "frontend", label: "Frontend" },
+                { key: "fixedCost", label: "Fixed Cost Items" },
+                { key: "ai", label: "AI" },
+              ] as const).map(({ key, label }) => {
+                const done = !!(engagement.templateStatus as TemplateStatus)?.[key]
+                return (
+                  <div key={key} className="flex items-center gap-1.5 text-xs">
+                    {done ? (
+                      <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
+                    ) : (
+                      <Circle className="size-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <span className={done ? "text-foreground" : "text-muted-foreground"}>
+                      {label}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
