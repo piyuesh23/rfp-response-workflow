@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { MermaidDiagram } from "@/components/artefact/MermaidDiagram"
 
 interface ArtefactViewerProps {
   contentMd: string
@@ -67,6 +68,13 @@ function MarkdownContent({ contentMd, className }: { contentMd: string; classNam
           // Code blocks
           code({ className: codeClassName, children, ...props }) {
             const isBlock = codeClassName?.startsWith("language-")
+
+            // Render Mermaid diagrams
+            if (codeClassName === "language-mermaid") {
+              const chart = String(children).replace(/\n$/, "")
+              return <MermaidDiagram chart={chart} />
+            }
+
             if (isBlock) {
               return (
                 <pre className="my-4 overflow-x-auto rounded-lg bg-muted p-4">
