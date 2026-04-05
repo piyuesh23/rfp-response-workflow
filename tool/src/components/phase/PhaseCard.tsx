@@ -9,6 +9,7 @@ import {
   AlertCircle,
   XCircle,
   Eye,
+  Lock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +28,8 @@ export interface PhaseCardData {
   completedAt?: Date | string | null
   artefactCount?: number
   summary?: string
+  /** Phase is locked because workflow decision hasn't been made */
+  locked?: boolean
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -34,7 +37,7 @@ const PHASE_LABELS: Record<string, string> = {
   "1": "TOR Assessment",
   "1A": "Optimistic Estimate",
   "2": "Responses",
-  "3": "Estimate",
+  "3": "Estimate Analysis",
   "3R": "Review & Gap Analysis",
   "5": "Technical Proposal",
 }
@@ -106,10 +109,11 @@ interface PhaseCardProps {
 }
 
 export function PhaseCard({ phase, onClick, className }: PhaseCardProps) {
-  const config = STATUS_CONFIG[phase.status]
-  const Icon = config.icon
+  const config = STATUS_CONFIG[phase.locked ? "PENDING" : phase.status]
+  const Icon = phase.locked ? Lock : config.icon
+  const iconClass = phase.locked ? "text-slate-400" : config.iconClass
   const label = PHASE_LABELS[phase.phaseNumber] ?? `Phase ${phase.phaseNumber}`
-  const isClickable = phase.status !== "PENDING" || onClick !== undefined
+  const isClickable = !phase.locked && (phase.status !== "PENDING" || onClick !== undefined)
   const duration =
     phase.startedAt && phase.completedAt
       ? formatDuration(phase.startedAt, phase.completedAt)
@@ -148,7 +152,7 @@ export function PhaseCard({ phase, onClick, className }: PhaseCardProps) {
       <Icon
         className={cn(
           "mt-0.5 size-4 shrink-0",
-          config.iconClass,
+          iconClass,
           pulsing && "animate-pulse-once"
         )}
       />
@@ -160,11 +164,13 @@ export function PhaseCard({ phase, onClick, className }: PhaseCardProps) {
           <Badge
             className={cn(
               "border text-xs font-medium",
-              config.badgeClass
+              phase.locked
+                ? "bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400"
+                : config.badgeClass
             )}
             variant="outline"
           >
-            {config.label}
+            {phase.locked ? "Locked" : config.label}
           </Badge>
         </div>
         {(duration !== null || (phase.artefactCount !== undefined && phase.artefactCount > 0)) && (

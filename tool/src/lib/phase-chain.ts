@@ -25,7 +25,7 @@ export const PHASE_DEFS: PhaseDef[] = [
   { number: "1",  label: "TOR Assessment",        dependsOn: [],          workflowPath: null,           optional: false },
   { number: "1A", label: "Optimistic Estimate",   dependsOn: ["0", "1"],  workflowPath: "NO_RESPONSE",  optional: true },
   { number: "2",  label: "Responses",             dependsOn: ["0", "1"],  workflowPath: "HAS_RESPONSE", optional: false },
-  { number: "3",  label: "Estimate",              dependsOn: ["2"],       workflowPath: "HAS_RESPONSE", optional: false },
+  { number: "3",  label: "Estimate Analysis",      dependsOn: ["2"],       workflowPath: "HAS_RESPONSE", optional: false },
   { number: "3R", label: "Review & Gap Analysis", dependsOn: ["3"],       workflowPath: "HAS_RESPONSE", optional: false },
   { number: "5",  label: "Technical Proposal",     dependsOn: [],          workflowPath: null,           optional: false },
 ];

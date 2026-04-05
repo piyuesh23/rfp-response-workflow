@@ -9,7 +9,7 @@ import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import {
   ArrowRight, Loader2, CheckCircle2, Eye,
   GitFork, FileQuestion, FileSpreadsheet, SkipForward,
-  Circle, Download, FileDown,
+  Circle, Download, FileDown, Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -248,6 +248,14 @@ export default function EngagementOverviewPage() {
       if (isPhasePathSkipped(p.phaseNumber, workflowPath) && p.status === "PENDING") {
         return { ...p, status: "SKIPPED" as const }
       }
+      // Mark phases as locked if they need a workflow decision that hasn't been made
+      if (p.status === "PENDING" && def.workflowPath !== null && workflowPath === null) {
+        return { ...p, locked: true }
+      }
+      // Phase 5 is locked until workflow is chosen
+      if (p.status === "PENDING" && def.number === "5" && workflowPath === null) {
+        return { ...p, locked: true }
+      }
       return p
     })
     .filter((p): p is PhaseWithId => p !== undefined)
@@ -262,6 +270,13 @@ export default function EngagementOverviewPage() {
     if (p.status !== "PENDING") return false
     const { canStart } = canStartPhase(p.phaseNumber, phaseStatuses, workflowPath)
     return canStart
+  })
+
+  // Find locked phases (pending but blocked by missing workflow decision)
+  const lockedPhases = visiblePhases.filter((p) => {
+    if (p.status !== "PENDING") return false
+    const { canStart, reason } = canStartPhase(p.phaseNumber, phaseStatuses, workflowPath)
+    return !canStart && reason?.includes("Workflow decision")
   })
 
   return (
@@ -358,6 +373,25 @@ export default function EngagementOverviewPage() {
                   </p>
                 </div>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Locked phases — waiting for workflow decision */}
+        {lockedPhases.length > 0 && !showDecisionFork && (
+          <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-card p-4 ring-1 ring-foreground/5">
+            <div className="flex items-start gap-2 mb-2">
+              <Lock className="size-4 text-slate-400 shrink-0 mt-0.5" />
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                Locked — choose a workflow path to unlock
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 ml-6">
+              {lockedPhases.map((p) => (
+                <span key={p.id} className="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Phase {p.phaseNumber}: {getPhaseLabel(p.phaseNumber)}
+                </span>
+              ))}
             </div>
           </div>
         )}
