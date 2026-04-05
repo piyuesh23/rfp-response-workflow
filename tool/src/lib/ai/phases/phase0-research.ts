@@ -5,7 +5,8 @@ import { getPhase0Prompt } from "@/lib/ai/prompts/phase-prompts";
 
 export function getPhase0Config(
   engagementId: string,
-  techStack: string
+  techStack: string,
+  engagementType?: string
 ): PhaseConfig {
   return {
     engagementId,
@@ -18,6 +19,6 @@ export function getPhase0Config(
       getCarlRules(),
       "You are conducting pre-engagement research.",
     ].join("\n\n---\n\n"),
-    userPrompt: getPhase0Prompt(),
+    userPrompt: getPhase0Prompt(engagementType),
   };
 }

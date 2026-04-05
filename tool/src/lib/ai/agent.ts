@@ -190,6 +190,7 @@ async function syncTorFiles(
   const synced: string[] = [];
 
   try {
+    const { isPdf, extractTextFromPdf, pdfTextToMarkdown } = await import("@/lib/pdf-extractor");
     const keys = await listObjects(prefix);
 
     for (const key of keys) {
@@ -200,6 +201,19 @@ async function syncTorFiles(
       const buffer = await downloadFile(key);
       await writeFile(localPath, buffer);
       synced.push(filename);
+
+      // Auto-extract PDF text to .md for easier agent consumption
+      if (isPdf(filename)) {
+        try {
+          const result = await extractTextFromPdf(buffer);
+          const markdown = pdfTextToMarkdown(result, filename);
+          const mdPath = localPath.replace(/\.pdf$/i, ".md");
+          await writeFile(mdPath, markdown, "utf-8");
+          synced.push(filename.replace(/\.pdf$/i, ".md"));
+        } catch {
+          // PDF extraction failure is non-fatal
+        }
+      }
     }
   } catch (err) {
     // MinIO may not be running in local dev — this is non-fatal

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { LayoutDashboard, Settings, LogOut, Clock } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useCurrentUser } from "@/hooks/useCurrentUser"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -29,6 +30,15 @@ const recentEngagements = [
 
 export function SidebarContent() {
   const pathname = usePathname()
+  const currentUser = useCurrentUser()
+  const userName = currentUser?.name ?? "User"
+  const userEmail = currentUser?.email ?? ""
+  const userInitials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
 
   return (
     <div className="flex h-full flex-col">
@@ -94,21 +104,21 @@ export function SidebarContent() {
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm hover:bg-accent/50 transition-colors outline-none">
             <Avatar size="sm">
-              <AvatarImage src="" alt="User" />
-              <AvatarFallback>QE</AvatarFallback>
+              <AvatarImage src={currentUser?.image ?? ""} alt={userName} />
+              <AvatarFallback>{userInitials}</AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-col text-left">
               <span className="truncate text-xs font-medium text-foreground">
-                Presales User
+                {userName}
               </span>
               <span className="truncate text-xs text-muted-foreground">
-                user@qed42.com
+                {userEmail}
               </span>
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-52">
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive">
+            <DropdownMenuItem variant="destructive" onClick={() => { window.location.href = "/api/auth/signout" }}>
               <LogOut className="size-4" />
               Sign out
             </DropdownMenuItem>

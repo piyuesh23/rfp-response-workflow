@@ -192,6 +192,88 @@ src/
 | `SMTP_HOST` | No | SMTP server hostname for email notifications |
 | `SENTRY_DSN` | No | Sentry DSN for error tracking |
 
+### How to Obtain Each Variable
+
+#### `ANTHROPIC_API_KEY`
+1. Go to [console.anthropic.com](https://console.anthropic.com/)
+2. Sign in or create an account
+3. Navigate to **API Keys** in the left sidebar
+4. Click **Create Key**, give it a name, and copy the generated key
+
+#### `NEXTAUTH_SECRET`
+Generate a random 32-character secret using:
+```bash
+openssl rand -base64 32
+```
+
+#### `NEXTAUTH_URL`
+Set to the base URL where the app is accessible:
+- Local development: `http://localhost:3000`
+- Production: your deployed domain (e.g. `https://presales.qed42.com`)
+
+#### `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Navigate to **APIs & Services > Credentials**
+4. Click **Create Credentials > OAuth client ID**
+5. Select **Web application** as the application type
+6. Add authorized redirect URIs:
+   - Local: `http://localhost:3000/api/auth/callback/google`
+   - Production: `https://<your-domain>/api/auth/callback/google`
+7. Click **Create** and copy the Client ID and Client Secret
+8. If prompted, configure the **OAuth consent screen** first (set to **Internal** for organization-only access)
+
+#### `DATABASE_URL`
+PostgreSQL connection string in the format:
+```
+postgresql://<user>:<password>@<host>:<port>/<database>
+```
+- Using Docker Compose (default): `postgresql://postgres:postgres@localhost:5432/presales`
+- For managed PostgreSQL (e.g. AWS RDS, Supabase), use the connection string provided by the service
+
+#### `REDIS_HOST` and `REDIS_PORT`
+- Using Docker Compose (default): `REDIS_HOST=localhost`, `REDIS_PORT=6379`
+- For managed Redis (e.g. AWS ElastiCache, Upstash), use the host and port provided by the service
+
+#### `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `S3_BUCKET`
+
+**Using MinIO (local development):**
+- `S3_ENDPOINT=http://localhost:9000`
+- `S3_ACCESS_KEY=minioadmin`
+- `S3_SECRET_KEY=minioadmin`
+- `S3_BUCKET=presales`
+
+The bucket is auto-created by MinIO. Access the MinIO console at `http://localhost:9001` to manage buckets and objects.
+
+**Using AWS S3 (production):**
+1. Go to [AWS Console > S3](https://console.aws.amazon.com/s3/)
+2. Create a bucket (e.g. `presales-tor-uploads`)
+3. Go to **IAM > Users**, create a user with `AmazonS3FullAccess` (or a scoped policy for the bucket)
+4. Create an access key for the user and copy the Access Key ID and Secret Access Key
+5. Set `S3_ENDPOINT=https://s3.<region>.amazonaws.com`
+
+#### `ALLOWED_EMAIL_DOMAIN` (optional)
+Set to your organization's email domain to restrict Google OAuth sign-in (e.g. `qed42.com`). Omit or leave blank to allow any Google account.
+
+#### `SLACK_WEBHOOK_URL` (optional)
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app (or select an existing one)
+2. Navigate to **Incoming Webhooks** and activate them
+3. Click **Add New Webhook to Workspace** and select the target channel
+4. Copy the generated webhook URL
+
+#### `SMTP_HOST` (optional)
+Set to your SMTP server hostname for email notifications:
+- Gmail: `smtp.gmail.com`
+- AWS SES: `email-smtp.<region>.amazonaws.com`
+- Mailgun: `smtp.mailgun.org`
+
+Additional SMTP configuration (port, user, password) should be set in `.env` as needed.
+
+#### `SENTRY_DSN` (optional)
+1. Go to [sentry.io](https://sentry.io/) and sign in
+2. Create a new project (select **Next.js** as the platform)
+3. Copy the DSN from the project settings under **Client Keys (DSN)**
+
 ---
 
 ## Available Scripts

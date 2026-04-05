@@ -1,10 +1,17 @@
 import { Worker } from "bullmq";
 import { runPhase, prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
+import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
+import { parseEstimateMarkdown, estimateDataToExcelTabs } from "@/lib/estimate-parser";
+import { generateEstimateXlsx } from "@/lib/excel-export";
+import { uploadFile } from "@/lib/storage";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
+
+// Phases that produce estimate content and should auto-generate Excel
+const ESTIMATE_PHASES = new Set(["1A", "3"]);
 
 // Map phase numbers to their primary artefact type
 const PHASE_ARTEFACT_TYPE: Record<string, ArtefactType> = {
@@ -14,7 +21,7 @@ const PHASE_ARTEFACT_TYPE: Record<string, ArtefactType> = {
   "2": ArtefactType.RESPONSE_ANALYSIS,
   "3": ArtefactType.ESTIMATE,
   "3R": ArtefactType.GAP_ANALYSIS,
-  "5": ArtefactType.RESEARCH,
+  "5": ArtefactType.PROPOSAL,
 };
 
 const worker = new Worker<PhaseJobData>(
@@ -31,10 +38,17 @@ const worker = new Worker<PhaseJobData>(
     });
 
     try {
+      // Fetch engagement type for phase-specific behavior (e.g., conditional site audit)
+      const engagementData = await prisma.engagement.findUnique({
+        where: { id: engagementId },
+        select: { engagementType: true, clientName: true },
+      });
+
       const config = getPhaseConfig(
         String(phaseNumber),
         techStack,
-        engagementId
+        engagementId,
+        engagementData?.engagementType
       );
 
       if (revisionFeedback) {
@@ -61,14 +75,52 @@ const worker = new Worker<PhaseJobData>(
         });
         const nextVersion = (latestArtefact?.version ?? 0) + 1;
 
+        // Extract structured metadata from the markdown content
+        const metadata = extractMetadataForPhase(String(phaseNumber), finalContent);
+
         await prisma.phaseArtefact.create({
           data: {
             phaseId,
             artefactType,
             version: nextVersion,
             contentMd: finalContent,
+            ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
           },
         });
+      }
+
+      // Auto-generate Excel for estimation phases and upload to MinIO
+      if (finalContent && ESTIMATE_PHASES.has(String(phaseNumber))) {
+        try {
+          const clientName = engagementData?.clientName ?? "engagement";
+          const estimateData = parseEstimateMarkdown(finalContent);
+          const tabs = estimateDataToExcelTabs(estimateData);
+          const excelBuffer = await generateEstimateXlsx(tabs, clientName);
+          const safeClientName = clientName.replace(/[^a-zA-Z0-9-_]/g, "-");
+          const s3Key = `engagements/${engagementId}/estimates/${safeClientName}-estimate.xlsx`;
+          await uploadFile(
+            s3Key,
+            excelBuffer,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          );
+
+          // Save a reference artefact for the Excel file
+          await prisma.phaseArtefact.create({
+            data: {
+              phaseId,
+              artefactType: ArtefactType.ESTIMATE_STATE,
+              version: 1,
+              fileUrl: s3Key,
+            },
+          });
+
+          await job.updateProgress({
+            type: "progress",
+            message: `Generated Excel estimate: ${safeClientName}-estimate.xlsx`,
+          });
+        } catch {
+          // Excel generation failure is non-fatal
+        }
       }
 
       // Sync all generated files back to MinIO/S3

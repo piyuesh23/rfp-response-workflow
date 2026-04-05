@@ -3,6 +3,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import type Anthropic from "@anthropic-ai/sdk";
+import { isPdf, extractTextFromPdf, pdfTextToMarkdown } from "@/lib/pdf-extractor";
 
 const execFileAsync = promisify(execFile);
 
@@ -189,13 +190,28 @@ export function getToolHandlers(
       const filePath = input.file_path as string;
       const absPath = validatePath(workDir, filePath);
 
+      // Handle PDF files: extract text content
+      if (isPdf(filePath)) {
+        try {
+          const buffer = await readFile(absPath);
+          const result = await extractTextFromPdf(buffer);
+          const markdown = pdfTextToMarkdown(result, path.basename(filePath));
+          if (markdown.length > 100_000) {
+            return `[PDF extracted, truncated — showing first 100,000 characters of ${result.pageCount} pages]\n\n${markdown.slice(0, 100_000)}`;
+          }
+          return markdown;
+        } catch (pdfErr) {
+          return `Error extracting PDF text from ${filePath}: ${pdfErr instanceof Error ? pdfErr.message : String(pdfErr)}`;
+        }
+      }
+
       try {
         const content = await readFile(absPath, "utf-8");
         if (content.length > 100_000) {
           return `[File truncated — showing first 100,000 characters]\n\n${content.slice(0, 100_000)}`;
         }
         return content;
-      } catch (err) {
+      } catch {
         // Check if binary
         try {
           const stats = await stat(absPath);

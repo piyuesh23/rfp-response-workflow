@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { PlusIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react"
+import { useCurrentUser } from "@/hooks/useCurrentUser"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -455,6 +456,8 @@ function AddBenchmarkDialog({ onAdd }: AddBenchmarkDialogProps) {
 // ─── Benchmarks Tab ───────────────────────────────────────────────────────────
 
 function BenchmarksTab() {
+  const currentUser = useCurrentUser()
+  const isAdmin = currentUser?.role === "ADMIN"
   const [data, setData] = React.useState<Benchmark[]>(MOCK_BENCHMARKS)
   const [techFilter, setTechFilter] = React.useState("All")
   const [categoryFilter, setCategoryFilter] = React.useState("all")
@@ -520,9 +523,11 @@ function BenchmarksTab() {
           </SelectContent>
         </Select>
 
-        <div className="ml-auto">
-          <AddBenchmarkDialog onAdd={handleAdd} />
-        </div>
+        {isAdmin && (
+          <div className="ml-auto">
+            <AddBenchmarkDialog onAdd={handleAdd} />
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -536,7 +541,7 @@ function BenchmarksTab() {
               <TableHead className="font-medium text-muted-foreground text-right">High Hrs</TableHead>
               <TableHead className="font-medium text-muted-foreground">Notes</TableHead>
               <TableHead className="font-medium text-muted-foreground">Source</TableHead>
-              <TableHead className="w-10" />
+              {isAdmin && <TableHead className="w-10" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -558,16 +563,24 @@ function BenchmarksTab() {
                     {b.taskType}
                   </TableCell>
                   <TableCell className="text-right">
-                    <EditableHours
-                      value={b.lowHours}
-                      onSave={(v) => handleLowHours(b.id, v)}
-                    />
+                    {isAdmin ? (
+                      <EditableHours
+                        value={b.lowHours}
+                        onSave={(v) => handleLowHours(b.id, v)}
+                      />
+                    ) : (
+                      <span className="font-mono text-sm">{b.lowHours}</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <EditableHours
-                      value={b.highHours}
-                      onSave={(v) => handleHighHours(b.id, v)}
-                    />
+                    {isAdmin ? (
+                      <EditableHours
+                        value={b.highHours}
+                        onSave={(v) => handleHighHours(b.id, v)}
+                      />
+                    ) : (
+                      <span className="font-mono text-sm">{b.highHours}</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[220px] whitespace-normal leading-snug">
                     {b.notes || "—"}
@@ -577,37 +590,39 @@ function BenchmarksTab() {
                       <span className="italic">—</span>
                     )}
                   </TableCell>
-                  <TableCell>
-                    {deleteConfirm === b.id ? (
-                      <div className="flex items-center gap-1">
+                  {isAdmin && (
+                    <TableCell>
+                      {deleteConfirm === b.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(b.id)}
+                            className="rounded p-1 text-destructive hover:bg-destructive/10 transition-colors"
+                            title="Confirm delete"
+                          >
+                            <CheckIcon className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirm(null)}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted transition-colors"
+                            title="Cancel"
+                          >
+                            <XIcon className="size-3.5" />
+                          </button>
+                        </div>
+                      ) : (
                         <button
                           type="button"
-                          onClick={() => handleDelete(b.id)}
-                          className="rounded p-1 text-destructive hover:bg-destructive/10 transition-colors"
-                          title="Confirm delete"
+                          onClick={() => setDeleteConfirm(b.id)}
+                          className="rounded p-1 text-muted-foreground opacity-0 group-hover/row:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+                          title="Delete benchmark"
                         >
-                          <CheckIcon className="size-3.5" />
+                          <Trash2Icon className="size-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteConfirm(null)}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted transition-colors"
-                          title="Cancel"
-                        >
-                          <XIcon className="size-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirm(b.id)}
-                        className="rounded p-1 text-muted-foreground opacity-0 group-hover/row:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
-                        title="Delete benchmark"
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </button>
-                    )}
-                  </TableCell>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -618,7 +633,7 @@ function BenchmarksTab() {
       <p className="text-xs text-muted-foreground">
         {filtered.length} benchmark{filtered.length !== 1 ? "s" : ""} shown
         {filtered.length !== data.length && ` (${data.length} total)`}.
-        Hours cells are click-to-edit.
+        {isAdmin ? "Hours cells are click-to-edit." : "Read-only view. Contact an admin to edit benchmarks."}
       </p>
     </div>
   )
@@ -627,6 +642,11 @@ function BenchmarksTab() {
 // ─── Account Tab ──────────────────────────────────────────────────────────────
 
 function AccountTab() {
+  const currentUser = useCurrentUser()
+  const userName = currentUser?.name ?? "—"
+  const userEmail = currentUser?.email ?? "—"
+  const userRole = currentUser?.role ?? "VIEWER"
+
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       {/* Current user */}
@@ -635,15 +655,15 @@ function AccountTab() {
         <Separator />
         <div className="grid grid-cols-[120px_1fr] gap-y-3 text-sm">
           <span className="text-muted-foreground">Name</span>
-          <span className="font-medium">Presales User</span>
+          <span className="font-medium">{userName}</span>
 
           <span className="text-muted-foreground">Email</span>
-          <span className="font-medium">user@qed42.com</span>
+          <span className="font-medium">{userEmail}</span>
 
           <span className="text-muted-foreground">Role</span>
           <span>
             <Badge variant="secondary" className="text-xs">
-              Admin
+              {userRole}
             </Badge>
           </span>
         </div>

@@ -430,9 +430,38 @@ export function CreateWizard() {
   async function handleSubmit() {
     setIsSubmitting(true)
     try {
-      console.log("Creating engagement:", { formData, files: uploadedFiles.map((f) => f.file.name) })
-      // TODO: call server action / API to create engagement
-      router.push("/engagements/mock-id")
+      // 1. Create the engagement via API
+      const res = await fetch("/api/engagements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientName: formData.clientName,
+          projectName: formData.projectName || undefined,
+          techStack: formData.techStack,
+          engagementType: formData.engagementType || undefined,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to create engagement")
+      }
+
+      const engagement = await res.json()
+      const engagementId = engagement.id
+
+      // 2. Upload TOR files if any
+      if (uploadedFiles.length > 0) {
+        const fd = new FormData()
+        fd.append("engagementId", engagementId)
+        for (const uf of uploadedFiles) {
+          fd.append("file", uf.file)
+        }
+        await fetch("/api/upload", { method: "POST", body: fd })
+      }
+
+      // 3. Redirect to the new engagement
+      router.push(`/engagements/${engagementId}`)
     } catch (err) {
       console.error("Failed to create engagement:", err)
       setIsSubmitting(false)

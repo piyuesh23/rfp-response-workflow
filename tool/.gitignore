@@ -41,3 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# oh-my-claudecode state (session-specific)
+.omc/state/
+.omc/sessions/
+.omc/HANDOFF.md

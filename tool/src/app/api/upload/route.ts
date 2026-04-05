@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { uploadFile, S3_BUCKET } from "@/lib/storage";
+import {
+  isPdf,
+  extractTextFromPdf,
+  pdfTextToMarkdown,
+} from "@/lib/pdf-extractor";
+
+const MAX_UPLOAD_SIZE = 30 * 1024 * 1024; // 30MB per file
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -28,19 +35,49 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No files provided" }, { status: 400 });
   }
 
-  const results: { filename: string; key: string; url: string }[] = [];
+  const results: {
+    filename: string;
+    key: string;
+    url: string;
+    extractedMd?: string;
+  }[] = [];
 
   for (const file of files) {
     const filename = file.name;
-    const key = `engagements/${engagementId}/${safePrefix}/${filename}`;
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Enforce upload size limit
+    if (buffer.length > MAX_UPLOAD_SIZE) {
+      return NextResponse.json(
+        {
+          error: `File "${filename}" exceeds maximum size of ${MAX_UPLOAD_SIZE / 1024 / 1024}MB`,
+        },
+        { status: 413 }
+      );
+    }
+
+    const key = `engagements/${engagementId}/${safePrefix}/${filename}`;
     await uploadFile(key, buffer, file.type || "application/octet-stream");
 
-    // Construct a public-style URL; presigned URLs can be fetched separately
     const url = `s3://${S3_BUCKET}/${key}`;
-    results.push({ filename, key, url });
+    const result: (typeof results)[number] = { filename, key, url };
+
+    // Auto-extract text from PDFs and save as .md alongside the original
+    if (isPdf(filename)) {
+      try {
+        const extraction = await extractTextFromPdf(buffer);
+        const markdown = pdfTextToMarkdown(extraction, filename);
+        const mdFilename = filename.replace(/\.pdf$/i, ".md");
+        const mdKey = `engagements/${engagementId}/${safePrefix}/${mdFilename}`;
+        await uploadFile(mdKey, markdown, "text/markdown");
+        result.extractedMd = mdFilename;
+      } catch {
+        // PDF extraction failure is non-fatal — original PDF is still uploaded
+      }
+    }
+
+    results.push(result);
   }
 
   return NextResponse.json({ files: results }, { status: 201 });

@@ -1,57 +1,78 @@
 import { PhaseConfig } from "@/lib/ai/agent";
 import { getBaseSystemPrompt } from "@/lib/ai/prompts/system-base";
-import { getCarlRules } from "@/lib/ai/prompts/carl-rules";
 
-function getPhase5Prompt(): string {
-  return `Conduct Phase 5: Knowledge Capture (Post-Engagement).
+function getPhase5ProposalPrompt(): string {
+  return `Generate Phase 5: Client-Facing Technical Proposal Document.
 
-Start by reading all artefacts produced during this engagement — research, TOR assessment, estimates, responses, gap analysis — to build a complete picture of the workflow.
+Start by reading ALL artefacts produced during this engagement to build the full context:
+- TOR document(s) in tor/
+- Research output in research/
+- TOR assessment in claude-artefacts/
+- Estimates (optimistic or revised) in estimates/
+- Customer responses in responses_qna/ (if available — HAS_RESPONSE path)
+- Gap analysis in claude-artefacts/ (if available — HAS_RESPONSE path)
 
-## Part 1: Engagement Summary
+## Proposal Structure
 
-Produce a concise summary of the full engagement flow:
-- **Client & Project**: Name, tech stack, engagement type
-- **Phases Completed**: Which phases ran, which were skipped, which path was taken (no-response / has-response)
-- **Key Metrics**: Total estimated hours (low/high), requirement count, risk count, assumption count
-- **Timeline**: When each phase started and completed
+Write a professional, client-facing technical proposal covering:
 
-## Part 2: Knowledge Capture
+### 1. Executive Summary
+- Project understanding and key business goals
+- High-level solution overview
+- Key differentiators of our approach
 
-1. Compare actual vs estimated effort where data is available.
-   - Identify line items that were significantly over or under estimated.
-   - Note the root cause (unclear requirements, integration complexity, scope creep, etc.).
+### 2. Our Approach
+- Development methodology (Agile/Scrum phases)
+- Team structure and roles
+- Communication and reporting cadence
+- Quality assurance strategy
 
-2. Extract reusable question patterns.
-   - Which clarifying questions uncovered the most hidden scope?
-   - Which requirement areas were consistently under-specified?
+### 3. Technical Architecture
+- Proposed technology stack with justification
+- System architecture (monolith, decoupled, microservices as appropriate)
+- Integration architecture for all third-party systems
+- Hosting and infrastructure recommendations
+- Security and performance considerations
 
-3. Record client-specific patterns.
-   - Industry-specific complexity factors observed.
-   - Platform or integration gotchas specific to this engagement.
+### 4. Scope of Work
+- Summarise deliverables at module/feature level (NOT line-item estimates)
+- Group by functional area (content, integrations, frontend, DevOps, etc.)
+- Clearly state what is IN scope and OUT of scope
+- Reference engagement type (migration, new build, redesign, enhancement)
 
-4. Update benchmark data.
-   - Propose additions or corrections to benchmarks/ reference ranges based on actual effort.
-   - Format: Task Type | Category | Low Hrs | High Hrs | Notes | Source Engagement.
+### 5. Assumptions & Exclusions
+- List all assumptions that define scope boundaries
+- Each assumption should be phrased as a change-request boundary
+- Clearly state what is excluded and why
+- Reference TOR sections or customer Q&A responses for each assumption
 
-## Part 3: Actionable Insights
+### 6. Timeline & Milestones
+- Indicative milestone schedule with phases
+- Key dependencies and critical path items
+- Go-live criteria and hypercare period
 
-For EACH insight, clearly state:
-- **Insight**: What was learned
-- **Applies to**: Which phase(s) this could improve (Research, TOR Assessment, Estimation, etc.)
-- **Recommendation**: Specific action to take in future engagements
-- **Confidence**: How confident you are this is generalizable (High / Medium / Low)
+### 7. Risk Summary
+- Top risks from the estimation process (Conf ≤ 4 items)
+- Mitigation strategies for each risk
+- Dependencies requiring client action
 
-Focus on insights that are GENERIC and reusable across engagements, not specific to this client.
-Flag any insight with Low confidence for human review.
+### 8. Investment Summary
+- Present effort ranges (Low Hrs / High Hrs) at summary level by category
+- Do NOT include detailed line-item pricing
+- Note which items carry higher uncertainty and why
 
-Write output to claude-artefacts/knowledge-capture.md with sections:
-- Engagement Summary
-- Estimation Variances (actual vs estimated)
-- Reusable Question Patterns
-- Client & Industry Patterns
-- Benchmark Updates
-- Actionable Insights (with per-insight confidence ratings)
-- Recommendations for Future Engagements`;
+### 9. Why Us
+- Relevant experience and capability highlights
+- Similar project references (if known from research)
+
+## Important Guidelines
+- This is a CLIENT-FACING document — use professional, non-technical language where possible
+- Do NOT reference internal artefact IDs, phase numbers, or tooling details
+- Do NOT include raw estimate tables — summarise at category level
+- Assumptions must reference TOR clauses or customer Q&A, never internal analysis
+- Tone: confident, consultative, partnership-oriented
+
+Write output to claude-artefacts/technical-proposal.md following the technical-proposal-template.md structure if available.`;
 }
 
 export function getPhase5Config(
@@ -63,12 +84,11 @@ export function getPhase5Config(
     phase: 5,
     techStack,
     tools: ["Read", "Write"],
-    maxTurns: 30,
+    maxTurns: 40,
     systemPrompt: [
       getBaseSystemPrompt(techStack),
-      getCarlRules(),
-      "You are capturing key learnings from this engagement for future estimation calibration",
+      "You are generating a client-facing technical proposal based on all prior engagement analysis and estimates.",
     ].join("\n\n---\n\n"),
-    userPrompt: getPhase5Prompt(),
+    userPrompt: getPhase5ProposalPrompt(),
   };
 }

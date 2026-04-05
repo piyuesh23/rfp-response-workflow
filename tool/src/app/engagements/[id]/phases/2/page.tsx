@@ -90,7 +90,8 @@ export default function Phase2Page({ params }: Phase2PageProps) {
       <div className="flex flex-col gap-4">
         {title}
         <PhaseGate
-          stats={data.stats}
+          engagementId={id}
+          phaseNumber="2"
           versions={data.versions}
           selectedVersion={data.selectedVersion}
           readOnly={status === "APPROVED"}
