@@ -9,7 +9,7 @@ import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import {
   ArrowRight, Loader2, CheckCircle2, Eye,
   GitFork, FileQuestion, FileSpreadsheet, SkipForward,
-  Circle, Download, FileDown, Lock,
+  Circle, Download, FileDown, Lock, AlertCircle, RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -263,6 +263,7 @@ export default function EngagementOverviewPage() {
   // Determine current state
   const runningPhases = phases.filter((p) => p.status === "RUNNING")
   const reviewPhases = phases.filter((p) => p.status === "REVIEW")
+  const failedPhases = phases.filter((p) => p.status === "FAILED")
   const showDecisionFork = shouldShowDecisionFork(phaseStatuses, workflowPath)
 
   // Find actionable pending phases (can be started)
@@ -327,6 +328,33 @@ export default function EngagementOverviewPage() {
               >
                 <Eye className="size-4" />
                 Review
+              </Button>
+            </div>
+          </div>
+        ))}
+
+        {/* Failed phase retry cards */}
+        {failedPhases.map((p) => (
+          <div key={p.id} className="rounded-xl border border-red-200 dark:border-red-800 bg-card p-4 ring-1 ring-foreground/10">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="size-4 text-red-500 shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                    Phase {p.phaseNumber}: {getPhaseLabel(p.phaseNumber)} failed
+                  </p>
+                  <p className="text-xs text-muted-foreground">The agent encountered an error. You can retry.</p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                disabled={actionLoading}
+                onClick={() => handleRunPhase(p.id)}
+              >
+                <RotateCcw className="size-4" />
+                Retry
               </Button>
             </div>
           </div>
