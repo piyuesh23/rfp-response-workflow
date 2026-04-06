@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { runPhase, prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
+import { runPhase, prepareWorkDir, syncFilesToStorage, UsageStats } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
 import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
@@ -8,6 +8,11 @@ import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
 import * as fs from "fs/promises";
+
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "claude-opus-4-20250514": { input: 15, output: 75 },
+  "claude-sonnet-4-20250514": { input: 3, output: 15 },
+};
 
 // Map phase numbers to their primary artefact type
 const PHASE_ARTEFACT_TYPE: Record<string, ArtefactType> = {
@@ -25,13 +30,16 @@ const worker = new Worker<PhaseJobData>(
   async (job) => {
     const { phaseId, engagementId, phaseNumber, techStack, revisionFeedback } = job.data;
 
+    const phaseStartedAt = new Date();
     await prisma.phase.update({
       where: { id: phaseId },
       data: {
         status: PhaseStatus.RUNNING,
-        startedAt: new Date(),
+        startedAt: phaseStartedAt,
       },
     });
+
+    let usageStats: UsageStats | undefined;
 
     try {
       // Fetch engagement type for phase-specific behavior (e.g., conditional site audit)
@@ -57,6 +65,7 @@ const worker = new Worker<PhaseJobData>(
       console.log(`[phase-runner] Starting phase ${phaseNumber} for engagement ${engagementId}`);
       for await (const event of runPhase(config)) {
         await job.updateProgress(event);
+        if (event.usageStats) usageStats = event.usageStats;
         if (event.type === "complete" && event.content) {
           finalContent = event.content;
           console.log(`[phase-runner] Phase ${phaseNumber} agent complete — finalContent: ${event.content.length} chars`);
@@ -177,6 +186,51 @@ const worker = new Worker<PhaseJobData>(
       }
 
       console.log(`[phase-runner] Phase ${phaseNumber} complete — ${artefactCount} artefact(s), moving to REVIEW`);
+
+      // Record PhaseExecution for analytics
+      try {
+        const engagementForUser = await prisma.engagement.findUnique({
+          where: { id: engagementId },
+          select: { createdById: true },
+        });
+
+        const completedAt = new Date();
+        const durationMs = completedAt.getTime() - phaseStartedAt.getTime();
+
+        let estimatedCostUsd: number | undefined;
+        if (usageStats?.modelId) {
+          const pricing = MODEL_PRICING[usageStats.modelId];
+          if (pricing) {
+            estimatedCostUsd =
+              (usageStats.inputTokens / 1_000_000) * pricing.input +
+              (usageStats.outputTokens / 1_000_000) * pricing.output;
+          }
+        }
+
+        await prisma.phaseExecution.create({
+          data: {
+            phaseId,
+            engagementId,
+            userId: engagementForUser?.createdById ?? "unknown",
+            phaseNumber: String(phaseNumber),
+            startedAt: phaseStartedAt,
+            completedAt,
+            durationMs,
+            inputTokens: usageStats?.inputTokens ?? 0,
+            outputTokens: usageStats?.outputTokens ?? 0,
+            totalTokens: usageStats?.totalTokens ?? 0,
+            modelId: usageStats?.modelId ?? null,
+            estimatedCostUsd: estimatedCostUsd ?? null,
+            apiCallCount: usageStats?.apiCallCount ?? 0,
+            turnCount: usageStats?.turnCount ?? 0,
+            status: "COMPLETED",
+          },
+        });
+      } catch (analyticsErr) {
+        // Analytics recording failure must not break the worker
+        console.warn(`[phase-runner] Failed to record PhaseExecution: ${analyticsErr instanceof Error ? analyticsErr.message : String(analyticsErr)}`);
+      }
+
       await prisma.phase.update({
         where: { id: phaseId },
         data: {
@@ -197,6 +251,49 @@ const worker = new Worker<PhaseJobData>(
           status: PhaseStatus.FAILED,
         },
       });
+
+      // Record PhaseExecution for failed phases
+      try {
+        const engagementForUser = await prisma.engagement.findUnique({
+          where: { id: engagementId },
+          select: { createdById: true },
+        });
+
+        const completedAt = new Date();
+        const durationMs = completedAt.getTime() - phaseStartedAt.getTime();
+
+        let estimatedCostUsd: number | undefined;
+        if (usageStats?.modelId) {
+          const pricing = MODEL_PRICING[usageStats.modelId];
+          if (pricing) {
+            estimatedCostUsd =
+              (usageStats.inputTokens / 1_000_000) * pricing.input +
+              (usageStats.outputTokens / 1_000_000) * pricing.output;
+          }
+        }
+
+        await prisma.phaseExecution.create({
+          data: {
+            phaseId,
+            engagementId,
+            userId: engagementForUser?.createdById ?? "unknown",
+            phaseNumber: String(phaseNumber),
+            startedAt: phaseStartedAt,
+            completedAt,
+            durationMs,
+            inputTokens: usageStats?.inputTokens ?? 0,
+            outputTokens: usageStats?.outputTokens ?? 0,
+            totalTokens: usageStats?.totalTokens ?? 0,
+            modelId: usageStats?.modelId ?? null,
+            estimatedCostUsd: estimatedCostUsd ?? null,
+            apiCallCount: usageStats?.apiCallCount ?? 0,
+            turnCount: usageStats?.turnCount ?? 0,
+            status: "FAILED",
+          },
+        });
+      } catch (analyticsErr) {
+        console.warn(`[phase-runner] Failed to record PhaseExecution on failure: ${analyticsErr instanceof Error ? analyticsErr.message : String(analyticsErr)}`);
+      }
 
       try {
         const engagement = await prisma.engagement.findUnique({

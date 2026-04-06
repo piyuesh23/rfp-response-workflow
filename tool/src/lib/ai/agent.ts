@@ -18,11 +18,21 @@ export interface PhaseConfig {
   model?: string;
 }
 
+export interface UsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  apiCallCount: number;
+  turnCount: number;
+  modelId: string;
+}
+
 export interface ProgressEvent {
   type: "progress" | "complete" | "error";
   tool?: string;
   message?: string;
   content?: string;
+  usageStats?: UsageStats;
 }
 
 const DEFAULT_MODEL =
@@ -333,6 +343,14 @@ export async function* runPhase(
       type: "error",
       message:
         "ANTHROPIC_API_KEY is not set. Please configure it in your environment variables.",
+      usageStats: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        apiCallCount: 0,
+        turnCount: 0,
+        modelId: "",
+      },
     };
     return;
   }
@@ -397,6 +415,16 @@ export async function* runPhase(
 
   let turns = 0;
 
+  // Usage accumulator
+  const usageStats: UsageStats = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    apiCallCount: 0,
+    turnCount: 0,
+    modelId: model,
+  };
+
   // 5. Agentic loop
   while (turns < config.maxTurns) {
     turns++;
@@ -420,12 +448,20 @@ export async function* runPhase(
       yield {
         type: "error",
         message: `API error: ${err instanceof Error ? err.message : String(err)}`,
+        usageStats,
       };
       return;
     }
 
+    // Accumulate token usage
+    usageStats.inputTokens += response.usage.input_tokens;
+    usageStats.outputTokens += response.usage.output_tokens;
+    usageStats.totalTokens += response.usage.input_tokens + response.usage.output_tokens;
+    usageStats.apiCallCount++;
+
     // Check if Claude is done (no more tool calls)
     if (response.stop_reason === "end_turn") {
+      usageStats.turnCount = turns;
       const textContent = response.content
         .filter(
           (b): b is Anthropic.Messages.TextBlock => b.type === "text"
@@ -433,7 +469,7 @@ export async function* runPhase(
         .map((b) => b.text)
         .join("\n");
 
-      yield { type: "complete", content: textContent };
+      yield { type: "complete", content: textContent, usageStats };
       return;
     }
 
@@ -444,6 +480,7 @@ export async function* runPhase(
 
     if (toolUseBlocks.length === 0) {
       // No tool calls and not end_turn — extract any text and finish
+      usageStats.turnCount = turns;
       const textContent = response.content
         .filter(
           (b): b is Anthropic.Messages.TextBlock => b.type === "text"
@@ -451,7 +488,7 @@ export async function* runPhase(
         .map((b) => b.text)
         .join("\n");
 
-      yield { type: "complete", content: textContent };
+      yield { type: "complete", content: textContent, usageStats };
       return;
     }
 
@@ -495,6 +532,7 @@ export async function* runPhase(
   }
 
   // Max turns reached — request final output without tools
+  usageStats.turnCount = turns;
   yield {
     type: "progress",
     message: "Max turns reached, requesting final output...",
@@ -515,6 +553,12 @@ export async function* runPhase(
     });
     const finalResponse = await finalStream.finalMessage();
 
+    // Accumulate token usage from final response
+    usageStats.inputTokens += finalResponse.usage.input_tokens;
+    usageStats.outputTokens += finalResponse.usage.output_tokens;
+    usageStats.totalTokens += finalResponse.usage.input_tokens + finalResponse.usage.output_tokens;
+    usageStats.apiCallCount++;
+
     const finalText = finalResponse.content
       .filter(
         (b): b is Anthropic.Messages.TextBlock => b.type === "text"
@@ -522,11 +566,12 @@ export async function* runPhase(
       .map((b) => b.text)
       .join("\n");
 
-    yield { type: "complete", content: finalText };
+    yield { type: "complete", content: finalText, usageStats };
   } catch (err) {
     yield {
       type: "error",
       message: `Final response error: ${err instanceof Error ? err.message : String(err)}`,
+      usageStats,
     };
   }
 }
