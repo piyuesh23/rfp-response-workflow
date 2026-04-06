@@ -163,9 +163,28 @@ model Benchmark {
   taskType           String
   lowHours           Float
   highHours          Float
+  tier               String?
   notes              String?
   sourceEngagementId String?
+  isActive           Boolean   @default(true)
+  createdBy          String?
   createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([techStack, category])
+}
+
+model PromptOverride {
+  id          String   @id @default(cuid())
+  phaseNumber String
+  promptType  String   // "SYSTEM" or "USER"
+  content     String
+  version     Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdBy   String
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([phaseNumber, promptType, isActive])
 }

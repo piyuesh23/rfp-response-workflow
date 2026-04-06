@@ -4,6 +4,7 @@ import path from "path";
 import { listObjects, downloadFile, uploadFile } from "@/lib/storage";
 import { getToolDefinitions, getToolHandlers } from "@/lib/ai/tools";
 import { summarizeTool } from "@/lib/ai/hooks";
+import { prisma } from "@/lib/db";
 
 export interface PhaseConfig {
   engagementId: string;
@@ -45,8 +46,41 @@ function getModelForPhase(config: PhaseConfig): string {
 /**
  * Load benchmark files and inject them into the system prompt.
  * These provide reference effort ranges for estimation calibration.
+ * First tries the database; falls back to markdown files on disk if DB is empty.
  */
 async function loadBenchmarks(): Promise<string> {
+  // Try loading from database first
+  try {
+    const dbBenchmarks = await prisma.benchmark.findMany({
+      where: { isActive: true },
+      orderBy: [{ category: "asc" }, { taskType: "asc" }],
+    });
+
+    if (dbBenchmarks.length > 0) {
+      // Group by category and format as markdown sections
+      const grouped: Record<string, typeof dbBenchmarks> = {};
+      for (const b of dbBenchmarks) {
+        if (!grouped[b.category]) grouped[b.category] = [];
+        grouped[b.category].push(b);
+      }
+
+      const sections: string[] = [];
+      for (const [category, items] of Object.entries(grouped)) {
+        const rows = items.map((b) => {
+          const tier = b.tier ? ` [${b.tier}]` : "";
+          const notes = b.notes ? ` — ${b.notes}` : "";
+          return `- **${b.taskType}**${tier}: ${b.lowHours}–${b.highHours} hrs (${b.techStack})${notes}`;
+        });
+        sections.push(`### ${category}\n\n${rows.join("\n")}`);
+      }
+
+      return `\n\n---\n\n## Reference Benchmarks\n\nUse these effort ranges to calibrate your estimates. Flag significant deviations.\n\n${sections.join("\n\n")}`;
+    }
+  } catch {
+    // DB unavailable — fall through to file-based loading
+  }
+
+  // Fallback: read markdown files from disk
   const benchmarkDir = "/app/benchmarks";
   const fallbackDir = path.join(process.cwd(), "benchmarks");
 
