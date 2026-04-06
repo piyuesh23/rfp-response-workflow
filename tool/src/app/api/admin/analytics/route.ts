@@ -151,5 +151,21 @@ export async function GET() {
     .map(([date, stats]) => ({ date, ...stats }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  return NextResponse.json({ totals, byUser, byPhase, daily });
+  // Per-model stats
+  const modelRows = await prisma.phaseExecution.groupBy({
+    by: ["modelId"],
+    _count: { id: true },
+    _sum: { totalTokens: true, estimatedCostUsd: true },
+  });
+
+  const byModel = modelRows
+    .filter((r) => r.modelId !== null)
+    .map((row) => ({
+      modelId: row.modelId as string,
+      totalTokens: row._sum.totalTokens ?? 0,
+      estimatedCost: row._sum.estimatedCostUsd ?? 0,
+      count: row._count.id,
+    }));
+
+  return NextResponse.json({ totals, byUser, byPhase, daily, byModel });
 }
