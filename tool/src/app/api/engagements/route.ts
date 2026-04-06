@@ -16,7 +16,7 @@ export async function GET() {
     include: {
       _count: { select: { phases: true } },
       phases: {
-        select: { status: true },
+        select: { phaseNumber: true, status: true },
       },
     },
   });

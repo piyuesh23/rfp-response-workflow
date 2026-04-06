@@ -10,6 +10,7 @@ interface EngagementItem {
   projectName?: string | null
   techStack: TechStack
   status: EngagementStatus
+  workflowPath?: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
 }

@@ -15,7 +15,8 @@ interface Engagement {
   projectName: string | null
   techStack: TechStack
   status: EngagementStatus
-  phases: { status: string }[]
+  workflowPath: "NO_RESPONSE" | "HAS_RESPONSE" | null
+  phases: { phaseNumber: string; status: string }[]
   updatedAt: string
 }
 
@@ -25,6 +26,7 @@ interface GridEngagement {
   projectName: string | null
   techStack: TechStack
   status: EngagementStatus
+  workflowPath: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
 }
@@ -41,18 +43,32 @@ export default function DashboardPage() {
       .then((res) => (res.ok ? res.json() : []))
       .then((data: Engagement[]) => {
         setEngagements(
-          data.map((e) => ({
-            id: e.id,
-            clientName: e.clientName,
-            projectName: e.projectName,
-            techStack: e.techStack,
-            status: e.status,
-            phaseProgress: {
-              completed: e.phases?.filter((p) => p.status === "APPROVED" || p.status === "SKIPPED").length ?? 0,
-              total: e.phases?.length ?? 0,
-            },
-            updatedAt: new Date(e.updatedAt),
-          }))
+          data.map((e) => {
+            // Filter phases to only count those on the active workflow path
+            const wp = e.workflowPath
+            // Phases on the inactive path shouldn't count toward progress
+            const NO_RESPONSE_PHASES = new Set(["0", "1", "1A", "5"])
+            const HAS_RESPONSE_PHASES = new Set(["0", "1", "2", "3", "4", "5"])
+            const activePhases = wp === "NO_RESPONSE"
+              ? e.phases.filter((p) => NO_RESPONSE_PHASES.has(p.phaseNumber))
+              : wp === "HAS_RESPONSE"
+              ? e.phases.filter((p) => HAS_RESPONSE_PHASES.has(p.phaseNumber))
+              : e.phases // No path chosen yet — show all
+
+            return {
+              id: e.id,
+              clientName: e.clientName,
+              projectName: e.projectName,
+              techStack: e.techStack,
+              status: e.status,
+              workflowPath: wp,
+              phaseProgress: {
+                completed: activePhases.filter((p) => p.status === "APPROVED" || p.status === "SKIPPED").length,
+                total: activePhases.length,
+              },
+              updatedAt: new Date(e.updatedAt),
+            }
+          })
         )
       })
       .catch(() => setEngagements([]))

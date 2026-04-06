@@ -13,6 +13,7 @@ interface EngagementCardProps {
   projectName?: string | null
   techStack: TechStack
   status: EngagementStatus
+  workflowPath?: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
 }
@@ -48,18 +49,25 @@ function formatRelativeTime(date: Date): string {
   return "just now"
 }
 
+const workflowLabels: Record<string, { label: string; className: string }> = {
+  NO_RESPONSE: { label: "Optimistic", className: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-400" },
+  HAS_RESPONSE: { label: "With Q&A", className: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400" },
+}
+
 export function EngagementCard({
   id,
   clientName,
   projectName,
   techStack,
   status,
+  workflowPath,
   phaseProgress,
   updatedAt,
 }: EngagementCardProps) {
   const { completed, total } = phaseProgress
+  const isComplete = completed === total && total > 0
   const progressValue = total > 0 ? Math.round((completed / total) * 100) : 0
-  const statusCfg = statusConfig[status]
+  const statusCfg = statusConfig[isComplete ? "COMPLETED" : status]
 
   return (
     <Link href={`/engagements/${id}`} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
@@ -82,9 +90,16 @@ export function EngagementCard({
         </CardHeader>
 
         <CardContent className="flex flex-col gap-3">
-          <Badge variant="secondary" className="w-fit">
-            {techStackLabel[techStack]}
-          </Badge>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary" className="w-fit">
+              {techStackLabel[techStack]}
+            </Badge>
+            {workflowPath && (
+              <Badge variant="outline" className={workflowLabels[workflowPath].className}>
+                {workflowLabels[workflowPath].label}
+              </Badge>
+            )}
+          </div>
 
           {total > 0 && (
             <div className="space-y-1">
