@@ -167,5 +167,34 @@ export async function GET() {
       count: row._count.id,
     }));
 
-  return NextResponse.json({ totals, byUser, byPhase, daily, byModel });
+  // Per-engagement stats — top 20 most expensive
+  const engagementRows = await prisma.phaseExecution.groupBy({
+    by: ["engagementId"],
+    _count: { id: true },
+    _sum: { totalTokens: true, estimatedCostUsd: true },
+    orderBy: { _sum: { estimatedCostUsd: "desc" } },
+    take: 20,
+  });
+
+  const engagementIds = engagementRows.map((r) => r.engagementId);
+  const engagements = await prisma.engagement.findMany({
+    where: { id: { in: engagementIds } },
+    select: { id: true, clientName: true, projectName: true, techStack: true },
+  });
+  const engMap = new Map(engagements.map((e) => [e.id, e]));
+
+  const byEngagement = engagementRows.map((row) => {
+    const eng = engMap.get(row.engagementId);
+    return {
+      engagementId: row.engagementId,
+      clientName: eng?.clientName ?? "Unknown",
+      projectName: eng?.projectName ?? null,
+      techStack: eng?.techStack ?? null,
+      phasesRun: row._count.id,
+      totalTokens: row._sum.totalTokens ?? 0,
+      estimatedCost: row._sum.estimatedCostUsd ?? 0,
+    };
+  });
+
+  return NextResponse.json({ totals, byUser, byPhase, daily, byModel, byEngagement });
 }

@@ -485,6 +485,80 @@ export function extractResearchMetadata(contentMd: string): ResearchMetadata {
   return result;
 }
 
+export interface ParsedRisk {
+  task: string;
+  tab: string;
+  conf: number;
+  risk: string;
+  openQuestion: string;
+  recommendedAction: string;
+  hoursAtRisk: number;
+}
+
+export function extractRiskRegister(contentMd: string): ParsedRisk[] {
+  // Expected columns: Task | Tab | Conf | Risk/Dependency | Open Question | Recommended Action | Hours at Risk
+  const rows = parseTableRows(contentMd, /^#{2,3}\s+Risk\s+Register/i);
+  return rows
+    .map((row) => ({
+      task: (row[0] ?? "").trim(),
+      tab: (row[1] ?? "").trim(),
+      conf: parseInt(row[2] ?? "0", 10) || 0,
+      risk: (row[3] ?? "").trim(),
+      openQuestion: (row[4] ?? "").trim(),
+      recommendedAction: (row[5] ?? "").trim(),
+      hoursAtRisk: parseFloat(row[6] ?? "0") || 0,
+    }))
+    .filter((r) => r.task && r.conf > 0);
+}
+
+export interface ParsedAssumption {
+  text: string;
+  torReference: string | null;
+  impactIfWrong: string;
+}
+
+export function extractAssumptions(contentMd: string): ParsedAssumption[] {
+  // Try table format first
+  const tableRows = parseTableRows(contentMd, /^#{2,3}\s+Assumptions/i);
+  if (tableRows.length > 0) {
+    return tableRows
+      .map((row) => ({
+        text: (row[0] ?? "").trim(),
+        torReference: (row[1] ?? "").trim() || null,
+        impactIfWrong: (row[2] ?? "").trim(),
+      }))
+      .filter((a) => a.text.length > 0);
+  }
+
+  // Try bullet point format
+  const lines = contentMd.split("\n");
+  const assumptions: ParsedAssumption[] = [];
+  let inSection = false;
+
+  for (const line of lines) {
+    if (/^#{2,3}\s+Assumptions/i.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && /^#{1,3}\s+/.test(line) && !/assumption/i.test(line)) {
+      inSection = false;
+      continue;
+    }
+    if (inSection && /^\s*[-*]\s+/.test(line)) {
+      const text = line.replace(/^\s*[-*]\s+/, "").trim();
+      const torMatch = text.match(/TOR\s+(?:ref(?:erence)?:?\s*)?([^.;]+)/i);
+      const impactMatch = text.match(/[Ii]mpact\s+if\s+wrong:?\s*(.+)/);
+      assumptions.push({
+        text: text.split(/\.\s*Impact/i)[0].trim(),
+        torReference: torMatch?.[1]?.trim() ?? null,
+        impactIfWrong: impactMatch?.[1]?.trim() ?? "",
+      });
+    }
+  }
+
+  return assumptions;
+}
+
 /** Map phase number to extractor function. Returns metadata JSON or null. */
 export function extractMetadataForPhase(
   phaseNumber: string,

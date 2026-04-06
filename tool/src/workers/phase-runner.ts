@@ -2,7 +2,7 @@ import { Worker } from "bullmq";
 import { runPhase, prepareWorkDir, syncFilesToStorage, UsageStats } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
-import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
+import { extractMetadataForPhase, extractRiskRegister, extractAssumptions } from "@/lib/ai/metadata-extractor";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
@@ -135,6 +135,38 @@ const worker = new Worker<PhaseJobData>(
             ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
           },
         });
+      }
+
+      // For estimate phases: extract and persist Risk Register + Assumption entries
+      if (["1A", "3", "3R"].includes(phaseStr) && artefactContent) {
+        try {
+          const risks = extractRiskRegister(artefactContent);
+          if (risks.length > 0) {
+            await prisma.riskRegisterEntry.deleteMany({ where: { engagementId } });
+            await prisma.riskRegisterEntry.createMany({
+              data: risks.map((r) => ({ ...r, engagementId })),
+            });
+            console.log(`[phase-runner] Phase ${phaseNumber} — created ${risks.length} risk register entries`);
+          }
+
+          const assumptions = extractAssumptions(artefactContent);
+          if (assumptions.length > 0) {
+            await prisma.assumption.deleteMany({ where: { engagementId } });
+            await prisma.assumption.createMany({
+              data: assumptions.map((a) => ({
+                text: a.text,
+                torReference: a.torReference,
+                impactIfWrong: a.impactIfWrong,
+                engagementId,
+                sourcePhaseId: phaseId,
+                status: "ACTIVE",
+              })),
+            });
+            console.log(`[phase-runner] Phase ${phaseNumber} — created ${assumptions.length} assumption entries`);
+          }
+        } catch (err) {
+          console.warn(`[phase-runner] Phase ${phaseNumber} — failed to extract risks/assumptions: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
 
       // For Phase 1: also persist questions.md as a separate QUESTIONS artefact

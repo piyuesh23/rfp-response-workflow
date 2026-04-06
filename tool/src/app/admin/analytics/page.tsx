@@ -70,12 +70,23 @@ interface ModelStat {
   count: number;
 }
 
+interface EngagementStat {
+  engagementId: string;
+  clientName: string;
+  projectName: string | null;
+  techStack: string | null;
+  phasesRun: number;
+  totalTokens: number;
+  estimatedCost: number;
+}
+
 interface AnalyticsData {
   totals: AnalyticsTotals;
   byUser: UserStat[];
   byPhase: PhaseStat[];
   daily: DailyStat[];
   byModel: ModelStat[];
+  byEngagement: EngagementStat[];
 }
 
 // ---------------------------------------------------------------------------
@@ -383,7 +394,7 @@ export default function AdminAnalyticsPage() {
     );
   }
 
-  const { totals, byUser, byPhase, daily, byModel } = data;
+  const { totals, byUser, byPhase, daily, byModel, byEngagement } = data;
 
   // Prepare daily chart data — last 30 days, formatted dates
   const dailyChartData = daily.map((d) => ({
@@ -739,6 +750,65 @@ export default function AdminAnalyticsPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Top Engagements by Cost */}
+      <div className="rounded-xl border bg-card p-5 space-y-3">
+        <h2 className="text-base font-medium">Top Engagements by Cost</h2>
+        {byEngagement.length === 0 ? (
+          <EmptyState message="No engagement data yet" />
+        ) : (
+          <div className="rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="text-xs">Client</TableHead>
+                  <TableHead className="text-xs">Project</TableHead>
+                  <TableHead className="text-xs">Stack</TableHead>
+                  <TableHead className="text-right text-xs">Phases</TableHead>
+                  <TableHead className="text-right text-xs">Tokens</TableHead>
+                  <TableHead className="text-right text-xs">Cost</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {byEngagement.map((row, i) => (
+                  <TableRow
+                    key={row.engagementId}
+                    className={
+                      i % 2 === 0
+                        ? "bg-background hover:bg-muted/30"
+                        : "bg-muted/10 hover:bg-muted/30"
+                    }
+                  >
+                    <TableCell className="text-sm font-medium">
+                      <a
+                        href={`/engagements/${row.engagementId}`}
+                        className="hover:underline text-primary"
+                      >
+                        {row.clientName}
+                      </a>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {row.projectName ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {row.techStack ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {row.phasesRun}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {formatTokens(row.totalTokens)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-medium">
+                      {formatCost(row.estimatedCost)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </div>
   );

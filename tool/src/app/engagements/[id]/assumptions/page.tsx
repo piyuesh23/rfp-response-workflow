@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useParams } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -11,94 +12,30 @@ import {
 } from "@/components/ui/select"
 import { AssumptionList, type Assumption, type AssumptionStatus } from "@/components/assumption/AssumptionList"
 
-const INITIAL_ASSUMPTIONS: Assumption[] = [
-  {
-    id: "a1",
-    text: "SSO will use SAML 2.0 via Okta. No OIDC or legacy LDAP integration is required.",
-    torReference: "TOR §4.2 — Authentication & Access Control",
-    impactIfWrong: "Switch to OIDC or ADFS adds 16–24h backend effort and may require a different module.",
-    status: "ACTIVE",
-    sourcePhase: "Phase 1A — Optimistic Estimate",
-  },
-  {
-    id: "a2",
-    text: "Content migration covers up to 500 nodes. No media file migration (images/videos) is in scope.",
-    torReference: "TOR §6.1 — Content Migration",
-    impactIfWrong: "Exceeding 500 nodes or including media adds 20–40h migration effort.",
-    status: "ACTIVE",
-    sourcePhase: "Phase 1A — Optimistic Estimate",
-  },
-  {
-    id: "a3",
-    text: "Two languages (English + French). Translation workflow is manual — editors paste translations into CMS. No third-party translation service integration.",
-    torReference: "TOR §3.4 — Multilingual Requirements",
-    impactIfWrong: "Integration with Phrase/Crowdin adds 16h backend + ongoing maintenance overhead.",
-    status: "ACTIVE",
-    sourcePhase: "Phase 1A — Optimistic Estimate",
-  },
-  {
-    id: "a4",
-    text: "Payment gateway is Stripe. PCI-DSS scope is limited to SAQ-A (hosted fields / Stripe Elements). No server-side card data handling.",
-    torReference: "TOR §5.3 — E-commerce & Payments",
-    impactIfWrong: "Server-side card handling or a different gateway adds 40–56h and introduces PCI audit scope.",
-    status: "ACTIVE",
-    sourcePhase: "Phase 1A — Optimistic Estimate",
-  },
-  {
-    id: "a5",
-    text: "Hosting platform is Acquia Cloud Enterprise. CI/CD via Acquia Pipelines. No custom Kubernetes or self-hosted infrastructure.",
-    torReference: "TOR §8.1 — Hosting & Infrastructure",
-    impactIfWrong: "Self-hosted k8s setup adds 16–24h DevOps effort and may require a separate infrastructure sprint.",
-    status: "CONFIRMED",
-    sourcePhase: "Phase 2 — Customer Q&A",
-  },
-  {
-    id: "a6",
-    text: "Design system will be built using an existing Figma component library provided by the client. No design system creation from scratch.",
-    torReference: "TOR §7.1 — Design & Theming",
-    impactIfWrong: "Creating a design system from scratch adds 24–32h frontend effort.",
-    status: "CONFIRMED",
-    sourcePhase: "Phase 2 — Customer Q&A",
-  },
-  {
-    id: "a7",
-    text: "AI-powered search returns ranked results only — no generative summaries or RAG pipeline required.",
-    torReference: "TOR §9.2 — Search & Discovery",
-    impactIfWrong: "Adding a generative summarisation layer (RAG) adds 32–48h AI/backend effort.",
-    status: "ACTIVE",
-    sourcePhase: "Phase 1A — Optimistic Estimate",
-  },
-  {
-    id: "a8",
-    text: "Accessibility target is WCAG 2.1 AA. No AAA compliance or automated accessibility testing pipeline is required in-scope.",
-    torReference: "TOR §2.5 — Accessibility",
-    impactIfWrong: "WCAG AAA or automated a11y CI adds 8–16h QA and frontend effort.",
-    status: "ACTIVE",
-    sourcePhase: "Phase 1 — TOR Analysis",
-  },
-  {
-    id: "a9",
-    text: "UAT will be conducted by the client's internal team. QED42 provides a 2-week hypercare period post-launch but not extended UAT facilitation.",
-    torReference: "TOR §10.1 — Project Delivery",
-    impactIfWrong: "Facilitated UAT or extended hypercare adds 16–24h Fixed Cost effort.",
-    status: "REJECTED",
-    sourcePhase: "Phase 2 — Customer Q&A",
-  },
-  {
-    id: "a10",
-    text: "CRM integration is read-only (contact lookup). No bi-directional sync or real-time webhook pipeline with Salesforce.",
-    torReference: "TOR §5.1 — CRM Integration",
-    impactIfWrong: "Bi-directional sync or real-time webhooks upgrades integration from T2 to T3 (+24–32h backend).",
-    status: "SUPERSEDED",
-    sourcePhase: "Phase 1A — Optimistic Estimate",
-  },
-]
-
 type FilterStatus = "All" | AssumptionStatus
 
 export default function AssumptionsPage() {
-  const [assumptions, setAssumptions] = React.useState<Assumption[]>(INITIAL_ASSUMPTIONS)
+  const params = useParams<{ id: string }>()
+  const engagementId = params.id
+
+  const [assumptions, setAssumptions] = React.useState<Assumption[]>([])
   const [filter, setFilter] = React.useState<FilterStatus>("All")
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!engagementId) return
+    fetch(`/api/engagements/${engagementId}/assumptions`)
+      .then((res) => {
+        if (!res.ok) return Promise.reject(new Error(`HTTP ${res.status}`))
+        return res.json() as Promise<Assumption[]>
+      })
+      .then(setAssumptions)
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "Failed to load assumptions")
+      )
+      .finally(() => setLoading(false))
+  }, [engagementId])
 
   function handleStatusChange(id: string, newStatus: AssumptionStatus) {
     setAssumptions((prev) =>
@@ -114,6 +51,28 @@ export default function AssumptionsPage() {
     CONFIRMED: assumptions.filter((a) => a.status === "CONFIRMED").length,
     REJECTED: assumptions.filter((a) => a.status === "REJECTED").length,
     SUPERSEDED: assumptions.filter((a) => a.status === "SUPERSEDED").length,
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">Assumption Register</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">Loading assumptions...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">Assumption Register</h2>
+        </div>
+        <p className="text-sm text-destructive">{error}</p>
+      </div>
+    )
   }
 
   return (
@@ -143,7 +102,13 @@ export default function AssumptionsPage() {
       </div>
 
       {/* Assumption list */}
-      <AssumptionList assumptions={filtered} onStatusChange={handleStatusChange} />
+      {assumptions.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No assumptions found. Run an estimate phase (1A, 3) to extract assumption entries.
+        </p>
+      ) : (
+        <AssumptionList assumptions={filtered} onStatusChange={handleStatusChange} />
+      )}
     </div>
   )
 }
