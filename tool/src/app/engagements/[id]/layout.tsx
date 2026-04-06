@@ -2,8 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
@@ -52,9 +54,11 @@ interface EngagementLayoutProps {
 export default function EngagementLayout({ children, params }: EngagementLayoutProps) {
   const { id } = React.use(params)
   const pathname = usePathname()
+  const router = useRouter()
   const basePath = `/engagements/${id}`
 
   const [engagement, setEngagement] = React.useState<Engagement | null>(null)
+  const [deleting, setDeleting] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
@@ -99,6 +103,31 @@ export default function EngagementLayout({ children, params }: EngagementLayoutP
             >
               {STATUS_LABELS[engagement.status] ?? engagement.status}
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              disabled={deleting}
+              onClick={async () => {
+                if (!confirm(`Delete "${engagement.clientName}"? This will permanently remove all phases, artefacts, and files. This cannot be undone.`)) return
+                setDeleting(true)
+                try {
+                  const res = await fetch(`/api/engagements/${id}`, { method: "DELETE" })
+                  if (res.ok) {
+                    router.push("/")
+                  } else {
+                    const err = await res.json()
+                    alert(err.error ?? "Failed to delete engagement")
+                  }
+                } catch {
+                  alert("Failed to delete engagement")
+                } finally {
+                  setDeleting(false)
+                }
+              }}
+            >
+              <Trash2 className="size-4" />
+            </Button>
           </div>
         </div>
 
