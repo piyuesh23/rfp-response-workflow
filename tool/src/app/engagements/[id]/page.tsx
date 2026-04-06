@@ -533,19 +533,22 @@ export default function EngagementOverviewPage() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               {([
-                { key: "salesDetail", label: "Sales Detail" },
-                { key: "questionsRfp", label: "Questions for RFP" },
-                { key: "backend", label: "Backend" },
-                { key: "frontend", label: "Frontend" },
-                { key: "fixedCost", label: "Fixed Cost Items" },
-                { key: "ai", label: "AI" },
-              ] as const).map(({ key, label }) => {
+                { key: "salesDetail", label: "Sales Detail", phases: ["1"] },
+                { key: "questionsRfp", label: "Questions for RFP", phases: ["1"] },
+                { key: "backend", label: "Backend", phases: ["1A", "3"] },
+                { key: "frontend", label: "Frontend", phases: ["1A", "3"] },
+                { key: "fixedCost", label: "Fixed Cost Items", phases: ["1A", "3"] },
+                { key: "ai", label: "AI", phases: ["1A", "3"] },
+              ] as const).map(({ key, label, phases: relevantPhases }) => {
                 const done = !!(engagement.templateStatus as TemplateStatus)?.[key]
+                const relevantRunning = engagement.phases.some(
+                  (p) => (relevantPhases as readonly string[]).includes(p.phaseNumber) && p.status === "RUNNING"
+                )
                 return (
                   <div key={key} className="flex items-center gap-1.5 text-xs">
                     {done ? (
                       <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
-                    ) : anyRunning ? (
+                    ) : relevantRunning ? (
                       <Loader2 className="size-3.5 text-blue-400 shrink-0 animate-spin" />
                     ) : (
                       <Circle className="size-3.5 text-muted-foreground shrink-0" />
