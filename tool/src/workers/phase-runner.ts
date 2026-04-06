@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 import { runPhase, prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
 import { getPhaseConfig } from "@/lib/ai/phases";
+import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
 import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
@@ -39,12 +40,14 @@ const worker = new Worker<PhaseJobData>(
         select: { engagementType: true, clientName: true },
       });
 
-      const config = getPhaseConfig(
+      let config = getPhaseConfig(
         String(phaseNumber),
         techStack,
         engagementId,
         engagementData?.engagementType
       );
+
+      config = await applyPromptOverrides(config);
 
       if (revisionFeedback) {
         config.userPrompt += `\n\nREVISION FEEDBACK FROM REVIEWER:\n${revisionFeedback}\n\nPlease address the above feedback in your output.`;
