@@ -47,6 +47,8 @@ COPY <<'EOF' /app/entrypoint.sh
 set -e
 echo "Running prisma db push..."
 npx prisma db push
+echo "Seeding benchmarks (idempotent)..."
+npx tsx prisma/seed.ts || echo "Seed failed (non-fatal) — benchmarks can be added via admin UI"
 echo "Starting application..."
 exec node server.js
 EOF
