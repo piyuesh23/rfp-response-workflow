@@ -43,179 +43,21 @@ interface Benchmark {
   taskType: string
   lowHours: number
   highHours: number
-  notes: string
+  tier: string | null
+  notes: string | null
   sourceEngagementId: string | null
+  isActive: boolean
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const MOCK_BENCHMARKS: Benchmark[] = [
-  // content_architecture
-  {
-    id: "b-1",
-    techStack: "Drupal",
-    category: "content_architecture",
-    taskType: "Content Type — Simple (3–5 fields)",
-    lowHours: 4,
-    highHours: 8,
-    notes: "Includes field config, display modes, and basic form",
-    sourceEngagementId: "eng-acme-2025",
-  },
-  {
-    id: "b-2",
-    techStack: "Drupal",
-    category: "content_architecture",
-    taskType: "Content Type — Complex (10+ fields, paragraphs)",
-    lowHours: 12,
-    highHours: 24,
-    notes: "Includes nested paragraphs, multiple view modes",
-    sourceEngagementId: "eng-globalbank-2025",
-  },
-  {
-    id: "b-3",
-    techStack: "Drupal",
-    category: "content_architecture",
-    taskType: "Taxonomy — per vocabulary",
-    lowHours: 2,
-    highHours: 4,
-    notes: "Includes term reference fields and listing views",
-    sourceEngagementId: null,
-  },
-  // integrations
-  {
-    id: "b-4",
-    techStack: "Drupal",
-    category: "integrations",
-    taskType: "T1 Integration — Simple REST API (read-only)",
-    lowHours: 8,
-    highHours: 16,
-    notes: "T1: Well-documented API, read-only, no auth complexity",
-    sourceEngagementId: "eng-acme-2025",
-  },
-  {
-    id: "b-5",
-    techStack: "Drupal",
-    category: "integrations",
-    taskType: "T2 Integration — Bidirectional CRM Sync",
-    lowHours: 16,
-    highHours: 32,
-    notes: "T2: Bidirectional, webhook or cron sync, error handling",
-    sourceEngagementId: "eng-retailco-2025",
-  },
-  {
-    id: "b-6",
-    techStack: "Drupal",
-    category: "integrations",
-    taskType: "T3 Integration — Complex ERP / Payment Gateway",
-    lowHours: 32,
-    highHours: 60,
-    notes: "T3: Complex auth, multiple endpoints, financial data",
-    sourceEngagementId: "eng-globalbank-2025",
-  },
-  // migrations
-  {
-    id: "b-7",
-    techStack: "Drupal",
-    category: "migrations",
-    taskType: "Content Migration — per 100 nodes (simple)",
-    lowHours: 8,
-    highHours: 16,
-    notes: "Simple field mapping, no media, clean source data",
-    sourceEngagementId: "eng-acme-2025",
-  },
-  {
-    id: "b-8",
-    techStack: "Drupal",
-    category: "migrations",
-    taskType: "Content Migration — per 100 nodes (complex)",
-    lowHours: 16,
-    highHours: 32,
-    notes: "Media, relationships, paragraphs, dirty source data",
-    sourceEngagementId: "eng-globalbank-2025",
-  },
-  // frontend
-  {
-    id: "b-9",
-    techStack: "Drupal+Next.js",
-    category: "frontend",
-    taskType: "Design System Setup",
-    lowHours: 24,
-    highHours: 40,
-    notes: "Token-based tokens, Storybook, component primitives",
-    sourceEngagementId: "eng-acme-2025",
-  },
-  {
-    id: "b-10",
-    techStack: "Drupal+Next.js",
-    category: "frontend",
-    taskType: "Header & Navigation Component",
-    lowHours: 16,
-    highHours: 32,
-    notes: "Responsive mega-nav, mobile drawer, ARIA",
-    sourceEngagementId: "eng-retailco-2025",
-  },
-  {
-    id: "b-11",
-    techStack: "Drupal+Next.js",
-    category: "frontend",
-    taskType: "Hero Component",
-    lowHours: 8,
-    highHours: 16,
-    notes: "Static image variant; +8h for video variant",
-    sourceEngagementId: null,
-  },
-  {
-    id: "b-12",
-    techStack: "Next.js",
-    category: "frontend",
-    taskType: "Card & Listing Grid",
-    lowHours: 12,
-    highHours: 20,
-    notes: "Reusable card with image, title, summary, CTA",
-    sourceEngagementId: "eng-acme-2025",
-  },
-  // devops
-  {
-    id: "b-13",
-    techStack: "Drupal",
-    category: "devops",
-    taskType: "Environment Setup (Dev/Stage/Prod)",
-    lowHours: 8,
-    highHours: 16,
-    notes: "Pantheon / Acquia / platform.sh standard setup",
-    sourceEngagementId: "eng-acme-2025",
-  },
-  {
-    id: "b-14",
-    techStack: "Drupal",
-    category: "devops",
-    taskType: "CI/CD Pipeline Configuration",
-    lowHours: 8,
-    highHours: 20,
-    notes: "GitHub Actions or CircleCI with automated deploys",
-    sourceEngagementId: "eng-globalbank-2025",
-  },
-  {
-    id: "b-15",
-    techStack: "Drupal+Next.js",
-    category: "devops",
-    taskType: "Headless Preview / ISR Setup",
-    lowHours: 12,
-    highHours: 24,
-    notes: "Draft preview, on-demand ISR, cache invalidation",
-    sourceEngagementId: "eng-retailco-2025",
-  },
-]
+const TECH_STACKS = ["All", "DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"]
 
-const TECH_STACKS = ["All", "Drupal", "Drupal+Next.js", "Next.js", "React"]
-
-const CATEGORIES: Record<string, string> = {
-  all: "All Categories",
-  content_architecture: "Content Architecture",
-  integrations: "Integrations",
-  migrations: "Migrations",
-  frontend: "Frontend",
-  devops: "DevOps",
+const TECH_DISPLAY: Record<string, string> = {
+  DRUPAL: "Drupal",
+  DRUPAL_NEXTJS: "Drupal + Next.js",
+  NEXTJS: "Next.js",
+  REACT: "React",
 }
 
 // ─── Inline editable hours cell ───────────────────────────────────────────────
@@ -282,14 +124,15 @@ function EditableHours({
 // ─── Add Benchmark Dialog ─────────────────────────────────────────────────────
 
 interface AddBenchmarkDialogProps {
-  onAdd: (b: Omit<Benchmark, "id">) => void
+  categories: string[]
+  onAdd: (b: Omit<Benchmark, "id" | "isActive">) => void
 }
 
-function AddBenchmarkDialog({ onAdd }: AddBenchmarkDialogProps) {
+function AddBenchmarkDialog({ categories, onAdd }: AddBenchmarkDialogProps) {
   const [open, setOpen] = React.useState(false)
   const [form, setForm] = React.useState({
-    techStack: "Drupal",
-    category: "content_architecture",
+    techStack: "DRUPAL",
+    category: categories[0] ?? "",
     taskType: "",
     lowHours: "",
     highHours: "",
@@ -308,13 +151,14 @@ function AddBenchmarkDialog({ onAdd }: AddBenchmarkDialogProps) {
       taskType: form.taskType,
       lowHours: low,
       highHours: high,
-      notes: form.notes,
+      tier: null,
+      notes: form.notes || null,
       sourceEngagementId: form.sourceEngagementId || null,
     })
     setOpen(false)
     setForm({
-      techStack: "Drupal",
-      category: "content_architecture",
+      techStack: "DRUPAL",
+      category: categories[0] ?? "",
       taskType: "",
       lowHours: "",
       highHours: "",
@@ -349,9 +193,9 @@ function AddBenchmarkDialog({ onAdd }: AddBenchmarkDialogProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {["Drupal", "Drupal+Next.js", "Next.js", "React"].map((s) => (
+                  {(["DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"] as const).map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s}
+                      {TECH_DISPLAY[s]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -367,13 +211,11 @@ function AddBenchmarkDialog({ onAdd }: AddBenchmarkDialogProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(CATEGORIES)
-                    .filter(([k]) => k !== "all")
-                    .map(([k, label]) => (
-                      <SelectItem key={k} value={k}>
-                        {label}
-                      </SelectItem>
-                    ))}
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -458,10 +300,34 @@ function AddBenchmarkDialog({ onAdd }: AddBenchmarkDialogProps) {
 function BenchmarksTab() {
   const currentUser = useCurrentUser()
   const isAdmin = currentUser?.role === "ADMIN"
-  const [data, setData] = React.useState<Benchmark[]>(MOCK_BENCHMARKS)
+  const [data, setData] = React.useState<Benchmark[]>([])
+  const [loading, setLoading] = React.useState(true)
   const [techFilter, setTechFilter] = React.useState("All")
   const [categoryFilter, setCategoryFilter] = React.useState("all")
   const [deleteConfirm, setDeleteConfirm] = React.useState<string | null>(null)
+
+  async function fetchBenchmarks() {
+    setLoading(true)
+    try {
+      const res = await fetch("/api/benchmarks")
+      if (res.ok) {
+        const json = await res.json()
+        setData(json)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  React.useEffect(() => {
+    fetchBenchmarks()
+  }, [])
+
+  // Derive unique categories from fetched data
+  const uniqueCategories = React.useMemo(
+    () => Array.from(new Set(data.map((b) => b.category))).sort(),
+    [data]
+  )
 
   const filtered = data.filter((b) => {
     const matchTech = techFilter === "All" || b.techStack === techFilter
@@ -469,28 +335,37 @@ function BenchmarksTab() {
     return matchTech && matchCat
   })
 
-  function handleAdd(b: Omit<Benchmark, "id">) {
-    setData((prev) => [
-      ...prev,
-      { ...b, id: `b-${Date.now()}` },
-    ])
+  async function handleAdd(b: Omit<Benchmark, "id" | "isActive">) {
+    await fetch("/api/admin/benchmarks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(b),
+    })
+    await fetchBenchmarks()
   }
 
-  function handleDelete(id: string) {
-    setData((prev) => prev.filter((b) => b.id !== id))
+  async function handleDelete(id: string) {
+    await fetch(`/api/admin/benchmarks/${id}`, { method: "DELETE" })
     setDeleteConfirm(null)
+    await fetchBenchmarks()
   }
 
-  function handleLowHours(id: string, val: number) {
-    setData((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, lowHours: val } : b))
-    )
+  async function handleLowHours(id: string, val: number) {
+    await fetch(`/api/admin/benchmarks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lowHours: val }),
+    })
+    await fetchBenchmarks()
   }
 
-  function handleHighHours(id: string, val: number) {
-    setData((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, highHours: val } : b))
-    )
+  async function handleHighHours(id: string, val: number) {
+    await fetch(`/api/admin/benchmarks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ highHours: val }),
+    })
+    await fetchBenchmarks()
   }
 
   return (
@@ -504,7 +379,7 @@ function BenchmarksTab() {
           <SelectContent>
             {TECH_STACKS.map((s) => (
               <SelectItem key={s} value={s}>
-                {s}
+                {s === "All" ? "All Stacks" : TECH_DISPLAY[s] ?? s}
               </SelectItem>
             ))}
           </SelectContent>
@@ -515,9 +390,10 @@ function BenchmarksTab() {
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(CATEGORIES).map(([k, label]) => (
-              <SelectItem key={k} value={k}>
-                {label}
+            <SelectItem value="all">All Categories</SelectItem>
+            {uniqueCategories.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {cat}
               </SelectItem>
             ))}
           </SelectContent>
@@ -525,7 +401,7 @@ function BenchmarksTab() {
 
         {isAdmin && (
           <div className="ml-auto">
-            <AddBenchmarkDialog onAdd={handleAdd} />
+            <AddBenchmarkDialog categories={uniqueCategories} onAdd={handleAdd} />
           </div>
         )}
       </div>
@@ -535,6 +411,7 @@ function BenchmarksTab() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
+              <TableHead className="font-medium text-muted-foreground">Stack</TableHead>
               <TableHead className="font-medium text-muted-foreground">Category</TableHead>
               <TableHead className="font-medium text-muted-foreground">Task Type</TableHead>
               <TableHead className="font-medium text-muted-foreground text-right">Low Hrs</TableHead>
@@ -545,9 +422,15 @@ function BenchmarksTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
+                  Loading benchmarks…
+                </TableCell>
+              </TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
                   No benchmarks match the current filters.
                 </TableCell>
               </TableRow>
@@ -555,8 +438,13 @@ function BenchmarksTab() {
               filtered.map((b) => (
                 <TableRow key={b.id} className="hover:bg-muted/30 transition-colors group/row">
                   <TableCell>
-                    <Badge variant="outline" className="text-xs font-normal capitalize whitespace-nowrap">
-                      {CATEGORIES[b.category] ?? b.category}
+                    <Badge variant="secondary" className="text-xs font-normal whitespace-nowrap">
+                      {TECH_DISPLAY[b.techStack] ?? b.techStack}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs font-normal whitespace-nowrap">
+                      {b.category}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm font-medium max-w-[260px] whitespace-normal leading-snug">
@@ -633,7 +521,7 @@ function BenchmarksTab() {
       <p className="text-xs text-muted-foreground">
         {filtered.length} benchmark{filtered.length !== 1 ? "s" : ""} shown
         {filtered.length !== data.length && ` (${data.length} total)`}.
-        {isAdmin ? "Hours cells are click-to-edit." : "Read-only view. Contact an admin to edit benchmarks."}
+        {isAdmin ? " Hours cells are click-to-edit." : " Read-only view. Contact an admin to edit benchmarks."}
       </p>
     </div>
   )
