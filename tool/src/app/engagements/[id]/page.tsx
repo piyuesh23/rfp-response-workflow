@@ -164,6 +164,14 @@ export default function EngagementOverviewPage() {
     return () => { eventSource.close() }
   }, [runningPhase?.id, fetchEngagement])
 
+  // Polling while any phase is running — updates templateStatus and other engagement data
+  const anyRunning = (engagement?.phases ?? []).some((p) => p.status === "RUNNING")
+  React.useEffect(() => {
+    if (!anyRunning) return
+    const interval = setInterval(fetchEngagement, 5000)
+    return () => clearInterval(interval)
+  }, [anyRunning, fetchEngagement])
+
   // Browser notifications for running phase completion
   usePhaseNotifications({
     phaseId: runningPhase?.id ?? null,
@@ -537,6 +545,8 @@ export default function EngagementOverviewPage() {
                   <div key={key} className="flex items-center gap-1.5 text-xs">
                     {done ? (
                       <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
+                    ) : anyRunning ? (
+                      <Loader2 className="size-3.5 text-blue-400 shrink-0 animate-spin" />
                     ) : (
                       <Circle className="size-3.5 text-muted-foreground shrink-0" />
                     )}

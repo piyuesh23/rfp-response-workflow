@@ -86,55 +86,59 @@ export async function GET(
 
       const meta = artefact.metadata as Record<string, unknown>;
 
-      // Hours data
+      // Hours data — only update if the new value is non-zero to avoid overwriting existing data
       if (meta.totalHours && typeof meta.totalHours === "object") {
         const th = meta.totalHours as { low?: number; high?: number };
-        totalHours = {
-          low: th.low ?? totalHours.low,
-          high: th.high ?? totalHours.high,
-        };
+        if ((th.low ?? 0) > 0) totalHours.low = th.low!;
+        if ((th.high ?? 0) > 0) totalHours.high = th.high!;
       }
 
       if (meta.hoursByTab && typeof meta.hoursByTab === "object") {
         const hbt = meta.hoursByTab as Record<string, { low?: number; high?: number }>;
         for (const tab of ["backend", "frontend", "fixedCost", "ai"] as const) {
           if (hbt[tab]) {
-            hoursByTab[tab] = {
-              low: hbt[tab].low ?? hoursByTab[tab].low,
-              high: hbt[tab].high ?? hoursByTab[tab].high,
-            };
+            if ((hbt[tab].low ?? 0) > 0) hoursByTab[tab].low = hbt[tab].low!;
+            if ((hbt[tab].high ?? 0) > 0) hoursByTab[tab].high = hbt[tab].high!;
           }
         }
       }
 
-      // Requirement clarity data (from TOR assessment)
-      if (typeof meta.requirementCount === "number") {
+      // Requirement clarity data (from TOR assessment) — only update if non-zero
+      if (typeof meta.requirementCount === "number" && meta.requirementCount > 0) {
         requirementCount = meta.requirementCount;
       }
 
       if (meta.clarityBreakdown && typeof meta.clarityBreakdown === "object") {
         const cb = meta.clarityBreakdown as Record<string, number>;
-        clarityBreakdown = {
-          clear: cb.clear ?? clarityBreakdown.clear,
-          needsClarification: cb.needsClarification ?? clarityBreakdown.needsClarification,
-          ambiguous: cb.ambiguous ?? clarityBreakdown.ambiguous,
-          missingDetail: cb.missingDetail ?? clarityBreakdown.missingDetail,
-        };
+        const newTotal = (cb.clear ?? 0) + (cb.needsClarification ?? 0) + (cb.ambiguous ?? 0) + (cb.missingDetail ?? 0);
+        if (newTotal > 0) {
+          clarityBreakdown = {
+            clear: cb.clear ?? clarityBreakdown.clear,
+            needsClarification: cb.needsClarification ?? clarityBreakdown.needsClarification,
+            ambiguous: cb.ambiguous ?? clarityBreakdown.ambiguous,
+            missingDetail: cb.missingDetail ?? clarityBreakdown.missingDetail,
+          };
+        }
       }
 
-      // Confidence distribution
+      // Confidence distribution — only update if non-zero
       if (meta.confidenceDistribution && typeof meta.confidenceDistribution === "object") {
         const cd = meta.confidenceDistribution as Record<string, number>;
-        confidenceDistribution = {
-          high56: cd.high56 ?? confidenceDistribution.high56,
-          medium4: cd.medium4 ?? confidenceDistribution.medium4,
-          low123: cd.low123 ?? confidenceDistribution.low123,
-        };
+        const newTotal = (cd.high56 ?? 0) + (cd.medium4 ?? 0) + (cd.low123 ?? 0);
+        if (newTotal > 0) {
+          confidenceDistribution = {
+            high56: cd.high56 ?? confidenceDistribution.high56,
+            medium4: cd.medium4 ?? confidenceDistribution.medium4,
+            low123: cd.low123 ?? confidenceDistribution.low123,
+          };
+        }
       }
     }
   }
 
-  // Fallback: if hours are all zeros but artefacts have content, re-extract metadata
+  // Fallback: if hours are all zeros but artefacts have content, re-extract metadata.
+  // Only update fields that are still at their zero defaults — never overwrite data
+  // already loaded from the primary loop (e.g. clarity data from Phase 1).
   if (totalHours.low === 0 && totalHours.high === 0) {
     for (const phase of engagement.phases) {
       for (const artefact of phase.artefacts) {
@@ -145,43 +149,56 @@ export async function GET(
         const fm = freshMeta as Record<string, unknown>;
         if (fm.totalHours && typeof fm.totalHours === "object") {
           const th = fm.totalHours as { low?: number; high?: number };
-          if ((th.low ?? 0) > 0 || (th.high ?? 0) > 0) {
-            totalHours = { low: th.low ?? 0, high: th.high ?? 0 };
-          }
+          // Only fill in if still zero
+          if (totalHours.low === 0 && (th.low ?? 0) > 0) totalHours.low = th.low!;
+          if (totalHours.high === 0 && (th.high ?? 0) > 0) totalHours.high = th.high!;
         }
         if (fm.hoursByTab && typeof fm.hoursByTab === "object") {
           const hbt = fm.hoursByTab as Record<string, { low?: number; high?: number }>;
           for (const tab of ["backend", "frontend", "fixedCost", "ai"] as const) {
             if (hbt[tab]) {
-              hoursByTab[tab] = { low: hbt[tab].low ?? 0, high: hbt[tab].high ?? 0 };
+              if (hoursByTab[tab].low === 0 && (hbt[tab].low ?? 0) > 0) hoursByTab[tab].low = hbt[tab].low!;
+              if (hoursByTab[tab].high === 0 && (hbt[tab].high ?? 0) > 0) hoursByTab[tab].high = hbt[tab].high!;
             }
           }
         }
         if (fm.confidenceDistribution && typeof fm.confidenceDistribution === "object") {
           const cd = fm.confidenceDistribution as Record<string, number>;
-          confidenceDistribution = {
-            high56: cd.high56 ?? 0,
-            medium4: cd.medium4 ?? 0,
-            low123: cd.low123 ?? 0,
-          };
+          const newTotal = (cd.high56 ?? 0) + (cd.medium4 ?? 0) + (cd.low123 ?? 0);
+          if (newTotal > 0 && confidenceDistribution.high56 === 0 && confidenceDistribution.medium4 === 0 && confidenceDistribution.low123 === 0) {
+            confidenceDistribution = {
+              high56: cd.high56 ?? 0,
+              medium4: cd.medium4 ?? 0,
+              low123: cd.low123 ?? 0,
+            };
+          }
         }
-        if (typeof fm.requirementCount === "number") {
+        // Only update clarity fields if still at defaults (don't overwrite Phase 1 data)
+        if (typeof fm.requirementCount === "number" && fm.requirementCount > 0 && requirementCount === 0) {
           requirementCount = fm.requirementCount;
         }
         if (fm.clarityBreakdown && typeof fm.clarityBreakdown === "object") {
           const cb = fm.clarityBreakdown as Record<string, number>;
-          clarityBreakdown = {
-            clear: cb.clear ?? 0,
-            needsClarification: cb.needsClarification ?? 0,
-            ambiguous: cb.ambiguous ?? 0,
-            missingDetail: cb.missingDetail ?? 0,
-          };
+          const newTotal = (cb.clear ?? 0) + (cb.needsClarification ?? 0) + (cb.ambiguous ?? 0) + (cb.missingDetail ?? 0);
+          const existingTotal = clarityBreakdown.clear + clarityBreakdown.needsClarification + clarityBreakdown.ambiguous + clarityBreakdown.missingDetail;
+          if (newTotal > 0 && existingTotal === 0) {
+            clarityBreakdown = {
+              clear: cb.clear ?? 0,
+              needsClarification: cb.needsClarification ?? 0,
+              ambiguous: cb.ambiguous ?? 0,
+              missingDetail: cb.missingDetail ?? 0,
+            };
+          }
         }
 
-        // Persist re-extracted metadata back to artefact for future requests
+        // Persist re-extracted metadata back to artefact, merging with existing metadata
+        const existingMeta = (artefact.metadata && typeof artefact.metadata === "object")
+          ? artefact.metadata as Record<string, unknown>
+          : {};
+        const mergedMeta = { ...freshMeta, ...existingMeta };
         prisma.phaseArtefact.update({
           where: { id: artefact.id },
-          data: { metadata: freshMeta as unknown as Record<string, never> },
+          data: { metadata: mergedMeta as unknown as Record<string, never> },
         }).catch(() => { /* non-fatal */ });
       }
     }
