@@ -47,6 +47,13 @@ export async function requireRoles(
 }
 
 /**
+ * Shorthand for requireRoles("ADMIN").
+ */
+export async function requireAdmin(): Promise<AuthedSession> {
+  return requireRoles("ADMIN");
+}
+
+/**
  * Utility to translate guard errors into HTTP status codes.
  * Usage: catch (e) { const { status, message } = guardErrorStatus(e); }
  */

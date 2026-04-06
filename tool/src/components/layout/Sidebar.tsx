@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Settings, LogOut, Clock } from "lucide-react"
+import { LayoutDashboard, Settings, LogOut, Clock, ShieldCheck, Users, FileBarChart, Gauge, BookOpen, MessageSquare } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/hooks/useCurrentUser"
@@ -21,6 +21,14 @@ import { Separator } from "@/components/ui/separator"
 const navLinks = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/settings", label: "Settings", icon: Settings },
+]
+
+const adminLinks = [
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/engagements", label: "Engagements", icon: FileBarChart },
+  { href: "/admin/analytics", label: "Analytics", icon: Gauge },
+  { href: "/admin/benchmarks", label: "Benchmarks", icon: BookOpen },
+  { href: "/admin/prompts", label: "Prompts", icon: MessageSquare },
 ]
 
 interface RecentEngagement {
@@ -88,6 +96,36 @@ export function SidebarContent() {
           </Link>
         ))}
       </nav>
+
+      {/* Admin nav — visible only to ADMIN role */}
+      {currentUser?.role === "ADMIN" && (
+        <>
+          <Separator className="my-2" />
+          <div className="flex flex-col gap-0.5 px-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1">
+              <ShieldCheck className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Admin
+              </span>
+            </div>
+            {adminLinks.map(({ href, label, icon: Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+                  pathname.startsWith(href)
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                {label}
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
 
       <Separator className="my-2" />
 

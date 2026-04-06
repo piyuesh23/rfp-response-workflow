@@ -13,6 +13,9 @@ model User {
   name        String
   role        UserRole     @default(MANAGER)
   avatarUrl   String?
+  isBlocked   Boolean      @default(false)
+  blockedAt   DateTime?
+  blockedBy   String?
   createdAt   DateTime     @default(now())
   lastLoginAt DateTime?
   engagements Engagement[]

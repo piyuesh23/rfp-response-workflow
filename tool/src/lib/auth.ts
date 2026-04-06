@@ -33,7 +33,7 @@ export const authOptions: NextAuthOptions = {
         if (domain !== allowedDomain) return false;
       }
 
-      await prisma.user.upsert({
+      const dbUser = await prisma.user.upsert({
         where: { email },
         update: { lastLoginAt: new Date() },
         create: {
@@ -43,6 +43,9 @@ export const authOptions: NextAuthOptions = {
           lastLoginAt: new Date(),
         },
       });
+
+      // Block sign-in for blocked users
+      if (dbUser.isBlocked) return false;
 
       return true;
     },
