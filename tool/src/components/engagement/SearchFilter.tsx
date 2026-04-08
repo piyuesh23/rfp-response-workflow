@@ -62,6 +62,8 @@ export function SearchFilter({
             <SelectItem value="all">All Tech Stacks</SelectItem>
             <SelectItem value="DRUPAL">Drupal</SelectItem>
             <SelectItem value="DRUPAL_NEXTJS">Drupal + Next.js</SelectItem>
+            <SelectItem value="WORDPRESS">WordPress</SelectItem>
+            <SelectItem value="WORDPRESS_NEXTJS">WordPress + Next.js</SelectItem>
             <SelectItem value="NEXTJS">Next.js</SelectItem>
             <SelectItem value="REACT">React</SelectItem>
           </SelectContent>

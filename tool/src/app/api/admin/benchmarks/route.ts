@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireAdmin, guardErrorStatus } from "@/lib/auth-guard";
 import type { TechStack } from "@/generated/prisma/enums";
 
-const VALID_TECH_STACKS: TechStack[] = ["DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"];
+const VALID_TECH_STACKS: TechStack[] = ["DRUPAL", "DRUPAL_NEXTJS", "WORDPRESS", "WORDPRESS_NEXTJS", "NEXTJS", "REACT"];
 
 export async function GET(request: NextRequest) {
   try {

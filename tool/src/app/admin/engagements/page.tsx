@@ -40,7 +40,7 @@ interface AdminEngagement {
 }
 
 const STATUS_OPTIONS = ["ALL", "DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"];
-const TECH_OPTIONS = ["ALL", "DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"];
+const TECH_OPTIONS = ["ALL", "DRUPAL", "DRUPAL_NEXTJS", "WORDPRESS", "WORDPRESS_NEXTJS", "NEXTJS", "REACT"];
 
 function statusVariant(status: string) {
   switch (status) {

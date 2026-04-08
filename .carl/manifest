@@ -17,3 +17,15 @@ PRESALES_ALWAYS_ON=true
 # COMMANDS - Star-commands (*checklist, *recap, *benchmark)
 # ============================================================================
 COMMANDS_STATE=active
+
+# ============================================================================
+# TECH OVERLAYS - Conditionally loaded by init.sh based on selected tech stack
+# ============================================================================
+
+# Drupal overlay — loaded when tech-stack=drupal
+# DRUPAL_ESTIMATION_STATE=active
+# DRUPAL_ESTIMATION_OVERLAY=overlays/drupal_estimation
+
+# WordPress overlay — loaded when tech-stack=wordpress or tech-stack=wordpress_nextjs
+# WORDPRESS_ESTIMATION_STATE=active
+# WORDPRESS_ESTIMATION_OVERLAY=overlays/wordpress_estimation

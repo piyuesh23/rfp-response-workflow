@@ -34,7 +34,7 @@ RULE 14: ALWAYS compute Low Hrs and High Hrs for every estimate line item using 
 
 RULE 15: ALWAYS generate a Risk Register for all Conf ≤ 4 items with columns: Task, Tab, Conf, Risk/Dependency, Open Question for PM/Client, Recommended Action, Hours at Risk.
 
-RULE 16: ALWAYS validate that always-include Backend tasks are present: Discovery & Requirements Analysis, Environment Setup, Drupal Installation & Base Configuration, Configuration Management Setup, Roles & Permissions, Media Library Setup, Deployment Pipeline, QA/Bug Fixes & Stabilisation (10-15% of total). Flag missing tasks as validation errors.
+RULE 16: ALWAYS validate that always-include Backend tasks are present. For Drupal: Discovery & Requirements Analysis, Environment Setup, Drupal Installation & Base Configuration, Configuration Management Setup, Roles & Permissions, Media Library Setup, Deployment Pipeline, QA/Bug Fixes & Stabilisation (10-15% of total). For WordPress: Discovery & Requirements Analysis, Environment Setup, WordPress Installation & Base Configuration, Plugin Management & Configuration, Roles & Capabilities Setup, Media Library Configuration, Deployment Pipeline, QA/Bug Fixes & Stabilisation (10-15% of total). Flag missing tasks as validation errors.
 
 RULE 17: ALWAYS classify integrations by tier (T1 Simple 8-16h, T2 Standard 16-32h, T3 Complex 32-60h) and state the tier in the Description column. Unknown API docs = bump up one tier.
 

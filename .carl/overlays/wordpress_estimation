@@ -1,0 +1,11 @@
+# CARL WordPress Estimation Overlay
+# ===================================
+# WordPress-specific estimation rules. Activated by init.sh when tech-stack=wordpress or wordpress_nextjs.
+
+WORDPRESS_ESTIMATION_RULE_0=Evaluate all requirements against WordPress 6.x core capabilities and Full Site Editing (FSE/block editor) before suggesting custom plugin development
+WORDPRESS_ESTIMATION_RULE_1=For every feature specify: plugin (with name and wordpress.org link), core feature (Gutenberg blocks, patterns, theme.json), or custom development required
+WORDPRESS_ESTIMATION_RULE_2=Flag integration complexity tiers: T1 Simple (REST API consumer/webhook), T2 Standard (OAuth + custom REST endpoints + scheduled sync), T3 Complex (bidirectional real-time sync + custom auth + WPGraphQL mutations)
+WORDPRESS_ESTIMATION_RULE_3=For migrations always assess: source system, content volume, post type mapping complexity, URL redirect requirements (Redirection plugin or .htaccess), media migration, user/role migration with capabilities
+WORDPRESS_ESTIMATION_RULE_4=Headless/decoupled WordPress (WPGraphQL/REST API + Next.js) adds 30-50% to frontend estimates — always flag this when applicable
+WORDPRESS_ESTIMATION_RULE_5=Always account for plugin update strategy, wp-config environment management, and deployment automation (WP-CLI scripts, Composer-based workflows like Bedrock/Radicle)
+WORDPRESS_ESTIMATION_RULE_6=Identify multilingual requirements early — WPML or Polylang adds significant complexity to custom post types, taxonomies, menus, and search

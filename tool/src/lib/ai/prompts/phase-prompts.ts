@@ -68,10 +68,19 @@ Also include a summary section:
 As a table: | Clarity Rating | Count | Percentage |`;
 }
 
-export function getPhase1AEstimatePrompt(): string {
+export function getPhase1AEstimatePrompt(techStack?: string): string {
+  const isWordPress = techStack?.startsWith("WORDPRESS");
+  const platformName = isWordPress ? "WordPress" : "Drupal";
+  const nativeSolutions = isWordPress
+    ? "WordPress plugins (cite wordpress.org links), core Gutenberg blocks/patterns, and theme.json capabilities"
+    : "contrib modules (cite drupal.org links), core features, and platform-native solutions";
+  const customDev = isWordPress ? "custom plugin development" : "custom module development";
+
   return `Conduct Phase 1A: Optimistic Estimation (No-Response Path).
 
 Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning.
+
+**Platform: ${platformName}** — Prefer ${nativeSolutions} over ${customDev} where possible.
 
 ## Requirement Traceability
 
@@ -85,7 +94,7 @@ At the end, produce a Traceability Matrix showing:
 ## Assumption Strategy
 
 1. Convert every Phase 1 clarifying question into an assumption. Select the lowest-effort option for each.
-2. Prefer platform-native/contrib solutions over custom development.
+2. Prefer ${nativeSolutions} over ${customDev}.
 3. Frame every assumption as a change-request boundary.
 
 For each assumption, write clearly:

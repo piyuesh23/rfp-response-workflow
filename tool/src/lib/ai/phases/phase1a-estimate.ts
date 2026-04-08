@@ -16,6 +16,6 @@ export function getPhase1AEstimateConfig(
     systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
       "\n\n---\n\n"
     ),
-    userPrompt: getPhase1AEstimatePrompt(),
+    userPrompt: getPhase1AEstimatePrompt(techStack),
   };
 }

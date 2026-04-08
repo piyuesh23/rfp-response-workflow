@@ -54,6 +54,8 @@ enum WorkflowPath {
 enum TechStack {
   DRUPAL
   DRUPAL_NEXTJS
+  WORDPRESS
+  WORDPRESS_NEXTJS
   NEXTJS
   REACT
 }

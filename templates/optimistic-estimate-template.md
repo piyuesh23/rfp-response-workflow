@@ -76,7 +76,7 @@ Items in this tab require Project Management oversight and Quality Assurance eff
 
 ---
 
-## Custom Module Development
+## Custom Development
 
 | Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
 |------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
@@ -237,7 +237,7 @@ Mapping of Phase 1 clarifying questions to the assumptions used in this estimate
 - [ ] All Conf ≤ 4 items listed in Risk Register with open questions and de-risk actions
 - [ ] All effort figures within benchmark ranges
 - [ ] All assumptions documented with TOR/Q&A reference AND impact-if-wrong
-- [ ] Always-include tasks present: Discovery, Environment Setup, Base Configuration, Config Management, Roles & Permissions, Media Library, Deployment Pipeline, QA/Stabilisation (Backend); Design System (Frontend)
+- [ ] Always-include tasks present: Discovery, Environment Setup, CMS Installation & Base Configuration, Configuration/Plugin Management, Roles & Permissions/Capabilities, Media Library, Deployment Pipeline, QA/Stabilisation (Backend); Design System (Frontend)
 
 ---
 

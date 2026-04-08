@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Pencil, X, Check, Ban } from "lucide-react";
 
-type TechStack = "DRUPAL" | "DRUPAL_NEXTJS" | "NEXTJS" | "REACT";
+type TechStack = "DRUPAL" | "DRUPAL_NEXTJS" | "WORDPRESS" | "WORDPRESS_NEXTJS" | "NEXTJS" | "REACT";
 
 interface Benchmark {
   id: string;
@@ -36,10 +36,12 @@ interface Benchmark {
   createdAt: string;
 }
 
-const TECH_STACKS: TechStack[] = ["DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"];
+const TECH_STACKS: TechStack[] = ["DRUPAL", "DRUPAL_NEXTJS", "WORDPRESS", "WORDPRESS_NEXTJS", "NEXTJS", "REACT"];
 const TECH_STACK_LABELS: Record<TechStack, string> = {
   DRUPAL: "Drupal",
   DRUPAL_NEXTJS: "Drupal + Next.js",
+  WORDPRESS: "WordPress",
+  WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
 };

@@ -51,11 +51,13 @@ interface Benchmark {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TECH_STACKS = ["All", "DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"]
+const TECH_STACKS = ["All", "DRUPAL", "DRUPAL_NEXTJS", "WORDPRESS", "WORDPRESS_NEXTJS", "NEXTJS", "REACT"]
 
 const TECH_DISPLAY: Record<string, string> = {
   DRUPAL: "Drupal",
   DRUPAL_NEXTJS: "Drupal + Next.js",
+  WORDPRESS: "WordPress",
+  WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
 }
@@ -193,7 +195,7 @@ function AddBenchmarkDialog({ categories, onAdd }: AddBenchmarkDialogProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(["DRUPAL", "DRUPAL_NEXTJS", "NEXTJS", "REACT"] as const).map((s) => (
+                  {(["DRUPAL", "DRUPAL_NEXTJS", "WORDPRESS", "WORDPRESS_NEXTJS", "NEXTJS", "REACT"] as const).map((s) => (
                     <SelectItem key={s} value={s}>
                       {TECH_DISPLAY[s]}
                     </SelectItem>

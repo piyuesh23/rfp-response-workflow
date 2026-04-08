@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils"
 const TECH_STACK_LABELS: Record<string, string> = {
   DRUPAL: "Drupal",
   DRUPAL_NEXTJS: "Drupal + Next.js",
+  WORDPRESS: "WordPress",
+  WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
 }

@@ -28,6 +28,8 @@ const statusConfig: Record<EngagementStatus, { label: string; className: string 
 const techStackLabel: Record<TechStack, string> = {
   DRUPAL: "Drupal",
   DRUPAL_NEXTJS: "Drupal + Next.js",
+  WORDPRESS: "WordPress",
+  WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
 }
