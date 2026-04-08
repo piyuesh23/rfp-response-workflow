@@ -113,7 +113,8 @@ Tab descriptions:
 - **AI Tab**: AI-powered features (only if the TOR contains AI-related requirements)
 
 For each line item include these columns in the markdown table:
-- Task, Description (include TOR reference), Hours (base), Conf (1-6), Low Hrs, High Hrs, Assumptions (included/excluded scope), Proposed Solution (technical approach), Reference Links
+- Task, Description (include TOR reference), Hours (base), BenchmarkRef, Conf (1-6), Low Hrs, High Hrs, Assumptions (included/excluded scope), Proposed Solution (technical approach), Reference Links
+- **BenchmarkRef**: Set to the BenchmarkKey from the Reference Benchmarks lookup table that most closely matches this task. If no benchmark applies, write "N/A" and explain why in Assumptions. If Hours falls outside the matched benchmark's LowHrs–HighHrs range, prepend "BENCHMARK DEVIATION: [reason]" to the Assumptions column.
 - Low Hrs = Hours, High Hrs = Hours x (1 + Conf buffer%)
 - Conf buffer: 6=0%, 5=+25%, 4=+50%, 3=+50%, 2=+75%, 1=+100%
 

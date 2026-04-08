@@ -3,6 +3,7 @@ import { runPhase, prepareWorkDir, syncFilesToStorage, UsageStats } from "@/lib/
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
 import { extractMetadataForPhase, extractRiskRegister, extractAssumptions } from "@/lib/ai/metadata-extractor";
+import { validateEstimate } from "@/lib/ai/validate-estimate";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
@@ -166,6 +167,44 @@ const worker = new Worker<PhaseJobData>(
           }
         } catch (err) {
           console.warn(`[phase-runner] Phase ${phaseNumber} — failed to extract risks/assumptions: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // For estimate phases: run benchmark validation and store report in artefact metadata
+      if (["1A", "3"].includes(phaseStr) && artefactContent) {
+        try {
+          const validationReport = await validateEstimate(artefactContent);
+          // Update the artefact metadata with validation results
+          const latestArtefact = await prisma.phaseArtefact.findFirst({
+            where: { phaseId },
+            orderBy: { version: "desc" },
+            select: { id: true, metadata: true },
+          });
+          if (latestArtefact) {
+            const existingMeta = (latestArtefact.metadata as Record<string, unknown>) ?? {};
+            await prisma.phaseArtefact.update({
+              where: { id: latestArtefact.id },
+              data: {
+                metadata: JSON.parse(JSON.stringify({
+                  ...existingMeta,
+                  benchmarkValidation: {
+                    passCount: validationReport.passCount,
+                    warnCount: validationReport.warnCount,
+                    failCount: validationReport.failCount,
+                    noBenchmarkCount: validationReport.noBenchmarkCount,
+                    totalItems: validationReport.items.length,
+                  },
+                })),
+              },
+            });
+            console.log(
+              `[phase-runner] Phase ${phaseNumber} — benchmark validation: ${validationReport.passCount} pass, ${validationReport.warnCount} warn, ${validationReport.failCount} fail`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Phase ${phaseNumber} — benchmark validation failed: ${err instanceof Error ? err.message : String(err)}`
+          );
         }
       }
 

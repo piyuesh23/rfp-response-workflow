@@ -94,7 +94,11 @@ function extractPhaseSummary(
       const total = meta.totalHours as { low?: number; high?: number } | undefined
       const lineItems = meta.lineItemCount as number | undefined
       if (!total?.low && !total?.high) return undefined
-      return `${lineItems ?? "?"} line items · ${total?.low ?? 0}–${total?.high ?? 0} hrs`
+      const bv = meta.benchmarkValidation as { passCount?: number; warnCount?: number; failCount?: number; totalItems?: number } | undefined
+      const validationSuffix = bv && bv.totalItems
+        ? ` · BM: ${bv.passCount ?? 0}P/${bv.warnCount ?? 0}W/${bv.failCount ?? 0}F`
+        : ""
+      return `${lineItems ?? "?"} line items · ${total?.low ?? 0}–${total?.high ?? 0} hrs${validationSuffix}`
     }
     default:
       return undefined

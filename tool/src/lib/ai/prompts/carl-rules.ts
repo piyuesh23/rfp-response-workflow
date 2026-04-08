@@ -14,7 +14,7 @@ RULE 4: ALWAYS map every TOR requirement to an estimate line item — flag unmap
 
 RULE 5: ALWAYS flag estimate line items not traceable to any TOR requirement as ORPHANS.
 
-RULE 6: Compare effort figures against benchmarks/ directory reference ranges when available.
+RULE 6 (BENCHMARK COMPLIANCE): Every Backend and Frontend estimate line item MUST include a BenchmarkRef column value matching a BenchmarkKey from the Reference Benchmarks lookup table. Your Hours MUST fall within the LowHrs–HighHrs range for the matched benchmark. If Hours falls outside the range, add "BENCHMARK DEVIATION: [reason]" at the start of the Assumptions column. If no benchmark matches, write "N/A" in BenchmarkRef. Deviations > 25% from the mid-point require a written justification. A deviation summary section is REQUIRED at the end of the estimate.
 
 RULE 7: Categorize requirements by domain: content architecture, integrations, migrations, frontend/theming, DevOps/hosting, SEO, accessibility, performance, security.
 

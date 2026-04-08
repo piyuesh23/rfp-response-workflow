@@ -67,24 +67,34 @@ async function loadBenchmarks(): Promise<string> {
     });
 
     if (dbBenchmarks.length > 0) {
-      // Group by category and format as markdown sections
-      const grouped: Record<string, typeof dbBenchmarks> = {};
-      for (const b of dbBenchmarks) {
-        if (!grouped[b.category]) grouped[b.category] = [];
-        grouped[b.category].push(b);
-      }
+      // Format as a structured lookup table for precise benchmark referencing
+      const toSlug = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-      const sections: string[] = [];
-      for (const [category, items] of Object.entries(grouped)) {
-        const rows = items.map((b) => {
-          const tier = b.tier ? ` [${b.tier}]` : "";
-          const notes = b.notes ? ` — ${b.notes}` : "";
-          return `- **${b.taskType}**${tier}: ${b.lowHours}–${b.highHours} hrs (${b.techStack})${notes}`;
-        });
-        sections.push(`### ${category}\n\n${rows.join("\n")}`);
-      }
+      const tableRows = dbBenchmarks.map((b) => {
+        const key = `${toSlug(b.category)}/${toSlug(b.taskType)}`;
+        const tier = b.tier ?? "-";
+        const notes = b.notes ?? "";
+        return `| ${key} | ${b.category} | ${b.taskType} | ${b.techStack} | ${tier} | ${b.lowHours} | ${b.highHours} | ${notes} |`;
+      });
 
-      return `\n\n---\n\n## Reference Benchmarks\n\nUse these effort ranges to calibrate your estimates. Flag significant deviations.\n\n${sections.join("\n\n")}`;
+      const header = `| BenchmarkKey | Category | TaskType | TechStack | Tier | LowHrs | HighHrs | Notes |\n|---|---|---|---|---|---|---|---|`;
+      const table = `${header}\n${tableRows.join("\n")}`;
+
+      const instructions = `## Reference Benchmarks — Lookup Table
+
+Use this table to anchor every Backend and Frontend estimate line item to a known benchmark range.
+
+**For each Backend/Frontend line item you write:**
+1. Find the closest BenchmarkKey by matching Category + TaskType to your task
+2. Set the \`BenchmarkRef\` column to that BenchmarkKey (e.g., \`content-architecture/simple-content-type\`)
+3. Your \`Hours\` estimate MUST fall within the LowHrs–HighHrs range for the matched benchmark
+4. If Hours falls outside the range, add \`BENCHMARK DEVIATION: [reason]\` at the start of the Assumptions column
+5. If no benchmark matches, write \`N/A\` in BenchmarkRef and briefly explain why in Assumptions
+
+**Deviations > 25% from the mid-point ((LowHrs + HighHrs) / 2) require a written justification. No silent outliers.**`;
+
+      return `\n\n---\n\n${instructions}\n\n${table}`;
     }
   } catch {
     // DB unavailable — fall through to file-based loading
@@ -197,8 +207,115 @@ async function collectPriorContext(
     }
   }
 
+  // For Phase 1A/3: inject prior estimate totals as a calibration anchor
+  if (["1A", "3"].includes(currentPhase)) {
+    const estimatePath = path.join(workDir, "estimates", "optimistic-estimate.md");
+    try {
+      const priorEstimate = await readFile(estimatePath, "utf-8");
+      const totals = extractPriorEstimateTotals(priorEstimate);
+      if (totals) {
+        sections.push(`### Prior Estimate (for calibration — do NOT copy blindly)
+
+A previous estimate for this engagement produced these totals:
+- Backend total: ~${totals.backend.low}–${totals.backend.high}h
+- Frontend total: ~${totals.frontend.low}–${totals.frontend.high}h
+- Fixed Cost total: ~${totals.fixedCost.low}–${totals.fixedCost.high}h
+${totals.ai.high > 0 ? `- AI total: ~${totals.ai.low}–${totals.ai.high}h\n` : ""}- **Overall total: ~${totals.total.low}–${totals.total.high}h**
+
+Individual line-item deviations > 25% from the prior estimate require justification.
+Use this as a calibration anchor, not a ceiling — if new information warrants different numbers, explain why.`);
+      }
+    } catch {
+      // No prior estimate — this is the first run
+    }
+  }
+
   if (sections.length === 0) return "";
   return `\n\n---\n\n## Context from Prior Phases\n\nThe following artefacts were produced by earlier phases. Use them to inform your analysis.\n\n${sections.join("\n\n---\n\n")}`;
+}
+
+/**
+ * Extract tab-level totals from a prior estimate's Summary table.
+ * Returns null if the summary table can't be parsed.
+ */
+function extractPriorEstimateTotals(markdown: string): {
+  backend: { low: number; high: number };
+  frontend: { low: number; high: number };
+  fixedCost: { low: number; high: number };
+  ai: { low: number; high: number };
+  total: { low: number; high: number };
+} | null {
+  const lines = markdown.split("\n");
+  let inSummary = false;
+  let pastSeparator = false;
+  let headerCells: string[] | null = null;
+
+  const result = {
+    backend: { low: 0, high: 0 },
+    frontend: { low: 0, high: 0 },
+    fixedCost: { low: 0, high: 0 },
+    ai: { low: 0, high: 0 },
+    total: { low: 0, high: 0 },
+  };
+  let found = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^##\s+Summary/i.test(trimmed)) {
+      inSummary = true;
+      headerCells = null;
+      pastSeparator = false;
+      continue;
+    }
+
+    if (inSummary && /^#{1,3}\s/.test(trimmed) && !/^##\s+Summary/i.test(trimmed)) {
+      break;
+    }
+
+    if (!inSummary || !trimmed.startsWith("|")) continue;
+
+    if (/^\|[\s-:|]+\|$/.test(trimmed)) {
+      if (headerCells) pastSeparator = true;
+      continue;
+    }
+
+    const cells = trimmed.split("|").slice(1, -1).map((c) => c.trim());
+
+    if (!headerCells) {
+      headerCells = cells;
+      continue;
+    }
+
+    if (!pastSeparator) continue;
+
+    const h = headerCells.map((c) => c.toLowerCase().replace(/\*+/g, "").trim());
+    const lowCol = h.findIndex((c) => c.includes("low"));
+    const highCol = h.findIndex((c) => c.includes("high"));
+    if (lowCol < 0 || highCol < 0) continue;
+
+    const tabName = (cells[0] ?? "").toLowerCase().replace(/\*+/g, "").trim();
+    const low = parseFloat((cells[lowCol] ?? "").replace(/[*,]/g, ""));
+    const high = parseFloat((cells[highCol] ?? "").replace(/[*,]/g, ""));
+
+    if (isNaN(low) || isNaN(high)) continue;
+
+    if (tabName.includes("backend")) { result.backend = { low, high }; found = true; }
+    else if (tabName.includes("frontend")) { result.frontend = { low, high }; found = true; }
+    else if (tabName.includes("fixed")) { result.fixedCost = { low, high }; found = true; }
+    else if (tabName.includes("ai")) { result.ai = { low, high }; found = true; }
+    else if (tabName.includes("total")) { result.total = { low, high }; found = true; }
+  }
+
+  if (!found) return null;
+
+  // Compute total from tabs if not found in summary
+  if (result.total.low === 0 && result.total.high === 0) {
+    result.total.low = result.backend.low + result.frontend.low + result.fixedCost.low + result.ai.low;
+    result.total.high = result.backend.high + result.frontend.high + result.fixedCost.high + result.ai.high;
+  }
+
+  return result;
 }
 
 export async function prepareWorkDir(engagementId: string): Promise<string> {

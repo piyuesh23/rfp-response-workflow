@@ -54,49 +54,49 @@ Items in this tab require Project Management oversight and Quality Assurance eff
 
 ## Content Architecture
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR sections/clauses or customer Q&A. Impact if wrong: effort/scope change] | [specific technical approach] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR sections/clauses or customer Q&A. Impact if wrong: effort/scope change] | [specific technical approach] | [links] |
 
 ---
 
 ## Integrations
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
 
 ---
 
 ## Migrations
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
 
 ---
 
 ## Custom Module Development
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
 
 ---
 
 ## SEO / Accessibility / Performance
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
 
 ---
 
 ## Security
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
 
 ---
 
@@ -108,8 +108,8 @@ Items in this tab require Project Management oversight and Quality Assurance eff
 
 ## Design System / Theme Foundation
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|------------|-----------------|
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|------------|-----------------|
 | Design System Setup | [create new / reuse existing — specify which] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption about design availability, brand guidelines (ref TOR/Q&A). Impact if wrong: effort/scope change] | [what's excluded] | [link to design system being reused, or similar reference] |
 | Theme Setup | [build tooling, base config, folder structure] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [links] |
 | Generic Elements / Styleguide | [headings, lists, CTAs, typography, colors] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [links] |
@@ -118,8 +118,8 @@ Items in this tab require Project Management oversight and Quality Assurance eff
 
 ## Global Components
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|------------|-----------------|
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|------------|-----------------|
 | Header | [describe layout, nav levels, mobile behavior] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link — similar site header] |
 | Footer | [describe columns, content] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link] |
 | Navigation | [primary, breadcrumbs, sidebar] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link] |
@@ -129,8 +129,8 @@ Items in this tab require Project Management oversight and Quality Assurance eff
 
 ## Content Components
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|------------|-----------------|
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|------------|-----------------|
 | Hero Banner | [image/video, overlay, CTAs] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link — e.g., similar hero on comparable site] |
 | Card | [image, title, excerpt, metadata] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link] |
 | [component] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link] |
@@ -139,16 +139,16 @@ Items in this tab require Project Management oversight and Quality Assurance eff
 
 ## Form Components
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|------------|-----------------|
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|------------|-----------------|
 | [form component] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link] |
 
 ---
 
 ## Page Templates
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|------------|-----------------|
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Exclusions | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|------------|-----------------|
 | Homepage | [component assembly, layout] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link — similar homepage] |
 | [template] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [assumptions ref TOR/Q&A. Impact if wrong: ...] | [exclusions] | [visual reference link] |
 
@@ -176,9 +176,9 @@ Items that do NOT require QA effort or Project Management oversight. These are a
 
 AI-powered features and integrations. Include only if the TOR contains AI/ML requirements.
 
-| Task | Description | Hours | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
-|------|-------------|-------|------|---------|----------|-------------|-------------------|-----------------|
-| [task] | [description] | [hrs] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
+| Task | Description | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+|------|-------------|-------|--------------|------|---------|----------|-------------|-------------------|-----------------|
+| [task] | [description] | [hrs] | [benchmark-key or N/A] | [1-6] | [hrs] | [hrs × buffer] | [What: assumption referencing TOR/Q&A. Impact if wrong: effort/scope change] | [solution] | [links] |
 
 ---
 
