@@ -19,7 +19,7 @@ export function getPhaseConfig(
     case "1":
       return getPhase1Config(engagementId, techStack);
     case "1A":
-      return getPhase1AEstimateConfig(engagementId, techStack);
+      return getPhase1AEstimateConfig(engagementId, techStack, engagementType);
     case "2":
       return getPhase2Config(engagementId, techStack);
     case "3":
@@ -43,7 +43,7 @@ export function getPhaseConfig(
     case "4":
       return getPhase4Config(engagementId, techStack);
     case "5":
-      return getPhase5Config(engagementId, techStack);
+      return getPhase5Config(engagementId, techStack, engagementType);
     default:
       throw new Error(`Phase ${phaseNumber} is not yet implemented`);
   }

@@ -45,7 +45,12 @@ Read the TOR document(s) in tor/ and any Phase 0 research in research/.
    - Propose concrete options (A/B/C) where possible.
    - Never ask generic "can you elaborate?" questions.
 
-6. Write outputs:
+6. Classify the overall engagement scope:
+   - If the TOR primarily asks for a discovery/assessment/audit/feasibility study with no build deliverables expected, flag as **"DISCOVERY SCOPE DETECTED"** in the assessment summary and note which discovery activities are implied (workshops, architecture review, PoCs, etc.).
+   - If the TOR asks for implementation/build/development deliverables, classify as **build scope**.
+   This classification helps downstream phases generate appropriate estimates.
+
+7. Write outputs:
    - claude-artefacts/tor-assessment.md (following tor-assessment-template.md)
    - initial_questions/questions.md (following questions-template.md)
 
@@ -68,19 +73,60 @@ Also include a summary section:
 As a table: | Clarity Rating | Count | Percentage |`;
 }
 
-export function getPhase1AEstimatePrompt(techStack?: string): string {
+export function getPhase1AEstimatePrompt(techStack?: string, engagementType?: string): string {
   const isWordPress = techStack?.startsWith("WORDPRESS");
   const platformName = isWordPress ? "WordPress" : "Drupal";
   const nativeSolutions = isWordPress
     ? "WordPress plugins (cite wordpress.org links), core Gutenberg blocks/patterns, and theme.json capabilities"
     : "contrib modules (cite drupal.org links), core features, and platform-native solutions";
   const customDev = isWordPress ? "custom plugin development" : "custom module development";
+  const isDiscovery = engagementType === "DISCOVERY";
 
-  return `Conduct Phase 1A: Optimistic Estimation (No-Response Path).
+  const discoveryPreamble = isDiscovery ? `
 
-Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning.
+## DISCOVERY ENGAGEMENT — Estimate Discovery Activities ONLY
 
-**Platform: ${platformName}** — Prefer ${nativeSolutions} over ${customDev} where possible.
+This is a **DISCOVERY-ONLY** engagement. Do NOT estimate build/implementation effort.
+Instead, estimate the effort required to CONDUCT a comprehensive discovery phase for the client.
+
+### Discovery Activity Categories for Tabs
+
+**Backend Tab — Technical Discovery:**
+- Requirements workshops (stakeholder sessions, requirement deep-dives, user story mapping)
+- Technical architecture review (current state assessment, target architecture design, technology evaluation)
+- Integration landscape mapping (API audit, data flow analysis, third-party inventory)
+- Technology evaluation & PoC development (spike work, feasibility testing, proof-of-concept)
+- Content architecture analysis (content modeling, taxonomy design, migration assessment)
+- Performance & security audit (if existing system exists)
+- Infrastructure & hosting assessment and recommendations
+
+**Frontend Tab — UX/Design Discovery:**
+- UX research (user interviews, persona development, journey mapping, analytics review)
+- Information architecture (sitemap, navigation design, content hierarchy)
+- Wireframing & prototyping (key pages/flows, interactive prototypes)
+- Design system audit or initial design direction (mood boards, style tiles)
+- Accessibility assessment (WCAG audit of existing properties)
+- Competitive/comparable site analysis with documented findings
+
+**Fixed Cost Items Tab — Discovery Overhead:**
+- Project setup & kick-off (onboarding, access provisioning, tool setup)
+- Stakeholder alignment sessions (recurring syncs, decision-making workshops)
+- Discovery documentation & deliverable preparation (assessment report, architecture document, recommendations deck)
+- Final presentation & handoff to build team (knowledge transfer, recorded walkthrough)
+- Travel (if on-site workshops required — flag as assumption)
+
+**AI Tab (if applicable):**
+- AI/ML feasibility assessment (data readiness, model selection, integration complexity)
+- AI architecture design (RAG pipeline, LLM integration, vector DB evaluation)
+
+Use these categories for your line items. Every line item should describe a discovery ACTIVITY, not a build deliverable.
+` : "";
+
+  return `Conduct Phase 1A: ${isDiscovery ? "Discovery Effort Estimation" : "Optimistic Estimation (No-Response Path)"}.
+
+${isDiscovery ? "Estimate the effort required to conduct discovery for this engagement." : "Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning."}
+
+**Platform: ${platformName}**${isDiscovery ? "" : ` — Prefer ${nativeSolutions} over ${customDev} where possible.`}${discoveryPreamble}
 
 ## Requirement Traceability
 
@@ -149,19 +195,37 @@ Write outputs:
 - estimates/[client]-estimate-state.md (with <!-- OPTIMISTIC-ESTIMATE-STATE --> marker)`;
 }
 
-export function getPhase1AProposalPrompt(): string {
-  return `Generate a client-facing Technical Proposal Document.
+export function getPhase1AProposalPrompt(engagementType?: string): string {
+  const isDiscovery = engagementType === "DISCOVERY";
 
-Based on the TOR analysis and optimistic estimates already produced, write a professional technical proposal suitable for sending to the client.
+  const scopeSection = isDiscovery
+    ? `4. Discovery Scope: what discovery activities are included (workshops, architecture review, PoCs, documentation, etc.) — NOT build deliverables`
+    : `4. Scope of Work: what is included (summary level, not line-item estimates)`;
+
+  const approachSection = isDiscovery
+    ? `2. Our Discovery Approach: discovery methodology, phases (kick-off → research → analysis → synthesis → presentation), team composition`
+    : `2. Our Approach: methodology, phases, team structure`;
+
+  const timelineSection = isDiscovery
+    ? `6. Timeline: discovery phase schedule (typically 4-8 weeks) with key milestones and deliverable checkpoints`
+    : `6. Timeline: indicative milestone schedule`;
+
+  const deliverables = isDiscovery
+    ? `\n8. Discovery Deliverables: list all outputs the client will receive (assessment report, architecture document, wireframes, PoC results, recommendations deck, recorded walkthroughs)`
+    : "";
+
+  return `Generate a client-facing ${isDiscovery ? "Discovery Proposal" : "Technical Proposal"} Document.
+
+Based on the TOR analysis and ${isDiscovery ? "discovery effort estimates" : "optimistic estimates"} already produced, write a professional ${isDiscovery ? "discovery" : "technical"} proposal suitable for sending to the client.
 
 The proposal should cover:
 1. Executive Summary: project understanding, key goals
-2. Our Approach: methodology, phases, team structure
+${approachSection}
 3. Technical Architecture: proposed stack, integrations, hosting
-4. Scope of Work: what is included (summary level, not line-item estimates)
+${scopeSection}
 5. Assumptions & Exclusions: key assumptions that define scope boundaries
-6. Timeline: indicative milestone schedule
-7. Why Us: relevant experience, capability highlights
+${timelineSection}
+7. Why Us: relevant experience, capability highlights${deliverables}
 
 Write output to claude-artefacts/technical-proposal.md following the technical-proposal-template.md structure.`;
 }

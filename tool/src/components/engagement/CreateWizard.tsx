@@ -48,6 +48,7 @@ const engagementTypeLabels: Record<EngagementType, string> = {
   MIGRATION: "Migration",
   REDESIGN: "Redesign",
   ENHANCEMENT: "Enhancement",
+  DISCOVERY: "Discovery",
 }
 
 // ─── Step Indicator ──────────────────────────────────────────────────────────

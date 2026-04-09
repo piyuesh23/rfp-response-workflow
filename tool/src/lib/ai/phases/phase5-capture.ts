@@ -1,8 +1,19 @@
 import { PhaseConfig } from "@/lib/ai/agent";
 import { getBaseSystemPrompt } from "@/lib/ai/prompts/system-base";
 
-function getPhase5ProposalPrompt(): string {
-  return `Generate Phase 5: Client-Facing Technical Proposal Document.
+function getPhase5ProposalPrompt(engagementType?: string): string {
+  const isDiscovery = engagementType === "DISCOVERY";
+  const proposalType = isDiscovery ? "Discovery Proposal" : "Technical Proposal";
+
+  return `Generate Phase 5: Client-Facing ${proposalType} Document.${isDiscovery ? `
+
+**DISCOVERY ENGAGEMENT:** This proposal describes a discovery/assessment engagement, NOT a build project. Adapt all sections accordingly:
+- "Solution Approach" becomes "Discovery Approach" (workshops, research, analysis activities)
+- "Phased Delivery Plan" becomes "Discovery Phase Plan" (kick-off → research → analysis → synthesis → presentation)
+- "Investment Summary" covers discovery effort (workshops, architecture review, PoCs, documentation), not build effort
+- "In-Scope" lists discovery deliverables (assessment report, architecture document, wireframes, PoC results, recommendations deck)
+- Team composition reflects discovery roles (lead architect, BA/analyst, UX researcher, technical writer)
+` : ""}
 
 Start by reading ALL artefacts produced during this engagement to build the full context:
 - TOR document(s) in tor/
@@ -166,7 +177,8 @@ Write the complete proposal to claude-artefacts/technical-proposal.md. The docum
 
 export function getPhase5Config(
   engagementId: string,
-  techStack: string
+  techStack: string,
+  engagementType?: string
 ): PhaseConfig {
   return {
     engagementId,
@@ -179,6 +191,6 @@ export function getPhase5Config(
       getBaseSystemPrompt(techStack),
       "You are a Senior Technical Architect writing a client-facing technical proposal. Your proposals are deeply technical, well-structured narrative documents with architecture diagrams, decision rationale, and specific implementation details. You write in flowing prose, not bullet-point lists.",
     ].join("\n\n---\n\n"),
-    userPrompt: getPhase5ProposalPrompt(),
+    userPrompt: getPhase5ProposalPrompt(engagementType),
   };
 }

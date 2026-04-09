@@ -5,7 +5,8 @@ import { getPhase1AEstimatePrompt } from "@/lib/ai/prompts/phase-prompts";
 
 export function getPhase1AEstimateConfig(
   engagementId: string,
-  techStack: string
+  techStack: string,
+  engagementType?: string
 ): PhaseConfig {
   return {
     engagementId,
@@ -16,6 +17,6 @@ export function getPhase1AEstimateConfig(
     systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
       "\n\n---\n\n"
     ),
-    userPrompt: getPhase1AEstimatePrompt(techStack),
+    userPrompt: getPhase1AEstimatePrompt(techStack, engagementType),
   };
 }

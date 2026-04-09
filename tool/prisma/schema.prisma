@@ -65,6 +65,7 @@ enum EngagementType {
   MIGRATION
   REDESIGN
   ENHANCEMENT
+  DISCOVERY
 }
 
 enum EngagementStatus {
