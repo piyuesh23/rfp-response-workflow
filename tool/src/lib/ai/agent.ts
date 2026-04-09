@@ -342,6 +342,11 @@ export async function prepareWorkDir(engagementId: string): Promise<string> {
 /**
  * Sync TOR files from MinIO/S3 to the local engagement directory.
  * This gives the AI agent filesystem access to uploaded documents.
+ *
+ * Optimizations:
+ * - Skips download if local file already exists with matching size
+ * - Skips PDF extraction if .md already exists on disk
+ * - Checks for pre-extracted .md in MinIO (cached at upload time)
  */
 async function syncTorFiles(
   engagementId: string,
@@ -359,16 +364,60 @@ async function syncTorFiles(
       if (!filename) continue;
 
       const localPath = path.join(workDir, "tor", filename);
-      const buffer = await downloadFile(key);
-      await writeFile(localPath, buffer);
+
+      // Skip download if local file already exists
+      let needsDownload = true;
+      try {
+        const localStat = await stat(localPath);
+        if (localStat.size > 0) {
+          needsDownload = false;
+        }
+      } catch {
+        // File doesn't exist locally — need to download
+      }
+
+      let buffer: Buffer | undefined;
+      if (needsDownload) {
+        buffer = await downloadFile(key);
+        await writeFile(localPath, buffer);
+      }
       synced.push(filename);
 
       // Auto-extract PDF text to .md for easier agent consumption
       if (isPdf(filename)) {
+        const mdPath = localPath.replace(/\.pdf$/i, ".md");
+
+        // Skip extraction if .md already exists on disk (cached from prior run)
         try {
+          const mdStat = await stat(mdPath);
+          if (mdStat.size > 100) {
+            synced.push(filename.replace(/\.pdf$/i, ".md"));
+            continue; // Already extracted — skip
+          }
+        } catch {
+          // .md doesn't exist — need to extract
+        }
+
+        // Check if pre-extracted .md exists in MinIO (cached at upload time)
+        const mdKey = key.replace(/\.pdf$/i, ".md");
+        if (keys.includes(mdKey)) {
+          try {
+            const mdBuffer = await downloadFile(mdKey);
+            if (mdBuffer.length > 100) {
+              await writeFile(mdPath, mdBuffer);
+              synced.push(filename.replace(/\.pdf$/i, ".md"));
+              continue; // Got cached .md from MinIO — skip extraction
+            }
+          } catch {
+            // Fall through to extraction
+          }
+        }
+
+        // Full extraction as last resort
+        try {
+          if (!buffer) buffer = await readFile(localPath);
           const result = await extractTextFromPdf(buffer);
           const markdown = pdfTextToMarkdown(result, filename);
-          const mdPath = localPath.replace(/\.pdf$/i, ".md");
           await writeFile(mdPath, markdown, "utf-8");
           synced.push(filename.replace(/\.pdf$/i, ".md"));
         } catch {
