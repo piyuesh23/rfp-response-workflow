@@ -33,9 +33,9 @@ export function AppShell({ children, breadcrumbs, actions }: AppShellProps) {
   }
 
   return (
-    <div className="flex h-full min-h-screen">
+    <div className="flex h-full min-h-screen overflow-x-hidden">
       {/* Desktop sidebar — always visible at md+ */}
-      <aside className="hidden md:flex md:w-52 md:flex-col md:fixed md:inset-y-0 border-r bg-background z-20">
+      <aside className="hidden md:flex md:w-52 md:flex-col md:fixed md:inset-y-0 md:left-0 border-r bg-background z-20">
         <SidebarContent />
       </aside>
 
@@ -47,7 +47,7 @@ export function AppShell({ children, breadcrumbs, actions }: AppShellProps) {
       </Sheet>
 
       {/* Main content area — offset by sidebar width on desktop */}
-      <div className="flex flex-1 flex-col md:pl-52">
+      <div className="flex flex-1 flex-col min-w-0 md:pl-52">
         <Header
           breadcrumbs={breadcrumbs}
           actions={actions}
