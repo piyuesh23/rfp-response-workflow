@@ -249,6 +249,15 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         return
       }
 
+      // For Phase 2: auto-set workflow path to HAS_RESPONSE before running
+      if (phase === "2") {
+        await fetch(`/api/engagements/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workflowPath: "HAS_RESPONSE" }),
+        })
+      }
+
       // After upload, run the phase to process the uploaded files
       await handleRun()
     } catch (err) {
