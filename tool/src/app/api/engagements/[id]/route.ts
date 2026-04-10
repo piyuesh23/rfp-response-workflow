@@ -30,7 +30,7 @@ export async function GET(
     return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
   }
 
-  if (engagement.createdById !== session.user.id) {
+  if (engagement.createdById !== session.user.id && session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -52,7 +52,7 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
   }
-  if (existing.createdById !== session.user.id) {
+  if (existing.createdById !== session.user.id && session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -92,7 +92,7 @@ export async function DELETE(
   if (!existing) {
     return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
   }
-  if (existing.createdById !== session.user.id) {
+  if (existing.createdById !== session.user.id && session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -10,8 +10,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const isAdmin = session.user.role === "ADMIN";
   const engagements = await prisma.engagement.findMany({
-    where: { createdById: session.user.id },
+    where: isAdmin ? {} : { createdById: session.user.id },
     orderBy: { updatedAt: "desc" },
     include: {
       _count: { select: { phases: true } },
