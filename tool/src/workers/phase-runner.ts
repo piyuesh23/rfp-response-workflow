@@ -87,7 +87,7 @@ const worker = new Worker<PhaseJobData>(
       const PHASE_OUTPUT_FILES: Record<string, string[]> = {
         "0": ["research/customer-research.md"],
         "1": ["claude-artefacts/tor-assessment.md"],
-        "1A": ["estimates/optimistic-estimate.md"],
+        "1A": ["estimates/optimistic-estimate.md", "claude-artefacts/solution-architecture.md"],
         "2": ["claude-artefacts/response-analysis.md"],
         "3": ["estimates/revised-estimate.md", "estimates/optimistic-estimate.md"],
         "3R": ["claude-artefacts/gap-analysis.md"],
@@ -205,6 +205,27 @@ const worker = new Worker<PhaseJobData>(
           console.warn(
             `[phase-runner] Phase ${phaseNumber} — benchmark validation failed: ${err instanceof Error ? err.message : String(err)}`
           );
+        }
+      }
+
+      // For Phase 1A: also persist solution-architecture.md as a separate artefact
+      if (phaseStr === "1A") {
+        try {
+          const solutionPath = `${workDir}/claude-artefacts/solution-architecture.md`;
+          const solutionMd = await fs.readFile(solutionPath, "utf-8");
+          if (solutionMd.trim().length > 100) {
+            await prisma.phaseArtefact.create({
+              data: {
+                phaseId,
+                artefactType: ArtefactType.RESEARCH,
+                version: 1,
+                contentMd: solutionMd,
+              },
+            });
+            console.log(`[phase-runner] Phase ${phaseNumber} — persisted solution-architecture.md as artefact`);
+          }
+        } catch {
+          // Solution doc may not exist (e.g., discovery engagements) — non-fatal
         }
       }
 

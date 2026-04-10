@@ -19,9 +19,19 @@ Start by reading ALL artefacts produced during this engagement to build the full
 - TOR document(s) in tor/
 - Research output in research/ (customer background, site audit, tech stack discovery)
 - TOR assessment in claude-artefacts/
+- **Solution architecture document in claude-artefacts/solution-architecture.md** (if available — this is the pre-approved technical foundation)
 - Estimates (optimistic or revised) in estimates/
 - Customer responses in responses_qna/ (if available)
 - Gap analysis in claude-artefacts/ (if available)
+
+## Solution Architecture Alignment
+
+If a solution architecture document exists (claude-artefacts/solution-architecture.md), your proposal MUST:
+- **EXPAND** the solution architecture sections into polished narrative prose — add depth, diagrams, and business rationale
+- **NOT contradict or reinvent** decisions already documented in the solution doc
+- **Preserve all technology choices**, integration approaches, and infrastructure decisions from the solution doc
+- **Reference estimate hours** at summary level to support the investment section
+- The solution doc is the pre-approved technical foundation — the proposal makes it client-ready
 
 ## Writing Style
 

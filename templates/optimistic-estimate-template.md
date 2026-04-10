@@ -238,6 +238,10 @@ Mapping of Phase 1 clarifying questions to the assumptions used in this estimate
 - [ ] All effort figures within benchmark ranges
 - [ ] All assumptions documented with TOR/Q&A reference AND impact-if-wrong
 - [ ] Always-include tasks present: Discovery, Environment Setup, CMS Installation & Base Configuration, Configuration/Plugin Management, Roles & Permissions/Capabilities, Media Library, Deployment Pipeline, QA/Stabilisation (Backend); Design System (Frontend)
+- [ ] Solution architecture document written BEFORE estimates (claude-artefacts/solution-architecture.md)
+- [ ] Every estimate line item's Proposed Solution references the solution doc
+- [ ] Integration tiers in estimates match solution doc's integration table
+- [ ] Frontend components in estimates match solution doc's component breakdown
 
 ---
 

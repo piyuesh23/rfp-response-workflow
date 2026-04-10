@@ -128,9 +128,25 @@ ${isDiscovery ? "Estimate the effort required to conduct discovery for this enga
 
 **Platform: ${platformName}**${isDiscovery ? "" : ` — Prefer ${nativeSolutions} over ${customDev} where possible.`}${discoveryPreamble}
 
-## Requirement Traceability
+${isDiscovery ? "" : `## Step 1: Solution Architecture Document
 
-Before estimating, review the TOR Assessment from Phase 1. Every TOR requirement must map to at least one estimate line item. For each line item, include the TOR requirement ID or section reference in the Description column.
+BEFORE estimating, write a high-level solution architecture document to claude-artefacts/solution-architecture.md (following solution-architecture-template.md).
+
+This document defines the technical solution that your estimates will be based on. It must:
+- Reference specific TOR requirements for every architectural decision
+- Justify technology stack choices with rationale and alternatives considered
+- Map all integrations to tiers (T1/T2/T3) with specific approach (REST/GraphQL/webhook/SDK)
+- Identify all frontend components implied by TOR requirements with complexity rating
+- Cover infrastructure, hosting, and DevOps approach
+- Document key technical decisions with "Decision / Rationale / Alternative rejected / Estimate impact" format
+
+**Write this document FIRST using the write_file tool. Then proceed to Step 2 (Estimation).**
+
+---
+
+`}## ${isDiscovery ? "" : "Step 2: "}Requirement Traceability
+
+Before estimating, review the TOR Assessment from Phase 1${isDiscovery ? "" : " and the solution architecture document you just wrote"}. Every TOR requirement must map to at least one estimate line item. For each line item, include the TOR requirement ID or section reference in the Description column.
 
 At the end, produce a Traceability Matrix showing:
 - Which TOR requirements are covered by which estimate line items
@@ -149,7 +165,13 @@ For each assumption, write clearly:
 - **TOR reference**: The specific TOR clause or section this assumption relates to
 
 ## Estimate Structure
-
+${isDiscovery ? "" : `
+**IMPORTANT: Align estimates with the solution architecture document.**
+- The "Proposed Solution" column must reference the relevant section of the solution doc (e.g., "Per Solution Doc §4 — REST API integration with OAuth2")
+- Integration tiers must match the solution doc's integration table
+- Frontend components must match the solution doc's component breakdown
+- Infrastructure/DevOps items must match the solution doc's recommendations
+`}
 Produce estimates in four tabs matching the QED42 Excel template.
 
 **CRITICAL: Use these EXACT markdown headings for each tab section. Parsers depend on this format:**

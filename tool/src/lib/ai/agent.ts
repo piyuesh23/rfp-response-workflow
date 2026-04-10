@@ -136,30 +136,38 @@ Use this table to anchor every Backend and Frontend estimate line item to a know
  * Load the output template for a specific phase.
  */
 async function loadTemplate(phaseNumber: string): Promise<string> {
-  const templateMap: Record<string, string> = {
-    "0": "customer-research-template.md",
-    "1": "tor-assessment-template.md",
-    "1A": "optimistic-estimate-template.md",
-    "3": "estimate-review-template.md",
-    "3R": "gap-analysis-template.md",
-    "4": "gap-analysis-template.md",
+  // Phases can have multiple templates (e.g., Phase 1A has solution architecture + estimate)
+  const templateMap: Record<string, string[]> = {
+    "0": ["customer-research-template.md"],
+    "1": ["tor-assessment-template.md"],
+    "1A": ["solution-architecture-template.md", "optimistic-estimate-template.md"],
+    "3": ["estimate-review-template.md"],
+    "3R": ["gap-analysis-template.md"],
+    "4": ["gap-analysis-template.md"],
   };
 
-  const templateFile = templateMap[phaseNumber];
-  if (!templateFile) return "";
+  const templateFiles = templateMap[phaseNumber];
+  if (!templateFiles || templateFiles.length === 0) return "";
 
   const templateDir = "/app/templates";
   const fallbackDir = path.join(process.cwd(), "templates");
 
-  for (const dir of [templateDir, fallbackDir]) {
-    try {
-      const content = await readFile(path.join(dir, templateFile), "utf-8");
-      return `\n\n---\n\n## Output Template\n\nFollow this structure exactly:\n\n${content}`;
-    } catch {
-      continue;
+  const sections: string[] = [];
+  for (const templateFile of templateFiles) {
+    for (const dir of [templateDir, fallbackDir]) {
+      try {
+        const content = await readFile(path.join(dir, templateFile), "utf-8");
+        const label = templateFile.replace(".md", "").replace(/-/g, " ");
+        sections.push(`## Output Template: ${label}\n\nFollow this structure:\n\n${content}`);
+        break; // Found in this dir, skip fallback
+      } catch {
+        continue;
+      }
     }
   }
-  return "";
+
+  if (sections.length === 0) return "";
+  return `\n\n---\n\n${sections.join("\n\n---\n\n")}`;
 }
 
 /**
