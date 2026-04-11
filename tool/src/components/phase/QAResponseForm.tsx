@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Upload, X, FileText, CheckCircle2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { requestNotificationPermission } from "@/hooks/usePhaseNotifications"
 
 // ---------------------------------------------------------------------------
 // Mock Phase 1 questions (grouped by category)
@@ -100,12 +101,6 @@ interface UploadModeProps {
 }
 
 const ACCEPTED_TYPES = [".pdf", ".docx", ".md"]
-const ACCEPTED_MIME = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/markdown",
-  "text/plain",
-]
 
 function UploadMode({ onSubmit, submitting }: UploadModeProps) {
   const [file, setFile] = React.useState<File | null>(null)
@@ -358,10 +353,11 @@ function InlineMode({ onSubmit, submitting }: InlineModeProps) {
 // ---------------------------------------------------------------------------
 export interface QAResponseFormProps {
   engagementId: string
+  phaseId: string
   onSubmitted?: () => void
 }
 
-export function QAResponseForm({ engagementId, onSubmitted }: QAResponseFormProps) {
+export function QAResponseForm({ engagementId, phaseId, onSubmitted }: QAResponseFormProps) {
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -371,6 +367,7 @@ export function QAResponseForm({ engagementId, onSubmitted }: QAResponseFormProp
     try {
       const formData = new FormData()
       formData.append("engagementId", engagementId)
+      formData.append("prefix", "responses_qna")
       formData.append("file", file)
 
       const res = await fetch("/api/upload", { method: "POST", body: formData })
@@ -378,6 +375,15 @@ export function QAResponseForm({ engagementId, onSubmitted }: QAResponseFormProp
         const body = await res.json().catch(() => ({}))
         throw new Error((body as { error?: string }).error ?? "Upload failed")
       }
+
+      requestNotificationPermission()
+
+      const runRes = await fetch(`/api/phases/${phaseId}/run`, { method: "POST" })
+      if (!runRes.ok) {
+        const body = await runRes.json().catch(() => ({}))
+        throw new Error((body as { error?: string }).error ?? "Failed to start analysis")
+      }
+
       onSubmitted?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred")
