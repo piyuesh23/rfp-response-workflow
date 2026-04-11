@@ -65,6 +65,19 @@ export async function POST(
     );
   }
 
+  // Extract revision feedback stored in agentSessionId by the revise endpoint
+  let revisionFeedback: string | undefined;
+  if (phase.agentSessionId) {
+    try {
+      const sessionMeta = JSON.parse(phase.agentSessionId);
+      if (sessionMeta.revisionFeedback) {
+        revisionFeedback = sessionMeta.revisionFeedback;
+      }
+    } catch {
+      // Not JSON — plain session ID, no revision feedback
+    }
+  }
+
   const job = await phaseQueue.add(
     `phase-${phase.phaseNumber}`,
     {
@@ -72,6 +85,7 @@ export async function POST(
       engagementId: phase.engagementId,
       phaseNumber: phase.phaseNumber,
       techStack: phase.engagement.techStack,
+      ...(revisionFeedback ? { revisionFeedback } : {}),
     },
     { jobId: `phase-${phase.id}` }
   );

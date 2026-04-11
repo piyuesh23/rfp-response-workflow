@@ -124,8 +124,21 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
 
   const status = phaseData.status
 
-  // Convert artefacts to ArtefactVersion[]
+  // Primary artefact type per phase — filter out secondary artefacts (e.g. solution-architecture in 1A)
+  const PRIMARY_ARTEFACT_TYPE: Record<string, string> = {
+    "0": "RESEARCH",
+    "1": "TOR_ASSESSMENT",
+    "1A": "ESTIMATE",
+    "2": "RESPONSE_ANALYSIS",
+    "3": "ESTIMATE",
+    "3R": "GAP_ANALYSIS",
+    "5": "PROPOSAL",
+  }
+  const primaryType = PRIMARY_ARTEFACT_TYPE[phase]
+
+  // Convert artefacts to ArtefactVersion[], filtering to primary type when known
   const versions: ArtefactVersion[] = phaseData.artefacts
+    .filter((a) => !primaryType || a.artefactType === primaryType)
     .sort((a, b) => a.version - b.version)
     .map((a) => ({
       id: a.id,

@@ -252,15 +252,13 @@ export function PhaseGate({
         "flex flex-col gap-0 overflow-hidden rounded-xl border bg-card ring-1 ring-foreground/10",
         !mounted && "opacity-0",
         mounted && "animate-scale-in",
+        fullscreen && "fixed inset-0 z-50 bg-background rounded-none border-0 ring-0",
         className
       )}
     >
       {/* Main content area */}
       <div
-        className={cn(
-          "flex flex-col md:flex-row",
-          fullscreen && "fixed inset-0 z-50 bg-background flex flex-col md:flex-row"
-        )}
+        className="flex flex-col md:flex-row flex-1 min-h-0"
       >
         {/* Left panel: artefact content (~60%) */}
         <div className={cn("flex flex-col flex-1 min-h-0 md:w-[60%]", fullscreen && "md:w-[60%]")}>
