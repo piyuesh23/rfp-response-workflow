@@ -485,7 +485,8 @@ export function CreateWizard() {
       })
 
       if (!extractRes.ok) {
-        throw new Error("PDF text extraction failed")
+        const err = await extractRes.json().catch(() => ({}))
+        throw new Error(err.error || `PDF extraction failed (${extractRes.status})`)
       }
 
       const { text } = await extractRes.json()
@@ -504,7 +505,8 @@ export function CreateWizard() {
       })
 
       if (!inferRes.ok) {
-        throw new Error("AI inference failed")
+        const err = await inferRes.json().catch(() => ({}))
+        throw new Error(err.error || `AI inference failed (${inferRes.status})`)
       }
 
       const result: InferenceResult = await inferRes.json()
@@ -517,8 +519,9 @@ export function CreateWizard() {
         techStack: (result.techStack as TechStack) ?? "",
         engagementType: (result.engagementType as EngagementType) ?? "",
       })
-    } catch {
-      setAnalyzeError("Analysis failed.")
+    } catch (err) {
+      console.error("[CreateWizard] Analysis failed:", err)
+      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed.")
     } finally {
       setIsAnalyzing(false)
     }

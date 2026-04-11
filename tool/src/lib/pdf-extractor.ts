@@ -9,12 +9,14 @@ type PdfParseFn = (buffer: Buffer) => Promise<{
   info: Record<string, string>;
 }>;
 
-// Lazy-load pdf-parse to avoid its test-file read at import time (breaks next build)
+// Import pdf-parse/lib/pdf-parse directly to bypass the entry point's
+// test-file read (index.js reads ./test/data/05-versions-space.pdf when
+// module.parent is falsy, which happens in Turbopack/Next.js bundling)
 let _pdfParse: PdfParseFn | undefined;
 function getPdfParse(): PdfParseFn {
   if (!_pdfParse) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    _pdfParse = require("pdf-parse") as PdfParseFn;
+    _pdfParse = require("pdf-parse/lib/pdf-parse") as PdfParseFn;
   }
   return _pdfParse;
 }
