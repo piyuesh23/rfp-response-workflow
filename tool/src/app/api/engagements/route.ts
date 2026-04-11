@@ -22,7 +22,30 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json(engagements);
+  // Aggregate cost/token data per engagement in a single query
+  const costByEngagement = await prisma.phaseExecution.groupBy({
+    by: ["engagementId"],
+    where: { engagementId: { in: engagements.map((e) => e.id) } },
+    _sum: { totalTokens: true, estimatedCostUsd: true },
+    _count: { id: true },
+  });
+  const costMap = new Map(
+    costByEngagement.map((r) => [
+      r.engagementId,
+      {
+        totalTokens: r._sum.totalTokens ?? 0,
+        estimatedCostUsd: r._sum.estimatedCostUsd ?? 0,
+        phasesRun: r._count.id,
+      },
+    ])
+  );
+
+  return NextResponse.json(
+    engagements.map((e) => ({
+      ...e,
+      costSummary: costMap.get(e.id) ?? null,
+    }))
+  );
 }
 
 export async function POST(request: NextRequest) {

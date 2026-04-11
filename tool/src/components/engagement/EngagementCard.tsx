@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import type { EngagementStatus, TechStack } from "@/generated/prisma/client"
+import { formatCost, formatTokens } from "@/lib/format-cost"
 
 interface EngagementCardProps {
   id: string
@@ -16,6 +17,7 @@ interface EngagementCardProps {
   workflowPath?: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
+  costSummary?: { totalTokens: number; estimatedCostUsd: number; phasesRun: number } | null
 }
 
 const statusConfig: Record<EngagementStatus, { label: string; className: string }> = {
@@ -65,6 +67,7 @@ export function EngagementCard({
   workflowPath,
   phaseProgress,
   updatedAt,
+  costSummary,
 }: EngagementCardProps) {
   const { completed, total } = phaseProgress
   const isComplete = completed === total && total > 0
@@ -114,8 +117,13 @@ export function EngagementCard({
           )}
         </CardContent>
 
-        <CardFooter className="text-xs text-muted-foreground">
-          Updated {formatRelativeTime(updatedAt)}
+        <CardFooter className="text-xs text-muted-foreground flex items-center justify-between">
+          <span>Updated {formatRelativeTime(updatedAt)}</span>
+          {costSummary && costSummary.phasesRun > 0 && (
+            <span className="font-mono tabular-nums">
+              {formatCost(costSummary.estimatedCostUsd)} · {formatTokens(costSummary.totalTokens)}
+            </span>
+          )}
         </CardFooter>
       </Card>
     </Link>

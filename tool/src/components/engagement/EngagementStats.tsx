@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { formatCost, formatTokens } from "@/lib/format-cost"
 
 export interface EngagementStatsData {
   totalHours: { low: number; high: number }
@@ -25,6 +26,14 @@ export interface EngagementStatsData {
   }
   riskCount: { total: number; high: number; medium: number; low: number }
   assumptionCount: { total: number; resolved: number; open: number }
+  costData?: {
+    totalCostUsd: number
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    phasesRun: number
+    byPhase?: { phaseNumber: string; totalTokens: number; estimatedCostUsd: number }[]
+  } | null
 }
 
 interface EngagementStatsProps {
@@ -138,6 +147,25 @@ export function EngagementStats({ stats, className }: EngagementStatsProps) {
 
   return (
     <div className={cn("grid gap-3 grid-cols-1 sm:grid-cols-2", className)}>
+      {/* AI Cost */}
+      {stats.costData && stats.costData.phasesRun > 0 && (
+        <StatCard title="AI Cost" className="sm:col-span-2">
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-3xl font-bold tabular-nums">
+              {formatCost(stats.costData.totalCostUsd)}
+            </span>
+            <span className="text-xs text-muted-foreground self-end pb-0.5">
+              across {stats.costData.phasesRun} phase run{stats.costData.phasesRun !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            <span>Input: {formatTokens(stats.costData.inputTokens)}</span>
+            <span>Output: {formatTokens(stats.costData.outputTokens)}</span>
+            <span>Total: {formatTokens(stats.costData.totalTokens)}</span>
+          </div>
+        </StatCard>
+      )}
+
       {/* Total Hours */}
       <StatCard title="Total Hours" className="sm:col-span-2">
         <div className="flex items-baseline gap-2">

@@ -13,6 +13,7 @@ interface EngagementItem {
   workflowPath?: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
+  costSummary?: { totalTokens: number; estimatedCostUsd: number; phasesRun: number } | null
 }
 
 interface EngagementGridProps {

@@ -216,6 +216,39 @@ export async function GET(
   // Compute total hours at risk
   const totalHoursAtRisk = risks.reduce((sum, r) => sum + r.hoursAtRisk, 0);
 
+  // Aggregate AI cost and token data
+  let costData = null;
+  try {
+    const costAggregate = await prisma.phaseExecution.aggregate({
+      where: { engagementId: id },
+      _sum: { inputTokens: true, outputTokens: true, totalTokens: true, estimatedCostUsd: true },
+      _count: { id: true },
+    });
+
+    if (costAggregate._count.id > 0) {
+      const costByPhase = await prisma.phaseExecution.groupBy({
+        by: ["phaseNumber"],
+        where: { engagementId: id },
+        _sum: { totalTokens: true, estimatedCostUsd: true },
+      });
+
+      costData = {
+        totalCostUsd: costAggregate._sum.estimatedCostUsd ?? 0,
+        inputTokens: costAggregate._sum.inputTokens ?? 0,
+        outputTokens: costAggregate._sum.outputTokens ?? 0,
+        totalTokens: costAggregate._sum.totalTokens ?? 0,
+        phasesRun: costAggregate._count.id,
+        byPhase: costByPhase.map((r) => ({
+          phaseNumber: r.phaseNumber,
+          totalTokens: r._sum.totalTokens ?? 0,
+          estimatedCostUsd: r._sum.estimatedCostUsd ?? 0,
+        })),
+      };
+    }
+  } catch {
+    // Cost data failure is non-fatal
+  }
+
   return NextResponse.json({
     totalHours,
     hoursByTab,
@@ -225,6 +258,7 @@ export async function GET(
     riskCount,
     assumptionCount,
     totalHoursAtRisk,
+    costData,
     phaseSummary: engagement.phases.map((p) => ({
       phaseNumber: p.phaseNumber,
       status: p.status,

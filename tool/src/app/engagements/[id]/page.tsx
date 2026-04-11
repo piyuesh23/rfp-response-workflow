@@ -54,6 +54,7 @@ const EMPTY_STATS: EngagementStatsData = {
   confidenceDistribution: { high56: 0, medium4: 0, low123: 0 },
   riskCount: { total: 0, high: 0, medium: 0, low: 0 },
   assumptionCount: { total: 0, resolved: 0, open: 0 },
+  costData: null,
 }
 
 /** Extract a one-line summary from phase artefact metadata for display in phase cards. */
@@ -250,25 +251,42 @@ export default function EngagementOverviewPage() {
     phaseStatuses[p.phaseNumber] = p.status
   }
 
+  // Build per-phase cost lookup from stats
+  const costByPhase = new Map<string, { totalTokens: number; estimatedCostUsd: number }>()
+  if (stats.costData?.byPhase) {
+    for (const entry of stats.costData.byPhase) {
+      costByPhase.set(entry.phaseNumber, {
+        totalTokens: entry.totalTokens,
+        estimatedCostUsd: entry.estimatedCostUsd,
+      })
+    }
+  }
+
   // Show all phases - phases from the non-chosen path display as "Skipped"
   const visibleDefs = getVisiblePhases(workflowPath)
   const visiblePhases = visibleDefs
     .map((def) => {
       const p = phases.find((ph) => ph.phaseNumber === def.number)
       if (!p) return undefined
+      // Enrich with cost data
+      const cost = costByPhase.get(p.phaseNumber)
+      const enriched = {
+        ...p,
+        ...(cost ? { tokenCount: cost.totalTokens, costUsd: cost.estimatedCostUsd } : {}),
+      }
       // Override status to SKIPPED for phases on the inactive workflow path
       if (isPhasePathSkipped(p.phaseNumber, workflowPath) && p.status === "PENDING") {
-        return { ...p, status: "SKIPPED" as const }
+        return { ...enriched, status: "SKIPPED" as const }
       }
       // Mark phases as locked if they need a workflow decision that hasn't been made
       if (p.status === "PENDING" && def.workflowPath !== null && workflowPath === null) {
-        return { ...p, locked: true }
+        return { ...enriched, locked: true }
       }
       // Phase 5 is locked until workflow is chosen
       if (p.status === "PENDING" && def.number === "5" && workflowPath === null) {
-        return { ...p, locked: true }
+        return { ...enriched, locked: true }
       }
-      return p
+      return enriched
     })
     .filter((p): p is PhaseWithId => p !== undefined)
 

@@ -12,6 +12,7 @@ import {
   Lock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { formatCost, formatTokens } from "@/lib/format-cost"
 
 export type PhaseStatus =
   | "PENDING"
@@ -30,6 +31,8 @@ export interface PhaseCardData {
   summary?: string
   /** Phase is locked because workflow decision hasn't been made */
   locked?: boolean
+  tokenCount?: number
+  costUsd?: number
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -173,11 +176,17 @@ export function PhaseCard({ phase, onClick, className }: PhaseCardProps) {
             {phase.locked ? "Locked" : config.label}
           </Badge>
         </div>
-        {(duration !== null || (phase.artefactCount !== undefined && phase.artefactCount > 0)) && (
+        {(duration !== null || (phase.artefactCount !== undefined && phase.artefactCount > 0) || (phase.costUsd !== undefined && phase.costUsd > 0)) && (
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             {duration !== null && <span>{duration}</span>}
             {phase.artefactCount !== undefined && phase.artefactCount > 0 && (
               <span>{phase.artefactCount} artefact{phase.artefactCount !== 1 ? "s" : ""}</span>
+            )}
+            {phase.costUsd !== undefined && phase.costUsd > 0 && (
+              <span className="font-mono tabular-nums">{formatCost(phase.costUsd)}</span>
+            )}
+            {phase.tokenCount !== undefined && phase.tokenCount > 0 && (
+              <span className="font-mono tabular-nums">{formatTokens(phase.tokenCount)}</span>
             )}
           </div>
         )}

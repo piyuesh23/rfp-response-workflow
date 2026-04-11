@@ -9,6 +9,12 @@ import { SearchFilter } from "@/components/engagement/SearchFilter"
 import { EmptyState } from "@/components/engagement/EmptyState"
 import type { EngagementStatus, TechStack } from "@/generated/prisma/client"
 
+interface CostSummary {
+  totalTokens: number
+  estimatedCostUsd: number
+  phasesRun: number
+}
+
 interface Engagement {
   id: string
   clientName: string
@@ -18,6 +24,7 @@ interface Engagement {
   workflowPath: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phases: { phaseNumber: string; status: string }[]
   updatedAt: string
+  costSummary?: CostSummary | null
 }
 
 interface GridEngagement {
@@ -29,6 +36,7 @@ interface GridEngagement {
   workflowPath: "NO_RESPONSE" | "HAS_RESPONSE" | null
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
+  costSummary?: CostSummary | null
 }
 
 export default function DashboardPage() {
@@ -67,6 +75,7 @@ export default function DashboardPage() {
                 total: activePhases.length,
               },
               updatedAt: new Date(e.updatedAt),
+              costSummary: e.costSummary ?? null,
             }
           })
         )
