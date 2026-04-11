@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { downloadFile } from "@/lib/storage";
+import { extractMetadataForPhase } from "@/lib/ai/metadata-extractor";
 
 export async function GET(
   _request: NextRequest,
@@ -96,7 +97,8 @@ export async function PATCH(
     where: { id },
     include: {
       phase: {
-        include: {
+        select: {
+          phaseNumber: true,
           engagement: { select: { createdById: true } },
         },
       },
@@ -107,12 +109,12 @@ export async function PATCH(
     return NextResponse.json({ error: "Artefact not found" }, { status: 404 });
   }
 
-  if (artefact.phase.engagement.createdById !== session.user.id) {
+  if (artefact.phase.engagement.createdById !== session.user.id && session.user.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await request.json();
-  const { contentMd } = body as { contentMd: string };
+  const { contentMd, label } = body as { contentMd: string; label?: string };
 
   if (typeof contentMd !== "string") {
     return NextResponse.json(
@@ -121,10 +123,27 @@ export async function PATCH(
     );
   }
 
-  const updated = await prisma.phaseArtefact.update({
-    where: { id },
-    data: { contentMd },
+  // Create a new version instead of overwriting
+  const latestVersion = await prisma.phaseArtefact.findFirst({
+    where: { phaseId: artefact.phaseId, artefactType: artefact.artefactType },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+  const nextVersion = (latestVersion?.version ?? 0) + 1;
+
+  // Re-extract metadata from the new content
+  const metadata = extractMetadataForPhase(artefact.phase.phaseNumber, contentMd);
+
+  const newArtefact = await prisma.phaseArtefact.create({
+    data: {
+      phaseId: artefact.phaseId,
+      artefactType: artefact.artefactType,
+      version: nextVersion,
+      label: label ?? "Manual edit",
+      contentMd,
+      ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
+    },
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json(newArtefact);
 }

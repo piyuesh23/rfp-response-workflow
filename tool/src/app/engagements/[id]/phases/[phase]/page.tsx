@@ -18,6 +18,7 @@ interface PhaseArtefact {
   id: string
   artefactType: string
   version: number
+  label?: string | null
   contentMd: string
   fileUrl?: string | null
   metadata?: unknown
@@ -127,7 +128,9 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const versions: ArtefactVersion[] = phaseData.artefacts
     .sort((a, b) => a.version - b.version)
     .map((a) => ({
+      id: a.id,
       version: a.version,
+      label: a.label,
       contentMd: a.contentMd,
       createdAt: new Date(a.createdAt).toLocaleDateString(),
     }))
@@ -312,6 +315,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
             onBack={() => router.push(`/engagements/${id}`)}
             onRequestRevision={handleRevision}
             onApprove={handleApprove}
+            onSaved={fetchPhaseData}
             approveMessage={approveMessage}
           />
         ) : (

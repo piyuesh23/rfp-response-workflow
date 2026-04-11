@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Maximize2, Minimize2, ChevronLeft, RotateCcw, CheckCircle2, GitCompareArrows, Send, FileText, FileSpreadsheet, FileCode, File, Folder, ArrowLeft, Loader2, TableProperties } from "lucide-react"
+import { Maximize2, Minimize2, ChevronLeft, RotateCcw, CheckCircle2, GitCompareArrows, Send, FileText, FileSpreadsheet, FileCode, File, Folder, ArrowLeft, Loader2, TableProperties, Pencil, Save, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { VersionSelector } from "@/components/artefact/VersionSelector"
 import { ArtefactDiff } from "@/components/artefact/ArtefactDiff"
@@ -33,6 +33,8 @@ export interface ArtefactVersion {
   version: number
   contentMd: string
   createdAt: string
+  id?: string
+  label?: string | null
 }
 
 interface FileEntry {
@@ -53,6 +55,7 @@ interface PhaseGateProps {
   onBack?: () => void
   onRequestRevision?: (feedback: string) => void
   onApprove?: () => void
+  onSaved?: () => void
   approveMessage?: string | null
   readOnly?: boolean
   className?: string
@@ -95,6 +98,7 @@ export function PhaseGate({
   onBack,
   onRequestRevision,
   onApprove,
+  onSaved,
   approveMessage,
   readOnly = false,
   className,
@@ -115,6 +119,45 @@ export function PhaseGate({
   const isEstimatePhase = phaseNumber === "1A" || phaseNumber === "3"
   const [showEstimateEditor, setShowEstimateEditor] = React.useState(false)
   const [viewingFile, setViewingFile] = React.useState(false)
+
+  // Markdown editing state
+  const [editingMarkdown, setEditingMarkdown] = React.useState(false)
+  const [editBuffer, setEditBuffer] = React.useState("")
+  const [saving, setSaving] = React.useState(false)
+
+  function startEditing() {
+    const content = versions?.find((v) => v.version === activeVersion)?.contentMd ?? ""
+    setEditBuffer(content)
+    setEditingMarkdown(true)
+    setShowEstimateEditor(false)
+  }
+
+  function cancelEditing() {
+    setEditingMarkdown(false)
+    setEditBuffer("")
+  }
+
+  async function handleSaveMarkdown(contentMd: string, label: string) {
+    const artefactId = versions?.find((v) => v.version === activeVersion)?.id
+    if (!artefactId) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/artefacts/${artefactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentMd, label }),
+      })
+      if (res.ok) {
+        setEditingMarkdown(false)
+        setEditBuffer("")
+        onSaved?.()
+      }
+    } catch {
+      // Save failed — stay in edit mode
+    } finally {
+      setSaving(false)
+    }
+  }
 
   // Fetch phase files
   React.useEffect(() => {
@@ -226,6 +269,7 @@ export function PhaseGate({
               {hasVersions && (
                 <VersionSelector
                   versions={versionNumbers}
+                  versionLabels={versions?.map((v) => ({ version: v.version, label: v.label }))}
                   currentVersion={activeVersion}
                   onChange={handleVersionChange}
                 />
@@ -308,7 +352,18 @@ export function PhaseGate({
               )}
             </div>
             <div className="flex items-center gap-1">
-              {isEstimatePhase && hasVersions && !readOnly && (
+              {hasVersions && !readOnly && !editingMarkdown && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={startEditing}
+                  title="Edit markdown"
+                >
+                  <Pencil className="size-4" />
+                  <span className="hidden sm:inline">Edit</span>
+                </Button>
+              )}
+              {isEstimatePhase && hasVersions && !readOnly && !editingMarkdown && (
                 <Button
                   variant={showEstimateEditor ? "secondary" : "ghost"}
                   size="sm"
@@ -340,7 +395,33 @@ export function PhaseGate({
           )}
 
           <div className="flex-1 overflow-y-auto p-4 text-sm">
-            {viewingFile ? (
+            {editingMarkdown ? (
+              <div className="flex flex-col gap-3 h-full">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Editing v{activeVersion} markdown</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={cancelEditing} disabled={saving}>
+                      <X className="size-4" />
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={saving || editBuffer === (versions?.find((v) => v.version === activeVersion)?.contentMd ?? "")}
+                      onClick={() => handleSaveMarkdown(editBuffer, "Manual edit")}
+                    >
+                      {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                      {saving ? "Saving..." : "Save as new version"}
+                    </Button>
+                  </div>
+                </div>
+                <textarea
+                  className="flex-1 min-h-[400px] w-full rounded-lg border bg-muted/30 p-4 font-mono text-xs leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={editBuffer}
+                  onChange={(e) => setEditBuffer(e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+            ) : viewingFile ? (
               fileLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -377,6 +458,9 @@ export function PhaseGate({
               <div className="flex flex-col gap-4">
                 <TabbedEstimate
                   initialData={parseEstimateMarkdown(activeVersionData.contentMd)}
+                  onSave={!readOnly ? async (md) => {
+                    await handleSaveMarkdown(md, "Table edit")
+                  } : undefined}
                 />
               </div>
             ) : activeVersionData ? (

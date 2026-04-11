@@ -10,17 +10,26 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+interface VersionInfo {
+  version: number
+  label?: string | null
+}
+
 interface VersionSelectorProps {
   versions: number[]
+  versionLabels?: VersionInfo[]
   currentVersion: number
   onChange: (version: number) => void
 }
 
 export function VersionSelector({
   versions,
+  versionLabels,
   currentVersion,
   onChange,
 }: VersionSelectorProps) {
+  const labelMap = new Map(versionLabels?.map((v) => [v.version, v.label]) ?? [])
+
   return (
     <div className="flex items-center gap-2">
       <Select
@@ -31,11 +40,14 @@ export function VersionSelector({
           <SelectValue placeholder="Select version" />
         </SelectTrigger>
         <SelectContent>
-          {versions.map((v) => (
-            <SelectItem key={v} value={String(v)}>
-              v{v}
-            </SelectItem>
-          ))}
+          {versions.map((v) => {
+            const label = labelMap.get(v)
+            return (
+              <SelectItem key={v} value={String(v)}>
+                v{v}{label ? ` — ${label}` : ""}
+              </SelectItem>
+            )
+          })}
         </SelectContent>
       </Select>
       <Badge variant="secondary">

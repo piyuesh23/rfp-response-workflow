@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { Save, Loader2 } from "lucide-react"
 import { EstimateTable } from "./EstimateTable"
 import { calcLowHigh } from "./LineItemRow"
 import type { LineItem } from "./LineItemRow"
@@ -20,6 +22,7 @@ export interface EstimateData {
 
 interface TabbedEstimateProps {
   initialData: EstimateData
+  onSave?: (markdown: string) => Promise<void>
 }
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -100,8 +103,10 @@ function GrandTotalBar({ data }: { data: EstimateData }) {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function TabbedEstimate({ initialData }: TabbedEstimateProps) {
+export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
   const [data, setData] = React.useState<EstimateData>(initialData)
+  const [dirty, setDirty] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
 
   function handleCellEdit(tab: TabKey, id: string, field: "hours", value: number) {
     setData((prev) => ({
@@ -110,10 +115,32 @@ export function TabbedEstimate({ initialData }: TabbedEstimateProps) {
         row.id === id ? { ...row, [field]: value } : row
       ),
     }))
+    setDirty(true)
+  }
+
+  async function handleSave() {
+    if (!onSave || !dirty) return
+    setSaving(true)
+    try {
+      const { serializeEstimateMarkdown } = await import("@/lib/estimate-serializer")
+      await onSave(serializeEstimateMarkdown(data))
+      setDirty(false)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {onSave && dirty && (
+        <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-2">
+          <span className="text-xs text-amber-700 dark:text-amber-400">You have unsaved changes</span>
+          <Button size="sm" disabled={saving} onClick={handleSave}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            {saving ? "Saving..." : "Save as new version"}
+          </Button>
+        </div>
+      )}
       <Tabs defaultValue="backend">
         <TabsList className="h-auto w-full justify-start gap-1 rounded-lg bg-muted p-1">
           {TAB_CONFIG.map(({ key, label, value }) => {

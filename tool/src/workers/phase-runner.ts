@@ -133,6 +133,7 @@ const worker = new Worker<PhaseJobData>(
             phaseId,
             artefactType,
             version: nextVersion,
+            label: revisionFeedback ? "AI revision" : "AI generated",
             contentMd: artefactContent,
             ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
           },
