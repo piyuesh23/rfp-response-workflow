@@ -361,7 +361,7 @@ export function PhaseGate({
                   <span className="hidden sm:inline">Edit</span>
                 </Button>
               )}
-              {isEstimatePhase && hasVersions && !readOnly && !editingMarkdown && (
+              {isEstimatePhase && hasVersions && !editingMarkdown && (
                 <Button
                   variant={showEstimateEditor ? "secondary" : "ghost"}
                   size="sm"
@@ -456,9 +456,9 @@ export function PhaseGate({
               <div className="flex flex-col gap-4">
                 <TabbedEstimate
                   initialData={parseEstimateMarkdown(activeVersionData.contentMd)}
-                  onSave={!readOnly ? async (md) => {
+                  onSave={async (md) => {
                     await handleSaveMarkdown(md, "Table edit")
-                  } : undefined}
+                  }}
                 />
               </div>
             ) : activeVersionData ? (

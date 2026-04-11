@@ -65,6 +65,13 @@ const worker = new Worker<PhaseJobData>(
 
       let finalContent: string | undefined;
       console.log(`[phase-runner] Starting phase ${phaseNumber} for engagement ${engagementId}`);
+
+      await job.updateProgress({
+        type: "progress",
+        tool: "Phase Runner",
+        message: `Starting Phase ${phaseNumber} analysis...`,
+      });
+
       for await (const event of runPhase(config)) {
         await job.updateProgress(event);
         if (event.usageStats) usageStats = event.usageStats;
@@ -76,6 +83,12 @@ const worker = new Worker<PhaseJobData>(
           console.error(`[phase-runner] Phase ${phaseNumber} agent error: ${event.message}`);
         }
       }
+
+      await job.updateProgress({
+        type: "progress",
+        tool: "Phase Runner",
+        message: "AI agent completed. Processing artefacts...",
+      });
 
       // Persist artefact if the phase produced content
       // The agentic loop's finalContent is Claude's summary text.
@@ -140,6 +153,12 @@ const worker = new Worker<PhaseJobData>(
         });
       }
 
+      await job.updateProgress({
+        type: "progress",
+        tool: "Phase Runner",
+        message: "Artefact saved. Extracting metadata...",
+      });
+
       // For estimate phases: extract and persist Risk Register + Assumption entries
       if (["1A", "3", "3R"].includes(phaseStr) && artefactContent) {
         try {
@@ -171,6 +190,12 @@ const worker = new Worker<PhaseJobData>(
           console.warn(`[phase-runner] Phase ${phaseNumber} — failed to extract risks/assumptions: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+
+      await job.updateProgress({
+        type: "progress",
+        tool: "Phase Runner",
+        message: "Running validation checks...",
+      });
 
       // For estimate phases: run full validation (benchmark + structural) and store report
       if (["1A", "3"].includes(phaseStr) && artefactContent) {
@@ -289,6 +314,12 @@ const worker = new Worker<PhaseJobData>(
           // questions.md may not exist — non-fatal
         }
       }
+
+      await job.updateProgress({
+        type: "progress",
+        tool: "Phase Runner",
+        message: "Syncing files to storage...",
+      });
 
       // Sync all generated files back to MinIO/S3
       try {

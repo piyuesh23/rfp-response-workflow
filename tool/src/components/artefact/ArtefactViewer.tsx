@@ -5,15 +5,8 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize from "rehype-sanitize"
-import { Maximize2Icon, DownloadIcon } from "lucide-react"
+import { DownloadIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -223,27 +216,6 @@ export function ArtefactViewer({ contentMd, version }: ArtefactViewerProps) {
             <DownloadIcon className="size-4" />
             <span className="sr-only">Download</span>
           </Button>
-          <Dialog>
-            <DialogTrigger
-              render={<Button variant="ghost" size="icon-sm" title="View fullscreen" />}
-            >
-              <Maximize2Icon className="size-4" />
-              <span className="sr-only">Fullscreen</span>
-            </DialogTrigger>
-            <DialogContent
-              className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden"
-              showCloseButton
-            >
-              <DialogHeader>
-                <DialogTitle>
-                  {version !== undefined ? `Artefact — v${version}` : "Artefact"}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="flex-1 overflow-y-auto px-1 py-2">
-                <MarkdownContent contentMd={contentMd} />
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
       <div className="overflow-auto p-4">

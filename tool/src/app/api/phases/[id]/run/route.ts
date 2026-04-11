@@ -87,7 +87,7 @@ export async function POST(
       techStack: phase.engagement.techStack,
       ...(revisionFeedback ? { revisionFeedback } : {}),
     },
-    { jobId: `phase-${phase.id}` }
+    { jobId: `phase-${phase.id}-${Date.now()}` }
   );
 
   // Mark phase as RUNNING
