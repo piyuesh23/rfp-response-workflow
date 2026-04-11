@@ -1,7 +1,9 @@
 /**
  * Post-generation estimate validation.
  * Parses estimate markdown, looks up BenchmarkRef values against the DB,
- * and flags deviations. Pure TypeScript — no AI calls.
+ * and flags deviations. Also runs structural checks (always-include tasks,
+ * assumption sources, risk register coverage, tab organization).
+ * Pure TypeScript — no AI calls.
  */
 
 import { prisma } from "@/lib/db";
@@ -26,12 +28,27 @@ export interface ValidationReport {
   items: ValidationItem[];
 }
 
+export interface StructuralValidationItem {
+  category: "ALWAYS_INCLUDE" | "ASSUMPTION_SOURCE" | "RISK_REGISTER" | "TAB_ORGANIZATION";
+  status: "PASS" | "WARN" | "FAIL";
+  message: string;
+  details?: string[];
+}
+
+export interface FullValidationReport {
+  benchmark: ValidationReport;
+  structural: StructuralValidationItem[];
+  overallStatus: "PASS" | "WARN" | "FAIL";
+}
+
 interface ParsedLineItem {
   task: string;
   tab: string;
   hours: number;
+  conf: number | null;
   benchmarkRef: string;
   hasDeviationNote: boolean;
+  assumptions: string;
 }
 
 /**
@@ -51,7 +68,7 @@ function parseLineItems(markdown: string): ParsedLineItem[] {
   ];
 
   let currentTab = "";
-  let colMap: { task: number; hours: number; benchmarkRef: number; assumptions: number } | null = null;
+  let colMap: { task: number; hours: number; benchmarkRef: number; assumptions: number; conf: number } | null = null;
   let inTable = false;
 
   for (const line of lines) {
@@ -78,7 +95,7 @@ function parseLineItems(markdown: string): ParsedLineItem[] {
     // Detect table header
     if (
       trimmed.startsWith("|") &&
-      trimmed.toLowerCase().includes("benchmarkref") &&
+      (trimmed.toLowerCase().includes("benchmarkref") || trimmed.toLowerCase().includes("hours")) &&
       !inTable
     ) {
       const headers = trimmed
@@ -90,13 +107,15 @@ function parseLineItems(markdown: string): ParsedLineItem[] {
       const hoursIdx = headers.findIndex((h) => h === "hours");
       const bmIdx = headers.findIndex((h) => h.includes("benchmarkref"));
       const assIdx = headers.findIndex((h) => h.includes("assumption"));
+      const confIdx = headers.findIndex((h) => h === "conf");
 
-      if (hoursIdx >= 0 && bmIdx >= 0) {
+      if (hoursIdx >= 0) {
         colMap = {
           task: taskIdx >= 0 ? taskIdx : 0,
           hours: hoursIdx,
-          benchmarkRef: bmIdx,
+          benchmarkRef: bmIdx >= 0 ? bmIdx : -1,
           assumptions: assIdx >= 0 ? assIdx : -1,
+          conf: confIdx >= 0 ? confIdx : -1,
         };
       }
       continue;
@@ -117,16 +136,20 @@ function parseLineItems(markdown: string): ParsedLineItem[] {
 
       const task = cells[colMap.task] ?? "";
       const hours = parseFloat(cells[colMap.hours] ?? "");
-      const benchmarkRef = (cells[colMap.benchmarkRef] ?? "").trim();
+      const benchmarkRef = colMap.benchmarkRef >= 0 ? (cells[colMap.benchmarkRef] ?? "").trim() : "";
       const assumptions = colMap.assumptions >= 0 ? (cells[colMap.assumptions] ?? "") : "";
+      const confStr = colMap.conf >= 0 ? (cells[colMap.conf] ?? "") : "";
+      const conf = confStr ? parseInt(confStr, 10) : null;
 
       if (task && !isNaN(hours) && hours > 0) {
         items.push({
           task,
           tab: currentTab,
           hours,
+          conf: isNaN(conf ?? NaN) ? null : conf,
           benchmarkRef: benchmarkRef || "N/A",
           hasDeviationNote: assumptions.toUpperCase().includes("BENCHMARK DEVIATION"),
+          assumptions,
         });
       }
     }
@@ -267,4 +290,295 @@ export async function validateEstimate(
   }
 
   return report;
+}
+
+// ─── Structural Validators ──────────────────────────────────────────────────
+
+/** Required Backend tasks by tech stack (fuzzy keyword sets — match ALL keywords in a set) */
+const ALWAYS_INCLUDE_TASKS: Record<string, string[][]> = {
+  DRUPAL: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["install", "config"],
+    ["configuration", "management"],
+    ["roles", "permission"],
+    ["media", "library"],
+    ["deployment", "pipeline"],
+    ["qa", "stabil"],
+  ],
+  DRUPAL_NEXTJS: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["install", "config"],
+    ["configuration", "management"],
+    ["roles", "permission"],
+    ["media", "library"],
+    ["deployment", "pipeline"],
+    ["qa", "stabil"],
+  ],
+  WORDPRESS: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["wordpress", "install"],
+    ["plugin", "config"],
+    ["roles", "permission"],
+    ["media", "library"],
+    ["deployment", "pipeline"],
+    ["qa", "stabil"],
+  ],
+  WORDPRESS_NEXTJS: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["wordpress", "install"],
+    ["plugin", "config"],
+    ["roles", "permission"],
+    ["media", "library"],
+    ["deployment", "pipeline"],
+    ["qa", "stabil"],
+  ],
+};
+
+/** Human-readable labels for always-include tasks */
+const ALWAYS_INCLUDE_LABELS: Record<string, string[]> = {
+  DRUPAL: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "Drupal Installation & Base Configuration",
+    "Configuration Management Setup",
+    "Roles & Permissions",
+    "Media Library Setup",
+    "Deployment Pipeline",
+    "QA/Bug Fixes & Stabilisation",
+  ],
+  DRUPAL_NEXTJS: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "Drupal Installation & Base Configuration",
+    "Configuration Management Setup",
+    "Roles & Permissions",
+    "Media Library Setup",
+    "Deployment Pipeline",
+    "QA/Bug Fixes & Stabilisation",
+  ],
+  WORDPRESS: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "WordPress Installation & Configuration",
+    "Plugin Configuration & Setup",
+    "Roles & Permissions",
+    "Media Library Setup",
+    "Deployment Pipeline",
+    "QA/Bug Fixes & Stabilisation",
+  ],
+  WORDPRESS_NEXTJS: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "WordPress Installation & Configuration",
+    "Plugin Configuration & Setup",
+    "Roles & Permissions",
+    "Media Library Setup",
+    "Deployment Pipeline",
+    "QA/Bug Fixes & Stabilisation",
+  ],
+};
+
+/**
+ * Check that all required Backend tasks are present (CARL RULE 16).
+ * Uses fuzzy keyword matching — a task passes if its name contains ALL keywords in a set.
+ */
+function validateAlwaysIncludeTasks(
+  lineItems: ParsedLineItem[],
+  techStack: string
+): StructuralValidationItem {
+  const keywordSets = ALWAYS_INCLUDE_TASKS[techStack] ?? ALWAYS_INCLUDE_TASKS["DRUPAL"];
+  const labels = ALWAYS_INCLUDE_LABELS[techStack] ?? ALWAYS_INCLUDE_LABELS["DRUPAL"];
+  const backendItems = lineItems.filter((i) => i.tab === "Backend");
+  const missing: string[] = [];
+
+  for (let i = 0; i < keywordSets.length; i++) {
+    const keywords = keywordSets[i];
+    const found = backendItems.some((item) => {
+      const taskLower = item.task.toLowerCase();
+      return keywords.every((kw) => taskLower.includes(kw));
+    });
+    if (!found) {
+      missing.push(labels[i]);
+    }
+  }
+
+  if (missing.length === 0) {
+    return {
+      category: "ALWAYS_INCLUDE",
+      status: "PASS",
+      message: "All required Backend tasks present",
+    };
+  }
+
+  return {
+    category: "ALWAYS_INCLUDE",
+    status: missing.length >= 3 ? "FAIL" : "WARN",
+    message: `${missing.length} required Backend task(s) missing`,
+    details: missing,
+  };
+}
+
+/**
+ * Check assumption cells for references to internal artifacts (CARL RULE 10).
+ * Flags references to claude-artefacts/, REQ- IDs, assessment requirement, task table entries.
+ */
+function validateAssumptionSources(lineItems: ParsedLineItem[]): StructuralValidationItem {
+  const INTERNAL_PATTERNS = [
+    /claude-artefacts\//i,
+    /\bREQ-\d+/i,
+    /assessment\s+requirement/i,
+    /task\s+table\s+(entry|item|row)/i,
+    /tor-assessment\.md/i,
+    /response-analysis\.md/i,
+  ];
+
+  const violations: string[] = [];
+
+  for (const item of lineItems) {
+    if (!item.assumptions) continue;
+    for (const pattern of INTERNAL_PATTERNS) {
+      if (pattern.test(item.assumptions)) {
+        violations.push(`"${item.task}" references internal artifact in assumptions`);
+        break;
+      }
+    }
+  }
+
+  if (violations.length === 0) {
+    return {
+      category: "ASSUMPTION_SOURCE",
+      status: "PASS",
+      message: "All assumptions reference TOR/Q&A sources only",
+    };
+  }
+
+  return {
+    category: "ASSUMPTION_SOURCE",
+    status: "FAIL",
+    message: `${violations.length} line item(s) reference internal artifacts in assumptions`,
+    details: violations.slice(0, 10),
+  };
+}
+
+/**
+ * Check that all Conf <= 4 items appear in the Risk Register (CARL RULE 15).
+ */
+function validateRiskRegisterCoverage(
+  markdown: string,
+  lineItems: ParsedLineItem[]
+): StructuralValidationItem {
+  const lowConfItems = lineItems.filter((i) => i.conf !== null && i.conf <= 4);
+
+  if (lowConfItems.length === 0) {
+    return {
+      category: "RISK_REGISTER",
+      status: "PASS",
+      message: "No Conf <= 4 items requiring Risk Register entries",
+    };
+  }
+
+  // Extract risk register section
+  const riskMatch = markdown.match(/^#{1,3}\s+Risk\s+Register[\s\S]*?(?=^#{1,3}\s(?!Risk)|$)/im);
+  const riskSection = riskMatch ? riskMatch[0].toLowerCase() : "";
+
+  const missing: string[] = [];
+  for (const item of lowConfItems) {
+    // Check if task name appears in risk register (fuzzy — first 3 significant words)
+    const taskWords = item.task.toLowerCase().split(/\s+/).filter((w) => w.length > 2).slice(0, 3);
+    const found = taskWords.length > 0 && taskWords.some((word) => riskSection.includes(word));
+    if (!found) {
+      missing.push(`"${item.task}" (Conf ${item.conf})`);
+    }
+  }
+
+  if (missing.length === 0) {
+    return {
+      category: "RISK_REGISTER",
+      status: "PASS",
+      message: `All ${lowConfItems.length} Conf <= 4 items covered in Risk Register`,
+    };
+  }
+
+  return {
+    category: "RISK_REGISTER",
+    status: "WARN",
+    message: `${missing.length} of ${lowConfItems.length} Conf <= 4 items missing from Risk Register`,
+    details: missing.slice(0, 10),
+  };
+}
+
+/**
+ * Check that Fixed Cost tab doesn't contain development tasks (CARL RULE 11).
+ * Development tasks belong in Backend/Frontend.
+ */
+function validateTabOrganization(lineItems: ParsedLineItem[]): StructuralValidationItem {
+  const DEV_KEYWORDS = [
+    "content type", "migration", "integration", "custom module",
+    "component", "view", "entity", "field", "taxonomy", "plugin development",
+    "api endpoint", "graphql", "rest api",
+  ];
+
+  const fixedCostItems = lineItems.filter((i) => i.tab === "Fixed Cost");
+  const violations: string[] = [];
+
+  for (const item of fixedCostItems) {
+    const taskLower = item.task.toLowerCase();
+    const matchedKeyword = DEV_KEYWORDS.find((kw) => taskLower.includes(kw));
+    if (matchedKeyword) {
+      violations.push(`"${item.task}" (matched: ${matchedKeyword})`);
+    }
+  }
+
+  if (violations.length === 0) {
+    return {
+      category: "TAB_ORGANIZATION",
+      status: "PASS",
+      message: "Fixed Cost tab contains only operational items",
+    };
+  }
+
+  return {
+    category: "TAB_ORGANIZATION",
+    status: "WARN",
+    message: `${violations.length} potential development task(s) in Fixed Cost tab`,
+    details: violations.slice(0, 10),
+  };
+}
+
+/**
+ * Run full validation: benchmark deviations + structural checks.
+ */
+export async function validateEstimateFull(
+  contentMd: string,
+  techStack: string
+): Promise<FullValidationReport> {
+  const benchmark = await validateEstimate(contentMd);
+  const lineItems = parseLineItems(contentMd);
+
+  const structural: StructuralValidationItem[] = [
+    validateAlwaysIncludeTasks(lineItems, techStack),
+    validateAssumptionSources(lineItems),
+    validateRiskRegisterCoverage(contentMd, lineItems),
+    validateTabOrganization(lineItems),
+  ];
+
+  // Determine overall status
+  const hasFail =
+    benchmark.failCount > 0 ||
+    structural.some((s) => s.status === "FAIL");
+  const hasWarn =
+    benchmark.warnCount > 0 ||
+    structural.some((s) => s.status === "WARN");
+
+  const overallStatus: "PASS" | "WARN" | "FAIL" = hasFail
+    ? "FAIL"
+    : hasWarn
+      ? "WARN"
+      : "PASS";
+
+  return { benchmark, structural, overallStatus };
 }

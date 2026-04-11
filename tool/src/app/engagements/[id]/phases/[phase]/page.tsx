@@ -304,6 +304,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         </div>
         {versions.length > 0 ? (
           <PhaseGate
+            phaseId={phaseData.id}
             engagementId={id}
             phaseNumber={phase}
             versions={versions}
@@ -340,6 +341,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         </div>
         {versions.length > 0 ? (
           <PhaseGate
+            phaseId={phaseData.id}
             engagementId={id}
             phaseNumber={phase}
             versions={versions}

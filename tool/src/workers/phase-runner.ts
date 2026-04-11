@@ -3,7 +3,8 @@ import { runPhase, prepareWorkDir, syncFilesToStorage, UsageStats } from "@/lib/
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
 import { extractMetadataForPhase, extractRiskRegister, extractAssumptions } from "@/lib/ai/metadata-extractor";
-import { validateEstimate } from "@/lib/ai/validate-estimate";
+import { validateEstimateFull } from "@/lib/ai/validate-estimate";
+import { validateProposal } from "@/lib/ai/validate-proposal";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
@@ -170,10 +171,10 @@ const worker = new Worker<PhaseJobData>(
         }
       }
 
-      // For estimate phases: run benchmark validation and store report in artefact metadata
+      // For estimate phases: run full validation (benchmark + structural) and store report
       if (["1A", "3"].includes(phaseStr) && artefactContent) {
         try {
-          const validationReport = await validateEstimate(artefactContent);
+          const fullReport = await validateEstimateFull(artefactContent, techStack);
           // Update the artefact metadata with validation results
           const latestArtefact = await prisma.phaseArtefact.findFirst({
             where: { phaseId },
@@ -188,22 +189,60 @@ const worker = new Worker<PhaseJobData>(
                 metadata: JSON.parse(JSON.stringify({
                   ...existingMeta,
                   benchmarkValidation: {
-                    passCount: validationReport.passCount,
-                    warnCount: validationReport.warnCount,
-                    failCount: validationReport.failCount,
-                    noBenchmarkCount: validationReport.noBenchmarkCount,
-                    totalItems: validationReport.items.length,
+                    passCount: fullReport.benchmark.passCount,
+                    warnCount: fullReport.benchmark.warnCount,
+                    failCount: fullReport.benchmark.failCount,
+                    noBenchmarkCount: fullReport.benchmark.noBenchmarkCount,
+                    totalItems: fullReport.benchmark.items.length,
+                  },
+                  fullValidation: {
+                    overallStatus: fullReport.overallStatus,
+                    structural: fullReport.structural,
                   },
                 })),
               },
             });
             console.log(
-              `[phase-runner] Phase ${phaseNumber} — benchmark validation: ${validationReport.passCount} pass, ${validationReport.warnCount} warn, ${validationReport.failCount} fail`
+              `[phase-runner] Phase ${phaseNumber} — validation: ${fullReport.overallStatus} (benchmark: ${fullReport.benchmark.passCount}P/${fullReport.benchmark.warnCount}W/${fullReport.benchmark.failCount}F, structural: ${fullReport.structural.filter(s => s.status === "PASS").length}P/${fullReport.structural.filter(s => s.status === "WARN").length}W/${fullReport.structural.filter(s => s.status === "FAIL").length}F)`
             );
           }
         } catch (err) {
           console.warn(
-            `[phase-runner] Phase ${phaseNumber} — benchmark validation failed: ${err instanceof Error ? err.message : String(err)}`
+            `[phase-runner] Phase ${phaseNumber} — validation failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+
+      // For proposal phase: run proposal validation and store report
+      if (phaseStr === "5" && artefactContent) {
+        try {
+          const proposalReport = await validateProposal(artefactContent, engagementId);
+          const latestArtefact = await prisma.phaseArtefact.findFirst({
+            where: { phaseId },
+            orderBy: { version: "desc" },
+            select: { id: true, metadata: true },
+          });
+          if (latestArtefact) {
+            const existingMeta = (latestArtefact.metadata as Record<string, unknown>) ?? {};
+            await prisma.phaseArtefact.update({
+              where: { id: latestArtefact.id },
+              data: {
+                metadata: JSON.parse(JSON.stringify({
+                  ...existingMeta,
+                  proposalValidation: {
+                    overallStatus: proposalReport.overallStatus,
+                    items: proposalReport.items,
+                  },
+                })),
+              },
+            });
+            console.log(
+              `[phase-runner] Phase ${phaseNumber} — proposal validation: ${proposalReport.overallStatus} (${proposalReport.items.filter(i => i.status === "PASS").length}P/${proposalReport.items.filter(i => i.status === "WARN").length}W/${proposalReport.items.filter(i => i.status === "FAIL").length}F)`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Phase ${phaseNumber} — proposal validation failed: ${err instanceof Error ? err.message : String(err)}`
           );
         }
       }

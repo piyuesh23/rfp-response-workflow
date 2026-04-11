@@ -27,6 +27,7 @@ import { ArtefactViewer } from "@/components/artefact/ArtefactViewer"
 import { CsvViewer } from "@/components/artefact/CsvViewer"
 import { TabbedEstimate } from "@/components/estimate/TabbedEstimate"
 import { parseEstimateMarkdown } from "@/lib/estimate-parser"
+import { ValidationPanel } from "@/components/phase/ValidationPanel"
 
 export interface ArtefactVersion {
   version: number
@@ -43,6 +44,7 @@ interface FileEntry {
 
 interface PhaseGateProps {
   children?: React.ReactNode
+  phaseId?: string
   engagementId?: string
   phaseNumber?: string
   versions?: ArtefactVersion[]
@@ -84,6 +86,7 @@ function groupByDir(files: FileEntry[]): Record<string, FileEntry[]> {
 
 export function PhaseGate({
   children,
+  phaseId,
   engagementId,
   phaseNumber,
   versions,
@@ -330,6 +333,11 @@ export function PhaseGate({
               </Button>
             </div>
           </div>
+
+          {/* Validation panel for estimate and proposal phases */}
+          {phaseId && (phaseNumber === "1A" || phaseNumber === "3" || phaseNumber === "5") && !readOnly && (
+            <ValidationPanel phaseId={phaseId} phaseNumber={phaseNumber} />
+          )}
 
           <div className="flex-1 overflow-y-auto p-4 text-sm">
             {viewingFile ? (

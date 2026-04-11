@@ -33,6 +33,19 @@ If a solution architecture document exists (claude-artefacts/solution-architectu
 - **Reference estimate hours** at summary level to support the investment section
 - The solution doc is the pre-approved technical foundation — the proposal makes it client-ready
 
+## Mandatory Carry-Forward Requirements
+
+Before writing, extract from the estimate file (estimates/optimistic-estimate.md or estimates/revised-estimate.md):
+1. ALL assumptions listed in the Assumption Register — every single one MUST appear in Section 7.3 (Key Assumptions), grouped by category
+2. ALL Risk Register items — summarize in client-appropriate language in Section 7.4 (Risk Summary)
+3. ALL integration tier classifications (T1/T2/T3) — reference each integration with its tier in Section 4.2
+
+Self-check before writing final output:
+- Section 7.3 assumption count >= estimate Assumption Register count
+- Section 7.4 risk items >= estimate Risk Register count
+- Section 4.2 mentions every integration from the estimate with its tier classification
+- Section 3 references architecture decisions from solution-architecture.md
+
 ## Writing Style
 
 This is a PROFESSIONAL TECHNICAL PROPOSAL. Write in flowing narrative prose with substantive depth.
@@ -172,7 +185,12 @@ List all deliverables included in this engagement as a comprehensive bulleted li
 Present as a table: Item | Why Phase 2. These are items identified in the TOR or research that are better addressed after the initial launch.
 
 #### 7.3 Key Assumptions
-Group assumptions by category (Content & Architecture, Integrations, Infrastructure, Process). Each assumption should state what is assumed and the impact if the assumption is wrong, referencing TOR sections.
+Group assumptions by category (Content & Architecture, Integrations, Infrastructure, Process). Each assumption should state what is assumed and the impact if the assumption is wrong, referencing TOR sections. EVERY assumption from the estimate Assumption Register must appear here.
+
+#### 7.4 Risk Summary
+Present a client-facing risk table with columns: Area | Risk | Mitigation Approach | Impact Level (High/Medium/Low).
+Include ALL items from the estimate Risk Register, rephrased for client consumption (no internal references, no Conf scores).
+Add any additional risks identified during proposal writing.
 
 ### 8. Investment Summary
 Present effort at summary level by category (Backend, Frontend, Fixed Cost, AI if applicable) with Low/High hour ranges. Do NOT include line-item detail. Note items with higher uncertainty.
