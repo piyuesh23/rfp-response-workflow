@@ -16,12 +16,21 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import type { TechStack, EngagementType } from "@/generated/prisma/client"
+import type { TechStack, EngagementType, Industry } from "@/generated/prisma/client"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface AccountOption {
+  id: string
+  canonicalName: string
+  industry: string
+}
+
 interface WizardFormData {
-  clientName: string
+  accountId: string
+  accountName: string
+  isNewAccount: boolean
+  industry: Industry | ""
   projectName: string
   techStack: TechStack | ""
   engagementType: EngagementType | ""
@@ -32,11 +41,13 @@ interface InferenceResult {
   projectName: string | null
   techStack: string | null
   engagementType: string | null
+  industry: string | null
   confidence: {
     clientName: number
     projectName: number
     techStack: number
     engagementType: number
+    industry: number
   }
 }
 
@@ -57,6 +68,22 @@ const engagementTypeLabels: Record<EngagementType, string> = {
   REDESIGN: "Redesign",
   ENHANCEMENT: "Enhancement",
   DISCOVERY: "Discovery",
+}
+
+const industryLabels: Record<Industry, string> = {
+  HEALTHCARE: "Healthcare",
+  FINTECH: "Fintech",
+  EDUCATION: "Education",
+  GOVERNMENT: "Government",
+  MEDIA: "Media & Publishing",
+  ECOMMERCE: "E-Commerce",
+  NONPROFIT: "Nonprofit",
+  MANUFACTURING: "Manufacturing",
+  PROFESSIONAL_SERVICES: "Professional Services",
+  TECHNOLOGY: "Technology",
+  ENERGY: "Energy",
+  LEGAL: "Legal",
+  OTHER: "Other",
 }
 
 // ─── Step Indicator ──────────────────────────────────────────────────────────
@@ -244,12 +271,16 @@ interface Step2Props {
   data: WizardFormData
   onChange: (patch: Partial<WizardFormData>) => void
   confidence: InferenceResult["confidence"] | null
+  accounts: AccountOption[]
   onBack: () => void
   onNext: () => void
 }
 
-function Step2Details({ data, onChange, confidence, onBack, onNext }: Step2Props) {
-  const canProceed = data.clientName.trim() !== "" && data.techStack !== "" && data.engagementType !== ""
+function Step2Details({ data, onChange, confidence, accounts, onBack, onNext }: Step2Props) {
+  const [accountSearch, setAccountSearch] = React.useState(data.accountName)
+  const [showNewAccount, setShowNewAccount] = React.useState(data.isNewAccount)
+
+  const canProceed = (data.accountId !== "" || (showNewAccount && data.accountName.trim() !== "")) && data.techStack !== "" && data.engagementType !== ""
 
   const isLowConfidence = (field: keyof NonNullable<typeof confidence>) =>
     confidence && confidence[field] > 0 && confidence[field] < 0.7
@@ -270,6 +301,26 @@ function Step2Details({ data, onChange, confidence, onBack, onNext }: Step2Props
     )
   }
 
+  // Filter accounts by search
+  const filtered = accounts.filter((a) =>
+    a.canonicalName.toLowerCase().includes(accountSearch.toLowerCase())
+  )
+
+  function handleSelectAccount(accountId: string | null) {
+    if (!accountId) return
+    const account = accounts.find((a) => a.id === accountId)
+    if (account) {
+      onChange({ accountId, accountName: account.canonicalName, isNewAccount: false, industry: (account.industry as Industry) || "" })
+      setAccountSearch(account.canonicalName)
+      setShowNewAccount(false)
+    }
+  }
+
+  function handleNewAccount() {
+    onChange({ accountId: "", accountName: accountSearch, isNewAccount: true })
+    setShowNewAccount(true)
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {confidence && (
@@ -279,20 +330,85 @@ function Step2Details({ data, onChange, confidence, onBack, onNext }: Step2Props
         </div>
       )}
 
+      {/* Account selection */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <Label htmlFor="clientName">
-            Client Name <span className="text-destructive">*</span>
+          <Label htmlFor="account">
+            Account / Client <span className="text-destructive">*</span>
           </Label>
           {aiHint("clientName")}
         </div>
-        <Input
-          id="clientName"
-          placeholder="e.g. Acme Corporation"
-          value={data.clientName}
-          onChange={(e) => onChange({ clientName: e.target.value })}
-          className={isLowConfidence("clientName") ? "border-amber-400 dark:border-amber-600" : ""}
-        />
+        {!showNewAccount ? (
+          <div className="flex flex-col gap-2">
+            <Select
+              value={data.accountId}
+              onValueChange={handleSelectAccount}
+            >
+              <SelectTrigger
+                id="account"
+                className={isLowConfidence("clientName") ? "border-amber-400 dark:border-amber-600" : ""}
+              >
+                <SelectValue placeholder="Select an existing account" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.canonicalName}
+                    {a.industry && a.industry !== "OTHER" && (
+                      <span className="text-muted-foreground"> — {industryLabels[a.industry as Industry] ?? a.industry}</span>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              type="button"
+              onClick={handleNewAccount}
+              className="text-xs text-primary hover:underline text-left"
+            >
+              + Create new account
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">New Account</span>
+              <button
+                type="button"
+                onClick={() => { setShowNewAccount(false); onChange({ isNewAccount: false, accountId: "", accountName: "" }) }}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+            <Input
+              placeholder="Account name (e.g. Acme Corporation)"
+              value={data.accountName}
+              onChange={(e) => { onChange({ accountName: e.target.value }); setAccountSearch(e.target.value) }}
+            />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="industry" className="text-xs">
+                Industry <span className="text-destructive">*</span>
+              </Label>
+              {aiHint("industry")}
+              <Select
+                value={data.industry}
+                onValueChange={(val) => onChange({ industry: val as Industry })}
+              >
+                <SelectTrigger id="industry" className={isLowConfidence("industry") ? "border-amber-400 dark:border-amber-600" : ""}>
+                  <SelectValue placeholder="Select industry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(industryLabels) as Industry[]).map((key) => (
+                    <SelectItem key={key} value={key}>
+                      {industryLabels[key]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -394,8 +510,15 @@ function Step3Confirm({ data, file, onBack, onSubmit, isSubmitting }: Step3Props
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <span className="text-muted-foreground">Client Name</span>
-            <span className="font-medium">{data.clientName}</span>
+            <span className="text-muted-foreground">Account</span>
+            <span className="font-medium">{data.accountName}{data.isNewAccount && <Badge variant="outline" className="ml-2 text-xs">New</Badge>}</span>
+
+            {data.industry && (
+              <>
+                <span className="text-muted-foreground">Industry</span>
+                <span><Badge variant="secondary">{industryLabels[data.industry as Industry]}</Badge></span>
+              </>
+            )}
 
             <span className="text-muted-foreground">Project Name</span>
             <span className="font-medium">{data.projectName || <span className="text-muted-foreground italic">—</span>}</span>
@@ -459,8 +582,20 @@ export function CreateWizard() {
   const [analyzeError, setAnalyzeError] = React.useState<string | null>(null)
   const [inferenceResult, setInferenceResult] = React.useState<InferenceResult | null>(null)
 
+  // Accounts list
+  const [accounts, setAccounts] = React.useState<AccountOption[]>([])
+  React.useEffect(() => {
+    fetch("/api/accounts")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setAccounts(Array.isArray(data) ? data.map((a: { id: string; canonicalName: string; industry: string }) => ({ id: a.id, canonicalName: a.canonicalName, industry: a.industry })) : []))
+      .catch(() => {})
+  }, [])
+
   const [formData, setFormData] = React.useState<WizardFormData>({
-    clientName: "",
+    accountId: "",
+    accountName: "",
+    isNewAccount: false,
+    industry: "",
     projectName: "",
     techStack: "",
     engagementType: "",
@@ -512,9 +647,18 @@ export function CreateWizard() {
       const result: InferenceResult = await inferRes.json()
       setInferenceResult(result)
 
+      // Try to match inferred client name to existing account
+      const inferredName = result.clientName ?? ""
+      const matchedAccount = accounts.find((a) =>
+        a.canonicalName.toLowerCase() === inferredName.toLowerCase()
+      )
+
       // Pre-fill form with inferred values
       setFormData({
-        clientName: result.clientName ?? "",
+        accountId: matchedAccount?.id ?? "",
+        accountName: inferredName,
+        isNewAccount: !matchedAccount && inferredName !== "",
+        industry: ((matchedAccount?.industry as Industry) || (result.industry as Industry)) ?? "",
         projectName: result.projectName ?? "",
         techStack: (result.techStack as TechStack) ?? "",
         engagementType: (result.engagementType as EngagementType) ?? "",
@@ -531,21 +675,39 @@ export function CreateWizard() {
     setTorFile(null)
     setInferenceResult(null)
     setAnalyzeError(null)
-    setFormData({ clientName: "", projectName: "", techStack: "", engagementType: "" })
+    setFormData({ accountId: "", accountName: "", isNewAccount: false, industry: "", projectName: "", techStack: "", engagementType: "" })
   }
 
   async function handleSubmit() {
     setIsSubmitting(true)
     try {
-      // 1. Create the engagement
+      // 1. Create account if new
+      let accountId = formData.accountId
+      if (formData.isNewAccount && formData.accountName.trim()) {
+        const acctRes = await fetch("/api/accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            canonicalName: formData.accountName.trim(),
+            industry: formData.industry || undefined,
+          }),
+        })
+        if (acctRes.ok) {
+          const acct = await acctRes.json()
+          accountId = acct.id
+        }
+      }
+
+      // 2. Create the engagement
       const res = await fetch("/api/engagements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientName: formData.clientName,
+          clientName: formData.accountName,
           projectName: formData.projectName || undefined,
           techStack: formData.techStack,
           engagementType: formData.engagementType || undefined,
+          accountId: accountId || undefined,
         }),
       })
 
@@ -557,7 +719,7 @@ export function CreateWizard() {
       const engagement = await res.json()
       const engagementId = engagement.id
 
-      // 2. Upload TOR file
+      // 3. Upload TOR file
       if (torFile) {
         const fd = new FormData()
         fd.append("engagementId", engagementId)
@@ -594,6 +756,7 @@ export function CreateWizard() {
           data={formData}
           onChange={patchForm}
           confidence={inferenceResult?.confidence ?? null}
+          accounts={accounts}
           onBack={() => setStep(1)}
           onNext={() => setStep(3)}
         />

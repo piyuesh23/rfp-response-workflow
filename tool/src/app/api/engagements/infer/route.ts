@@ -9,11 +9,13 @@ interface InferredFields {
   projectName: string | null;
   techStack: string | null;
   engagementType: string | null;
+  industry: string | null;
   confidence: {
     clientName: number;
     projectName: number;
     techStack: number;
     engagementType: number;
+    industry: number;
   };
 }
 
@@ -32,6 +34,22 @@ const VALID_ENGAGEMENT_TYPES = [
   "REDESIGN",
   "ENHANCEMENT",
   "DISCOVERY",
+];
+
+const VALID_INDUSTRIES = [
+  "HEALTHCARE",
+  "FINTECH",
+  "EDUCATION",
+  "GOVERNMENT",
+  "MEDIA",
+  "ECOMMERCE",
+  "NONPROFIT",
+  "MANUFACTURING",
+  "PROFESSIONAL_SERVICES",
+  "TECHNOLOGY",
+  "ENERGY",
+  "LEGAL",
+  "OTHER",
 ];
 
 export async function POST(request: NextRequest) {
@@ -61,6 +79,7 @@ export async function POST(request: NextRequest) {
 2. **projectName** — The project title or name. Look for "Project Title", "Project Name", document title.
 3. **techStack** — The primary technology platform. Must be one of: ${VALID_TECH_STACKS.join(", ")}. Infer from technology requirements, platform mentions, CMS references. If Drupal is mentioned with a decoupled/headless frontend using Next.js or React, use DRUPAL_NEXTJS. If WordPress with Next.js frontend, use WORDPRESS_NEXTJS.
 4. **engagementType** — The type of work. Must be one of: ${VALID_ENGAGEMENT_TYPES.join(", ")}. NEW_BUILD = greenfield project. MIGRATION = moving from one platform to another. REDESIGN = rebuilding/redesigning existing site. ENHANCEMENT = adding features to existing system. DISCOVERY = research/assessment only.
+5. **industry** — The client's industry/domain. Must be one of: ${VALID_INDUSTRIES.join(", ")}. Infer from the client's organization type, the project domain, or explicit industry references in the document.
 
 For each field, also provide a confidence score from 0.0 to 1.0.
 
@@ -70,11 +89,13 @@ Respond ONLY with valid JSON in this exact format:
   "projectName": "string or null",
   "techStack": "ENUM_VALUE or null",
   "engagementType": "ENUM_VALUE or null",
+  "industry": "ENUM_VALUE or null",
   "confidence": {
     "clientName": 0.0,
     "projectName": 0.0,
     "techStack": 0.0,
-    "engagementType": 0.0
+    "engagementType": 0.0,
+    "industry": 0.0
   }
 }`;
 
@@ -116,6 +137,10 @@ Respond ONLY with valid JSON in this exact format:
     ) {
       parsed.engagementType = null;
       parsed.confidence.engagementType = 0;
+    }
+    if (parsed.industry && !VALID_INDUSTRIES.includes(parsed.industry)) {
+      parsed.industry = null;
+      parsed.confidence.industry = 0;
     }
 
     return NextResponse.json(parsed);
