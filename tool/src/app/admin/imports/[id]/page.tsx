@@ -9,7 +9,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -138,7 +137,7 @@ function formatBytes(bytes: number): string {
 interface EditDialogProps {
   item: ImportItem;
   accounts: Account[];
-  open: boolean;
+  open?: boolean;
   onClose: () => void;
   onConfirm: (itemId: string, overrides: Record<string, unknown>) => Promise<void>;
 }
@@ -218,24 +217,45 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
   }));
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Review: {item.folderName}</DialogTitle>
-          {typeCounts.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {typeCounts.map((tc) => `${tc.count} ${tc.type}`).join(", ")}
-            </p>
-          )}
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Client Name</label>
-            <Input value={clientName} onChange={(e) => setClientName(e.target.value)} />
+    <div className="space-y-4">
+      {/* Header with back button */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <ChevronLeft className="size-4 mr-1" /> Back to list
+          </Button>
+          <div>
+            <h2 className="text-lg font-semibold">Review: {item.folderName}</h2>
+            {typeCounts.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {typeCounts.map((tc) => `${tc.count} ${tc.type}`).join(", ")}
+              </p>
+            )}
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Project Name</label>
-            <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={saving} onClick={handleConfirm}>
+            {saving ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Check className="size-3.5 mr-1.5" />}
+            Confirm Import
+          </Button>
+        </div>
+      </div>
+
+      {/* Two-column layout: metadata on left, files on right */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left column: Metadata fields */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Engagement Metadata</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Client Name</label>
+              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Project Name</label>
+              <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -307,6 +327,21 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
             </div>
           </div>
 
+          {/* Text preview */}
+          {item.extractedTextPreview && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Extracted text preview</label>
+              <div className="rounded border bg-muted/50 p-3 text-xs max-h-48 overflow-y-auto whitespace-pre-wrap">
+                {item.extractedTextPreview}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right column: Files grouped by type */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Files in folder</h3>
+
           {/* Files grouped by type */}
           {item.files.length > 0 && (
             <div className="space-y-2">
@@ -354,25 +389,9 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
             </div>
           )}
 
-          {/* Text preview */}
-          {item.extractedTextPreview && (
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Extracted text preview</label>
-              <div className="rounded border bg-muted/50 p-2 text-xs max-h-24 overflow-y-auto whitespace-pre-wrap">
-                {item.extractedTextPreview}
-              </div>
-            </div>
-          )}
         </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" disabled={saving} onClick={handleConfirm}>
-            {saving ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Check className="size-3.5 mr-1.5" />}
-            Confirm Import
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
 
@@ -699,8 +718,16 @@ export default function ImportDetailPage() {
         </div>
       )}
 
-      {/* Items table */}
-      {job.items.length > 0 && (
+      {/* Inline review panel OR items table */}
+      {editItem ? (
+        <EditDialog
+          item={editItem}
+          accounts={accounts}
+          open={true}
+          onClose={() => setEditItem(null)}
+          onConfirm={handleConfirm}
+        />
+      ) : job.items.length > 0 && (
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -839,17 +866,6 @@ export default function ImportDetailPage() {
             </TableBody>
           </Table>
         </div>
-      )}
-
-      {/* Edit dialog */}
-      {editItem && (
-        <EditDialog
-          item={editItem}
-          accounts={accounts}
-          open={!!editItem}
-          onClose={() => setEditItem(null)}
-          onConfirm={handleConfirm}
-        />
       )}
     </div>
   );
