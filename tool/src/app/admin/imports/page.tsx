@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload } from "lucide-react";
+import { Upload, Trash2 } from "lucide-react";
 
 interface ImportJob {
   id: string;
@@ -65,6 +65,25 @@ export default function AdminImportsPage() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteJob(jobId: string, confirmedCount: number) {
+    const msg = confirmedCount > 0
+      ? `Delete this import and its ${confirmedCount} imported engagement(s)? This cannot be undone.`
+      : "Delete this import? This cannot be undone.";
+    if (!confirm(msg)) return;
+
+    try {
+      const res = await fetch(`/api/imports/${jobId}`, { method: "DELETE" });
+      if (res.ok) {
+        setJobs((prev) => prev.filter((j) => j.id !== jobId));
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? "Failed to delete import");
+      }
+    } catch {
+      setError("Failed to delete import — check network connection");
     }
   }
 
@@ -215,6 +234,7 @@ export default function AdminImportsPage() {
                 <TableHead className="text-center">Skipped</TableHead>
                 <TableHead>Batch</TableHead>
                 <TableHead>Created</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -254,6 +274,19 @@ export default function AdminImportsPage() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDate(job.createdAt)}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteJob(job.id, job.confirmedFiles);
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

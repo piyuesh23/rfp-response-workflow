@@ -100,3 +100,42 @@ export async function PATCH(
 
   return NextResponse.json(updated);
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    const { status, message } = guardErrorStatus(e);
+    return NextResponse.json({ error: message }, { status });
+  }
+
+  const { id } = await params;
+
+  const job = await prisma.importJob.findUnique({
+    where: { id },
+    include: { items: { select: { id: true, engagementId: true } } },
+  });
+
+  if (!job) {
+    return NextResponse.json({ error: "Import job not found" }, { status: 404 });
+  }
+
+  // Delete all engagements created from this import
+  const engagementIds = job.items
+    .map((item) => item.engagementId)
+    .filter((eid): eid is string => eid !== null);
+
+  if (engagementIds.length > 0) {
+    await prisma.engagement.deleteMany({
+      where: { id: { in: engagementIds } },
+    });
+  }
+
+  // Delete the import job (cascades to ImportItems via onDelete: Cascade)
+  await prisma.importJob.delete({ where: { id } });
+
+  return new NextResponse(null, { status: 204 });
+}
