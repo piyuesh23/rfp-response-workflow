@@ -64,14 +64,15 @@ export async function POST(request: NextRequest) {
     // Hash ZIP for deduplication
     const zipHash = crypto.createHash("sha256").update(buffer).digest("hex");
 
-    // Check for duplicate import
+    // Check for duplicate — only block if an active (PENDING/PROCESSING) job exists
+    // Completed/Review/Paused jobs can be re-imported
     const existingJob = await prisma.importJob.findFirst({
-      where: { zipHash, status: { not: "FAILED" } },
+      where: { zipHash, status: { in: ["PENDING", "PROCESSING"] } },
     });
     if (existingJob) {
       return NextResponse.json(
         {
-          error: `ZIP file "${file.name}" has already been imported`,
+          error: `ZIP file "${file.name}" is already being processed`,
           existingJobId: existingJob.id,
         },
         { status: 409 }
