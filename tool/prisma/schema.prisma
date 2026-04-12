@@ -27,23 +27,128 @@ enum UserRole {
   VIEWER
 }
 
+model Account {
+  id             String        @id @default(cuid())
+  canonicalName  String        @unique
+  aliases        String[]      @default([])
+  industry       Industry      @default(OTHER)
+  region         Region?
+  accountTier    AccountTier?
+  primaryContact String?
+  contactEmail   String?
+  crmExternalId  String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  engagements    Engagement[]
+}
+
+enum Industry {
+  HEALTHCARE
+  FINTECH
+  EDUCATION
+  GOVERNMENT
+  MEDIA
+  ECOMMERCE
+  NONPROFIT
+  MANUFACTURING
+  PROFESSIONAL_SERVICES
+  TECHNOLOGY
+  ENERGY
+  LEGAL
+  OTHER
+}
+
+enum Region {
+  NA
+  EMEA
+  APAC
+  LATAM
+}
+
+enum AccountTier {
+  ENTERPRISE
+  MID_MARKET
+  SMB
+}
+
 model Engagement {
-  id              String            @id @default(cuid())
+  id              String             @id @default(cuid())
   clientName      String
   projectName     String?
   techStack       TechStack
-  engagementType  EngagementType    @default(NEW_BUILD)
-  status          EngagementStatus  @default(DRAFT)
+  engagementType  EngagementType     @default(NEW_BUILD)
+  status          EngagementStatus   @default(DRAFT)
   workflowPath    WorkflowPath?
   templateFileUrl String?
-  templateStatus  Json?             // { questionsRfp?: boolean, salesDetail?: boolean, backend?: boolean, frontend?: boolean, fixedCost?: boolean, ai?: boolean }
-  createdBy       User              @relation(fields: [createdById], references: [id])
+  templateStatus  Json?              // { questionsRfp?: boolean, salesDetail?: boolean, backend?: boolean, frontend?: boolean, fixedCost?: boolean, ai?: boolean }
+  // Account link
+  account         Account?           @relation(fields: [accountId], references: [id])
+  accountId       String?
+  // Business metadata
+  rfpSource          RfpSource?
+  estimatedDealValue Float?
+  dealCurrency       String?          @default("USD")
+  submissionDeadline DateTime?
+  submittedAt        DateTime?
+  presalesOwner      String?
+  salesOwner         String?
+  isCompetitiveBid   Boolean?         @default(true)
+  numberOfCompetitors Int?
+  presalesHoursSpent Float?
+  tags               String[]         @default([])
+  // Outcome tracking (recorded via admin back-office)
+  outcome            EngagementOutcome?
+  lossReason         LossReason?
+  lossReasonDetail   String?
+  winFactors         String[]         @default([])
+  competitorWhoWon   String?
+  actualContractValue Float?
+  outcomeFeedback    String?
+  outcomeRecordedAt  DateTime?
+  outcomeRecordedBy  String?
+  // Relations
+  createdBy       User               @relation(fields: [createdById], references: [id])
   createdById     String
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
   phases          Phase[]
   assumptions     Assumption[]
   risks           RiskRegisterEntry[]
+
+  @@index([accountId])
+}
+
+enum RfpSource {
+  DIRECT_INVITE
+  PUBLIC_TENDER
+  REFERRAL
+  PARTNER
+  REPEAT_CLIENT
+  INBOUND
+  OTHER
+}
+
+enum EngagementOutcome {
+  WON
+  LOST
+  NO_DECISION
+  WITHDRAWN
+  PARTIAL_WIN
+  DEFERRED
+  NOT_SUBMITTED
+}
+
+enum LossReason {
+  PRICE_TOO_HIGH
+  SCOPE_MISMATCH
+  COMPETITOR_PREFERRED
+  TIMELINE_MISMATCH
+  BUDGET_CUT
+  RELATIONSHIP
+  TECHNICAL_FIT
+  NO_DECISION_MADE
+  OTHER
 }
 
 enum WorkflowPath {
