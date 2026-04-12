@@ -196,5 +196,246 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ totals, byUser, byPhase, daily, byModel, byEngagement });
+  // ---------------------------------------------------------------------------
+  // Business intelligence — cross-account analytics
+  // ---------------------------------------------------------------------------
+
+  // Fetch all engagements with outcome/business fields + account
+  const allEngagements = await prisma.engagement.findMany({
+    select: {
+      id: true,
+      techStack: true,
+      engagementType: true,
+      outcome: true,
+      lossReason: true,
+      estimatedDealValue: true,
+      financialProposalValue: true,
+      actualContractValue: true,
+      competitorWhoWon: true,
+      importSource: true,
+      createdAt: true,
+      accountId: true,
+      account: {
+        select: { id: true, canonicalName: true, industry: true },
+      },
+    },
+  });
+
+  // Helper: determine deal value (prefer actual > financial > estimated)
+  function dealValue(e: {
+    actualContractValue: number | null;
+    financialProposalValue: number | null;
+    estimatedDealValue: number | null;
+  }): number {
+    return e.actualContractValue ?? e.financialProposalValue ?? e.estimatedDealValue ?? 0;
+  }
+
+  // 1. byIndustry
+  const industryMap = new Map<
+    string,
+    { total: number; won: number; lost: number; totalDealValue: number }
+  >();
+  for (const e of allEngagements) {
+    const industry = e.account?.industry ?? "UNKNOWN";
+    const existing = industryMap.get(industry) ?? { total: 0, won: 0, lost: 0, totalDealValue: 0 };
+    existing.total++;
+    if (e.outcome === "WON") existing.won++;
+    if (e.outcome === "LOST") existing.lost++;
+    existing.totalDealValue += dealValue(e);
+    industryMap.set(industry, existing);
+  }
+  const byIndustry = Array.from(industryMap.entries())
+    .map(([industry, stats]) => ({
+      industry,
+      total: stats.total,
+      won: stats.won,
+      lost: stats.lost,
+      winRate:
+        stats.won + stats.lost > 0
+          ? Math.round((stats.won / (stats.won + stats.lost)) * 100)
+          : 0,
+      totalDealValue: stats.totalDealValue,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  // 2. byTechStack
+  const techStackMap = new Map<
+    string,
+    { total: number; won: number; lost: number; sumDealValue: number; countWithValue: number }
+  >();
+  for (const e of allEngagements) {
+    const stack = e.techStack as string;
+    const existing = techStackMap.get(stack) ?? { total: 0, won: 0, lost: 0, sumDealValue: 0, countWithValue: 0 };
+    existing.total++;
+    if (e.outcome === "WON") existing.won++;
+    if (e.outcome === "LOST") existing.lost++;
+    const dv = dealValue(e);
+    if (dv > 0) {
+      existing.sumDealValue += dv;
+      existing.countWithValue++;
+    }
+    techStackMap.set(stack, existing);
+  }
+  const byTechStack = Array.from(techStackMap.entries())
+    .map(([techStack, stats]) => ({
+      techStack,
+      total: stats.total,
+      won: stats.won,
+      lost: stats.lost,
+      winRate:
+        stats.won + stats.lost > 0
+          ? Math.round((stats.won / (stats.won + stats.lost)) * 100)
+          : 0,
+      avgDealValue:
+        stats.countWithValue > 0 ? stats.sumDealValue / stats.countWithValue : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  // 3. byEngagementType
+  const engTypeMap = new Map<
+    string,
+    { total: number; won: number; lost: number }
+  >();
+  for (const e of allEngagements) {
+    const type = e.engagementType as string;
+    const existing = engTypeMap.get(type) ?? { total: 0, won: 0, lost: 0 };
+    existing.total++;
+    if (e.outcome === "WON") existing.won++;
+    if (e.outcome === "LOST") existing.lost++;
+    engTypeMap.set(type, existing);
+  }
+  const byEngagementType = Array.from(engTypeMap.entries())
+    .map(([type, stats]) => ({
+      type,
+      total: stats.total,
+      won: stats.won,
+      lost: stats.lost,
+      winRate:
+        stats.won + stats.lost > 0
+          ? Math.round((stats.won / (stats.won + stats.lost)) * 100)
+          : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  // 4. topAccounts
+  const accountEngMap = new Map<
+    string,
+    { engagements: number; won: number; lost: number; pipeline: number; wonRevenue: number; accountName: string; industry: string }
+  >();
+  for (const e of allEngagements) {
+    if (!e.accountId || !e.account) continue;
+    const existing = accountEngMap.get(e.accountId) ?? {
+      engagements: 0,
+      won: 0,
+      lost: 0,
+      pipeline: 0,
+      wonRevenue: 0,
+      accountName: e.account.canonicalName,
+      industry: e.account.industry as string,
+    };
+    existing.engagements++;
+    const dv = dealValue(e);
+    existing.pipeline += dv;
+    if (e.outcome === "WON") {
+      existing.won++;
+      existing.wonRevenue += dv;
+    }
+    if (e.outcome === "LOST") existing.lost++;
+    accountEngMap.set(e.accountId, existing);
+  }
+  const topAccounts = Array.from(accountEngMap.entries())
+    .map(([accountId, stats]) => ({
+      accountId,
+      accountName: stats.accountName,
+      industry: stats.industry,
+      engagements: stats.engagements,
+      winRate:
+        stats.won + stats.lost > 0
+          ? Math.round((stats.won / (stats.won + stats.lost)) * 100)
+          : 0,
+      pipelineValue: stats.pipeline,
+      wonRevenue: stats.wonRevenue,
+    }))
+    .sort((a, b) => b.pipelineValue - a.pipelineValue)
+    .slice(0, 20);
+
+  // 5. monthlyVolume — last 12 months
+  const twelveMonthsAgo = new Date();
+  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+  const monthlyMap = new Map<string, { count: number; imported: number; native: number }>();
+  for (const e of allEngagements) {
+    if (e.createdAt < twelveMonthsAgo) continue;
+    const month = e.createdAt.toISOString().slice(0, 7); // "YYYY-MM"
+    const existing = monthlyMap.get(month) ?? { count: 0, imported: 0, native: 0 };
+    existing.count++;
+    if (e.importSource) existing.imported++;
+    else existing.native++;
+    monthlyMap.set(month, existing);
+  }
+  const monthlyVolume = Array.from(monthlyMap.entries())
+    .map(([month, stats]) => ({ month, ...stats }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  // 6. lossReasons
+  const lossReasonMap: Record<string, number> = {};
+  for (const e of allEngagements) {
+    if (e.outcome === "LOST" && e.lossReason) {
+      const key = e.lossReason as string;
+      lossReasonMap[key] = (lossReasonMap[key] ?? 0) + 1;
+    }
+  }
+
+  // 7. topCompetitors
+  const competitorMap = new Map<
+    string,
+    { count: number; winAgainst: number; lossAgainst: number }
+  >();
+  for (const e of allEngagements) {
+    if (!e.competitorWhoWon) continue;
+    const name = e.competitorWhoWon;
+    const existing = competitorMap.get(name) ?? { count: 0, winAgainst: 0, lossAgainst: 0 };
+    existing.count++;
+    // If we lost to them, they won against us; if we won, we beat them
+    if (e.outcome === "LOST") existing.lossAgainst++;
+    else if (e.outcome === "WON") existing.winAgainst++;
+    competitorMap.set(name, existing);
+  }
+  const topCompetitors = Array.from(competitorMap.entries())
+    .map(([name, stats]) => ({ name, ...stats }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+
+  // 8. summary
+  const withOutcome = allEngagements.filter((e) => e.outcome === "WON" || e.outcome === "LOST");
+  const wonEngagements = allEngagements.filter((e) => e.outcome === "WON");
+  const totalPipeline = allEngagements.reduce((sum, e) => sum + dealValue(e), 0);
+  const totalWonRevenue = wonEngagements.reduce((sum, e) => sum + dealValue(e), 0);
+  const allAccountIds = await prisma.account.count();
+  const businessSummary = {
+    totalAccounts: allAccountIds,
+    totalEngagements: allEngagements.length,
+    engagementsWithOutcome: withOutcome.length,
+    overallWinRate:
+      withOutcome.length > 0
+        ? Math.round((wonEngagements.length / withOutcome.length) * 100)
+        : 0,
+    totalPipeline,
+    totalWonRevenue,
+    avgDealSize:
+      allEngagements.length > 0 ? totalPipeline / allEngagements.length : 0,
+    importedEngagements: allEngagements.filter((e) => e.importSource).length,
+  };
+
+  const business = {
+    byIndustry,
+    byTechStack,
+    byEngagementType,
+    topAccounts,
+    monthlyVolume,
+    lossReasons: lossReasonMap,
+    topCompetitors,
+    summary: businessSummary,
+  };
+
+  return NextResponse.json({ totals, byUser, byPhase, daily, byModel, byEngagement, business });
 }
