@@ -98,7 +98,7 @@ export async function POST(
   }
 
   // Extract issueDate / estimatedBudget / deliveryTimeline from item metadata
-  // processedFiles carries secondary inference results
+  // processedFiles carries secondary inference results and AI classification data
   type ProcessedFileRecord = {
     name: string;
     fullPath: string;
@@ -109,6 +109,10 @@ export async function POST(
     inferredBudget?: number | null;
     inferredTimeline?: string | null;
     inferredFinalCost?: number | null;
+    classifiedType?: string;
+    classificationConfidence?: number;
+    classificationReasoning?: string;
+    deliverableMetadata?: Record<string, unknown> | null;
   };
   const processedFiles = (item.processedFiles ?? []) as ProcessedFileRecord[];
 
@@ -171,17 +175,23 @@ export async function POST(
   }
 
   // Helper: map file type to artefact type and phase
-  function getArtefactConfig(fileType: string): { phaseNumber: string; artefactType: ArtefactType; label: string } | null {
-    switch (fileType) {
+  // Accepts an optional aiClassifiedType to prefer over the static file type
+  function getArtefactConfig(fileType: string, aiClassifiedType?: string): { phaseNumber: string; artefactType: ArtefactType; label: string } | null {
+    const effectiveType = aiClassifiedType ?? fileType;
+    switch (effectiveType) {
       case "TOR":
       case "OTHER":
-        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: fileType === "TOR" ? "Imported TOR" : "" };
+        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: effectiveType === "TOR" ? "Imported TOR" : "" };
       case "ESTIMATE":
         return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE, label: "Imported Estimate" };
       case "PROPOSAL":
         return { phaseNumber: "5", artefactType: ArtefactType.PROPOSAL, label: "Imported Proposal" };
       case "FINANCIAL":
         return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE_STATE, label: "Financial Proposal" };
+      case "QA_RESPONSE":
+        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: "Imported Q&A Response" };
+      case "RESEARCH":
+        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: "Imported Research" };
       default:
         return null;
     }
@@ -200,8 +210,17 @@ export async function POST(
       if (!entry) continue;
 
       const fileBuffer = entry.getData();
-      const artefactConfig = getArtefactConfig(fileMeta.type);
-      const subfolder = getS3Subfolder(fileMeta.type, fileMeta.isSubmission ?? false);
+
+      // Look up AI classification data from processedFiles
+      const pfRecord = processedFiles.find((pf) => pf.fullPath === fileMeta.fullPath);
+      const aiClassifiedType =
+        pfRecord?.classificationConfidence != null && pfRecord.classificationConfidence >= 0.6
+          ? pfRecord.classifiedType
+          : undefined;
+
+      const artefactConfig = getArtefactConfig(fileMeta.type, aiClassifiedType);
+      const effectiveType = aiClassifiedType ?? fileMeta.type;
+      const subfolder = getS3Subfolder(effectiveType, fileMeta.isSubmission ?? false);
       const mimeType = getMimeType(fileMeta.name);
 
       // Upload file to S3
@@ -246,6 +265,9 @@ export async function POST(
                   label: artefactLabel,
                   contentMd: extractedText,
                   fileUrl: `engagements/${engagement.id}/${subfolder}/${fileMeta.name}`,
+                  metadata: pfRecord?.deliverableMetadata
+                    ? JSON.parse(JSON.stringify(pfRecord.deliverableMetadata))
+                    : undefined,
                 },
               });
             }

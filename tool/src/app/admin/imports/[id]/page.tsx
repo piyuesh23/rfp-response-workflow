@@ -41,6 +41,10 @@ interface ProcessedFileRecord {
   inferredBudget?: number | null;
   inferredTimeline?: string | null;
   inferredFinalCost?: number | null;
+  classifiedType?: string;
+  classificationConfidence?: number;
+  classificationReasoning?: string;
+  deliverableMetadata?: Record<string, unknown> | null;
 }
 
 interface ImportItem {
@@ -360,26 +364,70 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
                       {fileType === "OTHER" && "→ Phase 0 RESEARCH"}
                     </span>
                   </div>
-                  <div className="rounded border p-2 space-y-1 max-h-28 overflow-y-auto">
+                  <div className="rounded border p-2 space-y-1 max-h-40 overflow-y-auto">
                     {fileGroups[fileType].map((f, i) => {
                       const pf = processedMap.get(f.fullPath);
+                      const aiType = pf?.classifiedType;
+                      const aiConf = pf?.classificationConfidence;
+                      const aiReasoning = pf?.classificationReasoning;
+                      const hasAiClass = aiType != null && aiConf != null && aiConf > 0;
+                      const lowConfidence = hasAiClass && aiConf < 0.6;
+                      const confPct = aiConf != null ? Math.round(aiConf * 100) : null;
                       return (
-                        <div key={i} className="flex items-center justify-between text-xs gap-2">
-                          <span className={f.isPrimary ? "font-medium truncate" : "text-muted-foreground truncate"}>
-                            {f.isPrimary && <Badge variant="outline" className="mr-1 text-[10px] py-0">Primary</Badge>}
-                            {f.isSubmission && (
-                              <Badge variant="secondary" className="mr-1 text-[10px] py-0 bg-amber-100 text-amber-800">Final Submission</Badge>
-                            )}
-                            {f.name}
-                          </span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {pf && (
-                              <span className={`text-[10px] ${pf.extractedText ? "text-green-600" : "text-red-500"}`}>
-                                {pf.extractedText ? "extracted" : "failed"}
-                              </span>
-                            )}
-                            <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
+                        <div key={i} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-xs gap-2">
+                            <span className={f.isPrimary ? "font-medium truncate" : "text-muted-foreground truncate"}>
+                              {f.isPrimary && <Badge variant="outline" className="mr-1 text-[10px] py-0">Primary</Badge>}
+                              {f.isSubmission && (
+                                <Badge variant="secondary" className="mr-1 text-[10px] py-0 bg-amber-100 text-amber-800">Final Submission</Badge>
+                              )}
+                              {f.name}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {hasAiClass && (
+                                <span
+                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[aiType] ?? FILE_TYPE_COLORS.OTHER}`}
+                                  title={aiReasoning ?? undefined}
+                                >
+                                  {aiType}
+                                </span>
+                              )}
+                              {confPct != null && (
+                                <span
+                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                    confPct >= 80
+                                      ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                                      : confPct >= 60
+                                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                                        : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                                  }`}
+                                  title={aiReasoning ?? undefined}
+                                >
+                                  {confPct}%
+                                </span>
+                              )}
+                              {pf && (
+                                <span className={`text-[10px] ${pf.extractedText ? "text-green-600" : "text-red-500"}`}>
+                                  {pf.extractedText ? "extracted" : "failed"}
+                                </span>
+                              )}
+                              <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
+                            </div>
                           </div>
+                          {lowConfidence && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400 pl-2">
+                              Low confidence — please verify classification
+                            </p>
+                          )}
+                          {pf?.deliverableMetadata && (
+                            <div className="text-[10px] text-muted-foreground mt-0.5 pl-2 border-l-2">
+                              {pf.classifiedType === "TOR" && `${(pf.deliverableMetadata as Record<string, unknown>).requirementCount ?? 0} requirements, ${(pf.deliverableMetadata as Record<string, unknown>).integrationCount ?? 0} integrations`}
+                              {pf.classifiedType === "ESTIMATE" && `${(pf.deliverableMetadata as Record<string, unknown>).lineItemCount ?? 0} line items, ${((pf.deliverableMetadata as Record<string, unknown>).totalHours as { low?: number; high?: number } | undefined)?.low ?? 0}–${((pf.deliverableMetadata as Record<string, unknown>).totalHours as { low?: number; high?: number } | undefined)?.high ?? 0} hrs`}
+                              {pf.classifiedType === "PROPOSAL" && `${((pf.deliverableMetadata as Record<string, unknown>).sections as unknown[] | undefined)?.length ?? 0} sections`}
+                              {pf.classifiedType === "FINANCIAL" && `Total: $${((pf.deliverableMetadata as Record<string, unknown>).totalCost as number | undefined)?.toLocaleString() ?? "N/A"}`}
+                              {pf.classifiedType === "QA_RESPONSE" && `${(pf.deliverableMetadata as Record<string, unknown>).questionCount ?? 0} questions, ${(pf.deliverableMetadata as Record<string, unknown>).answeredCount ?? 0} answered`}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

@@ -11,6 +11,8 @@ import { downloadFile, uploadFile } from "@/lib/storage";
 import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
 import { inferEngagementFromText, inferFromSecondaryDocument, classifyFileType } from "@/lib/ai/infer-engagement";
+import { classifyDocument } from "@/lib/ai/classify-document";
+import { extractDeliverables } from "@/lib/ai/extract-deliverables";
 import { aiLimiter } from "@/lib/ai/rate-limiter";
 import { redisConnection, ImportJobData } from "@/lib/queue";
 import { ArtefactType } from "@/generated/prisma/client";
@@ -158,6 +160,10 @@ interface ProcessedFileRecord {
   inferredBudget?: number | null;
   inferredTimeline?: string | null;
   inferredFinalCost?: number | null;
+  classifiedType?: string;
+  classificationConfidence?: number;
+  classificationReasoning?: string;
+  deliverableMetadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -178,7 +184,7 @@ async function processOneFolder(
     return {
       name: fileName,
       fullPath: e.entryName,
-      type: classifyFileType(fileName),
+      type: classifyFileType(fileName) as string,
       sizeBytes: e.header.size ?? 0,
       isPrimary: false,
       isSubmission,
@@ -211,8 +217,40 @@ async function processOneFolder(
     );
   }
 
-  // Track primary file in processedFileRecords
+  // AI classify and extract metadata for primary file
   const primaryMeta = filesMetadata.find((f) => f.fullPath === primaryEntry.entryName);
+  let primaryClassifiedType: string = primaryMeta ? classifyFileType(primaryMeta.name) : "OTHER";
+  let primaryClassificationConfidence = 0;
+  let primaryClassificationReasoning = "";
+  let primaryDeliverableMetadata: Record<string, unknown> | null = null;
+
+  if (extractedText.length >= 200) {
+    try {
+      const classification = await aiLimiter.execute(() => classifyDocument(extractedText));
+      primaryClassifiedType = classification.documentType;
+      primaryClassificationConfidence = classification.confidence;
+      primaryClassificationReasoning = classification.reasoning;
+    } catch {
+      // Keep filename-based classification as fallback
+    }
+
+    if (primaryClassificationConfidence >= 0.6) {
+      try {
+        primaryDeliverableMetadata = await aiLimiter.execute(() =>
+          extractDeliverables(extractedText, primaryClassifiedType)
+        );
+      } catch {
+        // Non-fatal — proceed without metadata
+      }
+    }
+  }
+
+  // Update filesMetadata type for primary file if AI confidence is high enough
+  if (primaryMeta && primaryClassificationConfidence >= 0.6) {
+    primaryMeta.type = primaryClassifiedType as typeof primaryMeta.type;
+  }
+
+  // Track primary file in processedFileRecords
   if (primaryMeta) {
     processedFileRecords.push({
       name: primaryMeta.name,
@@ -221,6 +259,10 @@ async function processOneFolder(
       isSubmission: primaryMeta.isSubmission,
       extractedText: extractedText.length > 0,
       artefactCreated: false,
+      classifiedType: primaryClassifiedType,
+      classificationConfidence: primaryClassificationConfidence,
+      classificationReasoning: primaryClassificationReasoning,
+      deliverableMetadata: primaryDeliverableMetadata,
     });
   }
 
@@ -265,6 +307,35 @@ async function processOneFolder(
       );
     }
 
+    // AI classify and extract metadata for secondary file
+    let secondaryClassifiedType: string = classifyFileType(fileMeta.name);
+    let secondaryClassificationConfidence = 0;
+    let secondaryClassificationReasoning = "";
+    let secondaryDeliverableMetadata: Record<string, unknown> | null = null;
+
+    if (extractedOk && secondaryText.length >= 200) {
+      try {
+        const classification = await aiLimiter.execute(() => classifyDocument(secondaryText));
+        secondaryClassifiedType = classification.documentType;
+        secondaryClassificationConfidence = classification.confidence;
+        secondaryClassificationReasoning = classification.reasoning;
+      } catch {
+        // Keep filename-based classification as fallback
+      }
+
+      if (secondaryClassificationConfidence >= 0.6) {
+        try {
+          secondaryDeliverableMetadata = await aiLimiter.execute(() =>
+            extractDeliverables(secondaryText, secondaryClassifiedType)
+          );
+        } catch {
+          // Non-fatal — proceed without metadata
+        }
+        // Update filesMetadata type if AI confidence is high enough
+        fileMeta.type = secondaryClassifiedType as typeof fileMeta.type;
+      }
+    }
+
     const record: ProcessedFileRecord = {
       name: fileMeta.name,
       fullPath: fileMeta.fullPath,
@@ -272,6 +343,10 @@ async function processOneFolder(
       isSubmission: fileMeta.isSubmission,
       extractedText: extractedOk,
       artefactCreated: false,
+      classifiedType: secondaryClassifiedType,
+      classificationConfidence: secondaryClassificationConfidence,
+      classificationReasoning: secondaryClassificationReasoning,
+      deliverableMetadata: secondaryDeliverableMetadata,
     };
 
     // For FINANCIAL or ESTIMATE files, run secondary inference — rate-limited
