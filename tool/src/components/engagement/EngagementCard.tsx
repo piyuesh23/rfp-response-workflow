@@ -18,6 +18,7 @@ interface EngagementCardProps {
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
   costSummary?: { totalTokens: number; estimatedCostUsd: number; phasesRun: number } | null
+  importSource?: string | null
 }
 
 const statusConfig: Record<EngagementStatus, { label: string; className: string }> = {
@@ -68,6 +69,7 @@ export function EngagementCard({
   phaseProgress,
   updatedAt,
   costSummary,
+  importSource,
 }: EngagementCardProps) {
   const { completed, total } = phaseProgress
   const isComplete = completed === total && total > 0
@@ -85,12 +87,19 @@ export function EngagementCard({
                 <CardDescription className="truncate">{projectName}</CardDescription>
               )}
             </div>
-            <Badge
-              className={statusCfg.className}
-              variant="outline"
-            >
-              {statusCfg.label}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {importSource && (
+                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-400">
+                  Imported
+                </Badge>
+              )}
+              <Badge
+                className={statusCfg.className}
+                variant="outline"
+              >
+                {statusCfg.label}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
 

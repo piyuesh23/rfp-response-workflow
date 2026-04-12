@@ -43,6 +43,28 @@ export function getPhaseQueue(): Queue<PhaseJobData> {
   return _phaseQueue;
 }
 
+// --- Import queue ---
+export interface ImportJobData {
+  importJobId: string;
+  userId: string;
+}
+
+let _importQueue: Queue<ImportJobData> | undefined;
+
+export function getImportQueue(): Queue<ImportJobData> {
+  if (!_importQueue) {
+    _importQueue = new Queue<ImportJobData>("rfp-import", {
+      connection: getConnection(),
+      defaultJobOptions: {
+        attempts: 1,
+        removeOnComplete: 50,
+        removeOnFail: 100,
+      },
+    });
+  }
+  return _importQueue;
+}
+
 // Keep backward-compatible named exports that are lazy via getters
 // These are used by existing code that imports `connection` and `phaseQueue` directly
 export const connection: IORedis = new Proxy({} as IORedis, {

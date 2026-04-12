@@ -122,6 +122,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Clean up any linked ImportItem (from ZIP imports)
+  await prisma.importItem.updateMany({
+    where: { engagementId: id },
+    data: {
+      engagementId: null,
+      status: "SKIPPED",
+    },
+  });
+
   await prisma.engagement.delete({ where: { id } });
 
   return new NextResponse(null, { status: 204 });

@@ -25,6 +25,7 @@ interface Engagement {
   phases: { phaseNumber: string; status: string }[]
   updatedAt: string
   costSummary?: CostSummary | null
+  importSource?: string | null
 }
 
 interface GridEngagement {
@@ -37,6 +38,7 @@ interface GridEngagement {
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
   costSummary?: CostSummary | null
+  importSource?: string | null
 }
 
 export default function DashboardPage() {
@@ -76,6 +78,7 @@ export default function DashboardPage() {
               },
               updatedAt: new Date(e.updatedAt),
               costSummary: e.costSummary ?? null,
+              importSource: e.importSource ?? null,
             }
           })
         )

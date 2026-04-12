@@ -29,6 +29,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Check, X } from "lucide-react";
+import { MetricCard } from "@/components/charts/MetricCard";
+import { OutcomePieChart } from "@/components/charts/OutcomePieChart";
+import { LossReasonsChart } from "@/components/charts/LossReasonsChart";
+import { DealValueTimeline } from "@/components/charts/DealValueTimeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,7 +52,9 @@ interface Engagement {
   status: string;
   outcome: string | null;
   estimatedDealValue: number | null;
+  actualContractValue: number | null;
   dealCurrency: string | null;
+  importSource: string | null;
   createdAt: string;
   phases: PhaseInfo[];
 }
@@ -66,6 +72,41 @@ interface Account {
   updatedAt: string;
   engagements: Engagement[];
 }
+
+interface AnalyticsSummary {
+  totalEngagements: number;
+  winRate: number | null;
+  outcomesRecorded: number;
+  totalPipelineValue: number;
+  wonRevenue: number;
+  avgDealSize: number;
+  totalAiCostUsd: number;
+  totalTokensUsed: number;
+  phasesRun: number;
+  firstEngagement: string | null;
+  lastEngagement: string | null;
+}
+
+interface AccountAnalytics {
+  summary: AnalyticsSummary;
+  outcomes: Record<string, number>;
+  lossReasons: Record<string, number>;
+  competitors: { name: string; count: number }[];
+  techStackDistribution: Record<string, number>;
+  engagementTypeDistribution: Record<string, number>;
+  timeline: Engagement[];
+  financial: {
+    byQuarter: { quarter: string; pipelineValue: number; wonValue: number; engagementCount: number }[];
+    byType: { type: string; totalValue: number; avgValue: number; count: number }[];
+  };
+  aiInvestment: {
+    totalCostUsd: number;
+    totalTokens: number;
+    byPhase: { phaseNumber: string; count: number; avgCost: number; totalCost: number }[];
+  };
+}
+
+type TabId = "overview" | "engagements" | "winloss" | "financial" | "details";
 
 // ---------------------------------------------------------------------------
 // Label maps
@@ -189,13 +230,26 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function formatCurrency(value: number | null, currency: string | null): string {
+function formatCurrency(value: number | null, currency?: string | null): string {
   if (value == null) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currency ?? "USD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatCurrencyK(value: number): string {
+  if (value === 0) return "$0";
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}k`;
+  return `$${Math.round(value)}`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 function outcomeVariant(
@@ -217,9 +271,7 @@ function outcomeVariant(
   }
 }
 
-function statusVariant(
-  status: string
-): "default" | "secondary" | "outline" {
+function statusVariant(status: string): "default" | "secondary" | "outline" {
   switch (status) {
     case "COMPLETED":
       return "default";
@@ -239,19 +291,10 @@ interface EditableFieldProps {
   value: string;
   onSave: (newValue: string) => Promise<void>;
   renderValue?: (val: string) => React.ReactNode;
-  children?: (
-    val: string,
-    setVal: (v: string) => void
-  ) => React.ReactNode;
+  children?: (val: string, setVal: (v: string) => void) => React.ReactNode;
 }
 
-function EditableField({
-  label,
-  value,
-  onSave,
-  renderValue,
-  children,
-}: EditableFieldProps) {
+function EditableField({ label, value, onSave, renderValue, children }: EditableFieldProps) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(value);
   const [saving, setSaving] = React.useState(false);
@@ -296,20 +339,10 @@ function EditableField({
               autoFocus
             />
           )}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleSave}
-            disabled={saving}
-          >
+          <Button variant="ghost" size="icon-sm" onClick={handleSave} disabled={saving}>
             <Check className="size-3.5" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleCancel}
-            disabled={saving}
-          >
+          <Button variant="ghost" size="icon-sm" onClick={handleCancel} disabled={saving}>
             <X className="size-3.5" />
           </Button>
         </div>
@@ -435,10 +468,7 @@ function OutcomeDialog({ engagement, onRecorded }: OutcomeDialogProps) {
           {outcome === "LOST" && (
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Loss Reason</label>
-              <Select
-                value={lossReason}
-                onValueChange={(v) => { if (v) setLossReason(v); }}
-              >
+              <Select value={lossReason} onValueChange={(v) => { if (v) setLossReason(v); }}>
                 <SelectTrigger className="h-8">
                   <SelectValue placeholder="Select reason..." />
                 </SelectTrigger>
@@ -509,6 +539,524 @@ function OutcomeDialog({ engagement, onRecorded }: OutcomeDialogProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Tab navigation
+// ---------------------------------------------------------------------------
+
+interface TabNavProps {
+  active: TabId;
+  onChange: (tab: TabId) => void;
+}
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "engagements", label: "Engagements" },
+  { id: "winloss", label: "Win / Loss" },
+  { id: "financial", label: "Financial" },
+  { id: "details", label: "Details" },
+];
+
+function TabNav({ active, onChange }: TabNavProps) {
+  return (
+    <div className="flex gap-1 border-b">
+      {TABS.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            active === tab.id
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Overview tab
+// ---------------------------------------------------------------------------
+
+interface OverviewTabProps {
+  account: Account;
+  analytics: AccountAnalytics | null;
+  analyticsLoading: boolean;
+}
+
+function OverviewTab({ analytics, analyticsLoading }: OverviewTabProps) {
+  if (analyticsLoading) {
+    return <p className="text-sm text-muted-foreground py-4">Loading analytics...</p>;
+  }
+
+  if (!analytics) {
+    return <EmptyState message="No analytics available" />;
+  }
+
+  const { summary } = analytics;
+
+  const recentEngagements = analytics.timeline.slice(0, 5);
+
+  return (
+    <div className="space-y-6">
+      {/* 6 metric cards in 2x3 grid */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="Total Engagements"
+          value={summary.totalEngagements}
+          subtitle={summary.firstEngagement ? `Since ${formatDate(summary.firstEngagement)}` : undefined}
+        />
+        <MetricCard
+          label="Win Rate"
+          value={summary.winRate != null ? `${Math.round(summary.winRate)}%` : "—"}
+          subtitle={`${summary.outcomesRecorded} outcomes recorded`}
+        />
+        <MetricCard
+          label="Total Pipeline"
+          value={summary.totalPipelineValue > 0 ? formatCurrencyK(summary.totalPipelineValue) : "—"}
+        />
+        <MetricCard
+          label="Won Revenue"
+          value={summary.wonRevenue > 0 ? formatCurrencyK(summary.wonRevenue) : "—"}
+          className="text-green-700 dark:text-green-300"
+        />
+        <MetricCard
+          label="Avg Deal Size"
+          value={summary.avgDealSize > 0 ? formatCurrencyK(summary.avgDealSize) : "—"}
+        />
+        <MetricCard
+          label="AI Cost Spent"
+          value={summary.totalAiCostUsd > 0 ? `$${summary.totalAiCostUsd.toFixed(2)}` : "—"}
+          subtitle={summary.totalTokensUsed > 0 ? `${formatTokens(summary.totalTokensUsed)} tokens · ${summary.phasesRun} phases` : undefined}
+        />
+      </div>
+
+      {/* Recent engagements */}
+      {recentEngagements.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+            Recent Activity
+          </h3>
+          <div className="space-y-2">
+            {recentEngagements.map((eng) => (
+              <div
+                key={eng.id}
+                className="flex items-center justify-between rounded-lg border px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{eng.clientName}</span>
+                    {eng.projectName && (
+                      <span className="text-xs text-muted-foreground truncate">— {eng.projectName}</span>
+                    )}
+                    {eng.importSource && (
+                      <Badge variant="outline" className="text-xs shrink-0">Imported</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-muted-foreground">
+                      {techStackLabels[eng.techStack] ?? eng.techStack}
+                    </span>
+                    <span className="text-xs text-muted-foreground">·</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(eng.createdAt)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 ml-4 shrink-0">
+                  {eng.estimatedDealValue != null && (
+                    <span className="text-xs text-muted-foreground">
+                      {formatCurrencyK(eng.estimatedDealValue)}
+                    </span>
+                  )}
+                  {eng.outcome ? (
+                    <Badge variant={outcomeVariant(eng.outcome)} className="text-xs">
+                      {outcomeLabels[eng.outcome] ?? eng.outcome}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      {eng.status.replace("_", " ")}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Engagements tab
+// ---------------------------------------------------------------------------
+
+interface EngagementsTabProps {
+  engagements: Engagement[];
+  onEngagementUpdated: (updated: Engagement) => void;
+}
+
+function EngagementsTab({ engagements, onEngagementUpdated }: EngagementsTabProps) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        {engagements.length} engagement{engagements.length !== 1 ? "s" : ""} linked to this account
+      </p>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Project Name</TableHead>
+              <TableHead>Tech Stack</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Outcome</TableHead>
+              <TableHead>Deal Value</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead className="w-28" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {engagements.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                  No engagements linked to this account
+                </TableCell>
+              </TableRow>
+            ) : (
+              engagements.map((eng) => (
+                <TableRow key={eng.id}>
+                  <TableCell>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{eng.clientName}</div>
+                      {eng.projectName && (
+                        <div className="text-xs text-muted-foreground truncate">{eng.projectName}</div>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {techStackLabels[eng.techStack] ?? eng.techStack}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {engagementTypeLabels[eng.engagementType] ?? eng.engagementType}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(eng.status)} className="text-xs">
+                      {eng.status.replace("_", " ")}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {eng.outcome ? (
+                      <Badge variant={outcomeVariant(eng.outcome)} className="text-xs">
+                        {outcomeLabels[eng.outcome] ?? eng.outcome}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatCurrency(eng.estimatedDealValue, eng.dealCurrency)}
+                  </TableCell>
+                  <TableCell>
+                    {eng.importSource ? (
+                      <Badge variant="outline" className="text-xs">Imported</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {formatDate(eng.createdAt)}
+                  </TableCell>
+                  <TableCell>
+                    {eng.outcome == null && (
+                      <OutcomeDialog engagement={eng} onRecorded={onEngagementUpdated} />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Win/Loss tab
+// ---------------------------------------------------------------------------
+
+interface WinLossTabProps {
+  analytics: AccountAnalytics | null;
+  analyticsLoading: boolean;
+}
+
+function WinLossTab({ analytics, analyticsLoading }: WinLossTabProps) {
+  if (analyticsLoading) {
+    return <p className="text-sm text-muted-foreground py-4">Loading analytics...</p>;
+  }
+  if (!analytics) {
+    return <EmptyState message="No analytics available" />;
+  }
+
+  const hasOutcomes = Object.values(analytics.outcomes).some((v) => v > 0);
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Outcome pie */}
+        <div className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-base font-medium">Outcome Distribution</h3>
+          {hasOutcomes ? (
+            <OutcomePieChart data={analytics.outcomes} />
+          ) : (
+            <EmptyState message="No outcomes recorded yet" />
+          )}
+        </div>
+
+        {/* Loss reasons */}
+        <div className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-base font-medium">Loss Reasons</h3>
+          <LossReasonsChart data={analytics.lossReasons} />
+        </div>
+      </div>
+
+      {/* Competitors */}
+      {analytics.competitors.length > 0 && (
+        <div className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-base font-medium">Competitors</h3>
+          <div className="rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="text-xs">Competitor</TableHead>
+                  <TableHead className="text-right text-xs">Times Won Against Us</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analytics.competitors.map((c, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-sm font-medium">{c.name}</TableCell>
+                    <TableCell className="text-right text-sm">{c.count}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Financial tab
+// ---------------------------------------------------------------------------
+
+interface FinancialTabProps {
+  analytics: AccountAnalytics | null;
+  analyticsLoading: boolean;
+}
+
+function FinancialTab({ analytics, analyticsLoading }: FinancialTabProps) {
+  if (analyticsLoading) {
+    return <p className="text-sm text-muted-foreground py-4">Loading analytics...</p>;
+  }
+  if (!analytics) {
+    return <EmptyState message="No analytics available" />;
+  }
+
+  const { financial, summary } = analytics;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="Total Pipeline"
+          value={summary.totalPipelineValue > 0 ? formatCurrencyK(summary.totalPipelineValue) : "—"}
+        />
+        <MetricCard
+          label="Won Revenue"
+          value={summary.wonRevenue > 0 ? formatCurrencyK(summary.wonRevenue) : "—"}
+        />
+        <MetricCard
+          label="Avg Deal Size"
+          value={summary.avgDealSize > 0 ? formatCurrencyK(summary.avgDealSize) : "—"}
+        />
+      </div>
+
+      {/* Deal value timeline */}
+      <div className="rounded-xl border bg-card p-5 space-y-3">
+        <h3 className="text-base font-medium">Deal Value by Quarter</h3>
+        <DealValueTimeline data={financial.byQuarter} />
+      </div>
+
+      {/* By engagement type */}
+      {financial.byType.length > 0 && (
+        <div className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-base font-medium">By Engagement Type</h3>
+          <div className="rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="text-xs">Type</TableHead>
+                  <TableHead className="text-right text-xs">Count</TableHead>
+                  <TableHead className="text-right text-xs">Total Value</TableHead>
+                  <TableHead className="text-right text-xs">Avg Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {financial.byType.map((row, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-sm">
+                      {engagementTypeLabels[row.type] ?? row.type}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">{row.count}</TableCell>
+                    <TableCell className="text-right text-sm">
+                      {row.totalValue > 0 ? formatCurrencyK(row.totalValue) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {row.avgValue > 0 ? formatCurrencyK(row.avgValue) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Details tab (edit form)
+// ---------------------------------------------------------------------------
+
+interface DetailsTabProps {
+  account: Account;
+  onPatch: (fields: Record<string, unknown>) => Promise<void>;
+}
+
+function DetailsTab({ account, onPatch }: DetailsTabProps) {
+  return (
+    <div className="rounded-xl border bg-card p-5 space-y-5">
+      <h2 className="text-base font-medium">Account Details</h2>
+      <div className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
+        <EditableField
+          label="Account Name"
+          value={account.canonicalName}
+          onSave={(v) => onPatch({ canonicalName: v })}
+        />
+
+        <EditableField
+          label="Industry"
+          value={account.industry}
+          onSave={(v) => onPatch({ industry: v })}
+          renderValue={(v) => industryLabels[v] ?? v}
+        >
+          {(draft, setDraft) => (
+            <Select value={draft} onValueChange={(v) => { if (v) setDraft(v); }}>
+              <SelectTrigger className="h-7 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INDUSTRY_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {industryLabels[opt] ?? opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </EditableField>
+
+        <EditableField
+          label="Tier"
+          value={account.accountTier ?? ""}
+          onSave={(v) => onPatch({ accountTier: v || null })}
+          renderValue={(v) => (v ? (tierLabels[v] ?? v) : "—")}
+        >
+          {(draft, setDraft) => (
+            <Select value={draft} onValueChange={(v) => { if (v) setDraft(v); }}>
+              <SelectTrigger className="h-7 text-sm">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
+                <SelectItem value="MID_MARKET">Mid-Market</SelectItem>
+                <SelectItem value="SMB">SMB</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </EditableField>
+
+        <EditableField
+          label="Region"
+          value={account.region ?? ""}
+          onSave={(v) => onPatch({ region: v || null })}
+          renderValue={(v) => (v ? (regionLabels[v] ?? v) : "—")}
+        >
+          {(draft, setDraft) => (
+            <Select value={draft} onValueChange={(v) => { if (v) setDraft(v); }}>
+              <SelectTrigger className="h-7 text-sm">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NA">North America</SelectItem>
+                <SelectItem value="EMEA">EMEA</SelectItem>
+                <SelectItem value="APAC">Asia Pacific</SelectItem>
+                <SelectItem value="LATAM">Latin America</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </EditableField>
+
+        <EditableField
+          label="Primary Contact"
+          value={account.primaryContact ?? ""}
+          onSave={(v) => onPatch({ primaryContact: v || null })}
+        />
+
+        <EditableField
+          label="Contact Email"
+          value={account.contactEmail ?? ""}
+          onSave={(v) => onPatch({ contactEmail: v || null })}
+        />
+
+        <EditableField
+          label="Notes"
+          value={account.notes ?? ""}
+          onSave={(v) => onPatch({ notes: v || null })}
+        />
+      </div>
+      <div className="pt-2 border-t text-xs text-muted-foreground space-y-1">
+        <p>Created {formatDate(account.createdAt)}</p>
+        <p>Last updated {formatDate(account.updatedAt)}</p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -519,6 +1067,10 @@ export default function AccountDetailPage() {
   const [account, setAccount] = React.useState<Account | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<TabId>("overview");
+  const [analytics, setAnalytics] = React.useState<AccountAnalytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = React.useState(false);
+  const [analyticsLoaded, setAnalyticsLoaded] = React.useState(false);
 
   React.useEffect(() => {
     fetch(`/api/accounts/${id}`)
@@ -532,6 +1084,24 @@ export default function AccountDetailPage() {
       )
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Fetch analytics when overview, winloss, or financial tabs are active
+  React.useEffect(() => {
+    if (!analyticsLoaded && (activeTab === "overview" || activeTab === "winloss" || activeTab === "financial")) {
+      setAnalyticsLoading(true);
+      fetch(`/api/accounts/${id}/analytics`)
+        .then((res) => {
+          if (!res.ok) return Promise.reject(new Error(`HTTP ${res.status}`));
+          return res.json() as Promise<AccountAnalytics>;
+        })
+        .then((data) => {
+          setAnalytics(data);
+          setAnalyticsLoaded(true);
+        })
+        .catch(() => {})
+        .finally(() => setAnalyticsLoading(false));
+    }
+  }, [id, activeTab, analyticsLoaded]);
 
   async function patchAccount(fields: Record<string, unknown>) {
     const res = await fetch(`/api/accounts/${id}`, {
@@ -557,6 +1127,8 @@ export default function AccountDetailPage() {
         ),
       };
     });
+    // Invalidate analytics so it reloads
+    setAnalyticsLoaded(false);
   }
 
   if (loading) {
@@ -578,196 +1150,45 @@ export default function AccountDetailPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-xl font-semibold">{account.canonicalName}</h1>
         <p className="text-sm text-muted-foreground">
-          Created {formatDate(account.createdAt)} · Last updated{" "}
-          {formatDate(account.updatedAt)}
+          {account.engagements.length} engagement{account.engagements.length !== 1 ? "s" : ""}
+          {account.industry ? ` · ${industryLabels[account.industry] ?? account.industry}` : ""}
+          {account.accountTier ? ` · ${tierLabels[account.accountTier] ?? account.accountTier}` : ""}
+          {account.region ? ` · ${regionLabels[account.region] ?? account.region}` : ""}
         </p>
       </div>
 
-      {/* Editable fields */}
-      <div className="rounded-xl border bg-card p-5 space-y-5">
-        <h2 className="text-base font-medium">Account Details</h2>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
-          <EditableField
-            label="Account Name"
-            value={account.canonicalName}
-            onSave={(v) => patchAccount({ canonicalName: v })}
+      {/* Tab navigation */}
+      <TabNav active={activeTab} onChange={setActiveTab} />
+
+      {/* Tab content */}
+      <div className="pt-2">
+        {activeTab === "overview" && (
+          <OverviewTab
+            account={account}
+            analytics={analytics}
+            analyticsLoading={analyticsLoading}
           />
-
-          <EditableField
-            label="Industry"
-            value={account.industry}
-            onSave={(v) => patchAccount({ industry: v })}
-            renderValue={(v) => industryLabels[v] ?? v}
-          >
-            {(draft, setDraft) => (
-              <Select value={draft} onValueChange={(v) => { if (v) setDraft(v); }}>
-                <SelectTrigger className="h-7 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INDUSTRY_OPTIONS.map((opt) => (
-                    <SelectItem key={opt} value={opt}>
-                      {industryLabels[opt] ?? opt}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </EditableField>
-
-          <EditableField
-            label="Tier"
-            value={account.accountTier ?? ""}
-            onSave={(v) => patchAccount({ accountTier: v || null })}
-            renderValue={(v) => (v ? (tierLabels[v] ?? v) : "—")}
-          >
-            {(draft, setDraft) => (
-              <Select value={draft} onValueChange={(v) => { if (v) setDraft(v); }}>
-                <SelectTrigger className="h-7 text-sm">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ENTERPRISE">Enterprise</SelectItem>
-                  <SelectItem value="MID_MARKET">Mid-Market</SelectItem>
-                  <SelectItem value="SMB">SMB</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </EditableField>
-
-          <EditableField
-            label="Region"
-            value={account.region ?? ""}
-            onSave={(v) => patchAccount({ region: v || null })}
-            renderValue={(v) => (v ? (regionLabels[v] ?? v) : "—")}
-          >
-            {(draft, setDraft) => (
-              <Select value={draft} onValueChange={(v) => { if (v) setDraft(v); }}>
-                <SelectTrigger className="h-7 text-sm">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="NA">North America</SelectItem>
-                  <SelectItem value="EMEA">EMEA</SelectItem>
-                  <SelectItem value="APAC">Asia Pacific</SelectItem>
-                  <SelectItem value="LATAM">Latin America</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </EditableField>
-
-          <EditableField
-            label="Primary Contact"
-            value={account.primaryContact ?? ""}
-            onSave={(v) => patchAccount({ primaryContact: v || null })}
+        )}
+        {activeTab === "engagements" && (
+          <EngagementsTab
+            engagements={account.engagements}
+            onEngagementUpdated={handleEngagementUpdated}
           />
-
-          <EditableField
-            label="Contact Email"
-            value={account.contactEmail ?? ""}
-            onSave={(v) => patchAccount({ contactEmail: v || null })}
-          />
-        </div>
-      </div>
-
-      {/* Engagements */}
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-base font-medium">Engagements</h2>
-          <p className="text-sm text-muted-foreground">
-            {account.engagements.length} engagement
-            {account.engagements.length !== 1 ? "s" : ""} linked to this account
-          </p>
-        </div>
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project Name</TableHead>
-                <TableHead>Tech Stack</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Outcome</TableHead>
-                <TableHead>Deal Value</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-28" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {account.engagements.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    className="text-center text-muted-foreground py-8"
-                  >
-                    No engagements linked to this account
-                  </TableCell>
-                </TableRow>
-              ) : (
-                account.engagements.map((eng) => (
-                  <TableRow key={eng.id}>
-                    <TableCell>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">
-                          {eng.clientName}
-                        </div>
-                        {eng.projectName && (
-                          <div className="text-xs text-muted-foreground truncate">
-                            {eng.projectName}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {techStackLabels[eng.techStack] ?? eng.techStack}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {engagementTypeLabels[eng.engagementType] ?? eng.engagementType}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(eng.status)} className="text-xs">
-                        {eng.status.replace("_", " ")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {eng.outcome ? (
-                        <Badge
-                          variant={outcomeVariant(eng.outcome)}
-                          className="text-xs"
-                        >
-                          {outcomeLabels[eng.outcome] ?? eng.outcome}
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatCurrency(eng.estimatedDealValue, eng.dealCurrency)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(eng.createdAt)}
-                    </TableCell>
-                    <TableCell>
-                      {eng.outcome == null && (
-                        <OutcomeDialog
-                          engagement={eng}
-                          onRecorded={handleEngagementUpdated}
-                        />
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        )}
+        {activeTab === "winloss" && (
+          <WinLossTab analytics={analytics} analyticsLoading={analyticsLoading} />
+        )}
+        {activeTab === "financial" && (
+          <FinancialTab analytics={analytics} analyticsLoading={analyticsLoading} />
+        )}
+        {activeTab === "details" && (
+          <DetailsTab account={account} onPatch={patchAccount} />
+        )}
       </div>
     </div>
   );

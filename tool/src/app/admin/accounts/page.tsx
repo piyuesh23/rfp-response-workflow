@@ -28,7 +28,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, GitMerge } from "lucide-react";
+import { Plus, GitMerge, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,12 +43,30 @@ interface Account {
   createdAt: string;
   _count: { engagements: number };
   winRate?: number | null;
+  outcomesRecorded?: number;
+  totalDealValue?: number;
+  wonRevenue?: number;
+  lastEngagementDate?: string | null;
+  primaryTechStack?: string | null;
 }
 
 interface SimilarGroup {
   accounts: Account[];
   similarity: string;
 }
+
+type SortKey =
+  | "canonicalName"
+  | "industry"
+  | "accountTier"
+  | "engagements"
+  | "winRate"
+  | "totalDealValue"
+  | "wonRevenue"
+  | "lastEngagementDate"
+  | "primaryTechStack";
+
+type SortDir = "asc" | "desc";
 
 // ---------------------------------------------------------------------------
 // Label maps
@@ -81,6 +99,15 @@ const tierLabels: Record<string, string> = {
   ENTERPRISE: "Enterprise",
   MID_MARKET: "Mid-Market",
   SMB: "SMB",
+};
+
+const techStackLabels: Record<string, string> = {
+  DRUPAL: "Drupal",
+  DRUPAL_NEXTJS: "Drupal + Next.js",
+  WORDPRESS: "WordPress",
+  WORDPRESS_NEXTJS: "WordPress + Next.js",
+  NEXTJS: "Next.js",
+  REACT: "React",
 };
 
 const industryColors: Record<string, string> = {
@@ -128,6 +155,26 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function formatRelativeDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 30) return `${diffDays}d ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+  return `${Math.floor(diffDays / 365)}y ago`;
+}
+
+function formatCurrencyK(value: number | null | undefined): string {
+  if (value == null || value === 0) return "—";
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}k`;
+  return `$${Math.round(value)}`;
+}
+
 function IndustryBadge({ industry }: { industry: string }) {
   const colorClass = industryColors[industry] ?? industryColors.OTHER;
   return (
@@ -137,6 +184,55 @@ function IndustryBadge({ industry }: { industry: string }) {
       {industryLabels[industry] ?? industry}
     </span>
   );
+}
+
+function WinRateIndicator({ winRate, outcomesRecorded }: { winRate: number | null | undefined; outcomesRecorded: number | undefined }) {
+  if (winRate == null) return <span className="text-xs text-muted-foreground">—</span>;
+  const color =
+    winRate >= 60
+      ? "text-green-600 dark:text-green-400"
+      : winRate >= 40
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-red-600 dark:text-red-400";
+  return (
+    <span className={`text-sm font-medium ${color}`} title={`${outcomesRecorded ?? 0} outcomes recorded`}>
+      {Math.round(winRate)}%
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sort helpers
+// ---------------------------------------------------------------------------
+
+function getSortValue(acc: Account, key: SortKey): string | number | null {
+  switch (key) {
+    case "canonicalName":
+      return acc.canonicalName.toLowerCase();
+    case "industry":
+      return acc.industry;
+    case "accountTier":
+      return acc.accountTier ?? "";
+    case "engagements":
+      return acc._count.engagements;
+    case "winRate":
+      return acc.winRate ?? -1;
+    case "totalDealValue":
+      return acc.totalDealValue ?? -1;
+    case "wonRevenue":
+      return acc.wonRevenue ?? -1;
+    case "lastEngagementDate":
+      return acc.lastEngagementDate ? new Date(acc.lastEngagementDate).getTime() : -1;
+    case "primaryTechStack":
+      return acc.primaryTechStack ?? "";
+    default:
+      return null;
+  }
+}
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (col !== sortKey) return <ChevronsUpDown className="size-3 opacity-40" />;
+  return sortDir === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +279,8 @@ function NewAccountForm({ onCreated, onClose }: NewAccountFormProps) {
       setSaving(false);
     }
   }
+
+  void onClose;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -302,6 +400,33 @@ function DuplicatesDialog({ open, onOpenChange, groups, loading }: DuplicatesDia
 }
 
 // ---------------------------------------------------------------------------
+// Sortable column header
+// ---------------------------------------------------------------------------
+
+interface SortableHeaderProps {
+  col: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (col: SortKey) => void;
+  children: React.ReactNode;
+  className?: string;
+}
+
+function SortableHeader({ col, sortKey, sortDir, onSort, children, className }: SortableHeaderProps) {
+  return (
+    <TableHead
+      className={`cursor-pointer select-none hover:bg-muted/30 ${className ?? ""}`}
+      onClick={() => onSort(col)}
+    >
+      <span className="flex items-center gap-1">
+        {children}
+        <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
+      </span>
+    </TableHead>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -311,6 +436,9 @@ export default function AdminAccountsPage() {
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
   const [filterIndustry, setFilterIndustry] = React.useState("ALL");
+  const [quickFilter, setQuickFilter] = React.useState<"all" | "highValue" | "needsOutcome">("all");
+  const [sortKey, setSortKey] = React.useState<SortKey>("lastEngagementDate");
+  const [sortDir, setSortDir] = React.useState<SortDir>("desc");
   const [newAccountOpen, setNewAccountOpen] = React.useState(false);
   const [dupOpen, setDupOpen] = React.useState(false);
   const [dupGroups, setDupGroups] = React.useState<SimilarGroup[]>([]);
@@ -324,8 +452,17 @@ export default function AdminAccountsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  function handleSort(col: SortKey) {
+    if (sortKey === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(col);
+      setSortDir("desc");
+    }
+  }
+
   const filtered = React.useMemo(() => {
-    return accounts.filter((acc) => {
+    let list = accounts.filter((acc) => {
       const matchesSearch =
         search === "" ||
         acc.canonicalName.toLowerCase().includes(search.toLowerCase());
@@ -333,7 +470,39 @@ export default function AdminAccountsPage() {
         filterIndustry === "ALL" || acc.industry === filterIndustry;
       return matchesSearch && matchesIndustry;
     });
-  }, [accounts, search, filterIndustry]);
+
+    // Quick filters
+    if (quickFilter === "highValue") {
+      list = list.filter(
+        (acc) => (acc.totalDealValue ?? 0) > 100_000 || acc._count.engagements > 5
+      );
+    } else if (quickFilter === "needsOutcome") {
+      list = list.filter(
+        (acc) => acc._count.engagements > 0 && (acc.outcomesRecorded ?? 0) < acc._count.engagements
+      );
+    }
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      const av = getSortValue(a, sortKey);
+      const bv = getSortValue(b, sortKey);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      if (typeof av === "string" && typeof bv === "string") {
+        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      const an = Number(av);
+      const bn = Number(bv);
+      return sortDir === "asc" ? an - bn : bn - an;
+    });
+
+    return list;
+  }, [accounts, search, filterIndustry, quickFilter, sortKey, sortDir]);
+
+  // Summary totals
+  const totalPipeline = filtered.reduce((s, a) => s + (a.totalDealValue ?? 0), 0);
+  const totalWon = filtered.reduce((s, a) => s + (a.wonRevenue ?? 0), 0);
 
   function handleCreated(acc: Account) {
     setAccounts((prev) => [acc, ...prev]);
@@ -395,7 +564,7 @@ export default function AdminAccountsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 items-center">
         <Input
           className="h-8 w-56"
           placeholder="Search accounts..."
@@ -417,6 +586,34 @@ export default function AdminAccountsPage() {
             ))}
           </SelectContent>
         </Select>
+
+        {/* Quick filter buttons */}
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant={quickFilter === "all" ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setQuickFilter("all")}
+          >
+            All
+          </Button>
+          <Button
+            variant={quickFilter === "highValue" ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setQuickFilter("highValue")}
+          >
+            High Value
+          </Button>
+          <Button
+            variant={quickFilter === "needsOutcome" ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setQuickFilter("needsOutcome")}
+          >
+            Needs Outcome
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -427,20 +624,40 @@ export default function AdminAccountsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Account Name</TableHead>
-                <TableHead>Industry</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead>Region</TableHead>
-                <TableHead className="text-center">Engagements</TableHead>
-                <TableHead className="text-center">Win Rate</TableHead>
-                <TableHead>Created</TableHead>
+                <SortableHeader col="canonicalName" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Account Name
+                </SortableHeader>
+                <SortableHeader col="industry" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Industry
+                </SortableHeader>
+                <SortableHeader col="accountTier" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Tier
+                </SortableHeader>
+                <SortableHeader col="engagements" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-center">
+                  Engs
+                </SortableHeader>
+                <SortableHeader col="winRate" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-center">
+                  Win Rate
+                </SortableHeader>
+                <SortableHeader col="totalDealValue" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right">
+                  Pipeline
+                </SortableHeader>
+                <SortableHeader col="wonRevenue" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} className="text-right">
+                  Won
+                </SortableHeader>
+                <SortableHeader col="lastEngagementDate" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Last Activity
+                </SortableHeader>
+                <SortableHeader col="primaryTechStack" sortKey={sortKey} sortDir={sortDir} onSort={handleSort}>
+                  Primary Stack
+                </SortableHeader>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={9}
                     className="text-center text-muted-foreground py-8"
                   >
                     {accounts.length === 0
@@ -464,23 +681,52 @@ export default function AdminAccountsPage() {
                     <TableCell className="text-sm text-muted-foreground">
                       {acc.accountTier ? (tierLabels[acc.accountTier] ?? acc.accountTier) : "—"}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {acc.region ? (regionLabels[acc.region] ?? acc.region) : "—"}
-                    </TableCell>
                     <TableCell className="text-center text-sm">
                       {acc._count.engagements}
                     </TableCell>
-                    <TableCell className="text-center text-sm text-muted-foreground">
-                      {acc.winRate != null ? `${Math.round(acc.winRate * 100)}%` : "—"}
+                    <TableCell className="text-center">
+                      <WinRateIndicator winRate={acc.winRate} outcomesRecorded={acc.outcomesRecorded} />
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(acc.createdAt)}
+                    <TableCell className="text-right text-sm text-muted-foreground">
+                      {formatCurrencyK(acc.totalDealValue)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-medium text-green-700 dark:text-green-400">
+                      {formatCurrencyK(acc.wonRevenue)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatRelativeDate(acc.lastEngagementDate)}
+                    </TableCell>
+                    <TableCell>
+                      {acc.primaryTechStack ? (
+                        <Badge variant="outline" className="text-xs">
+                          {techStackLabels[acc.primaryTechStack] ?? acc.primaryTechStack}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {/* Summary row */}
+      {!loading && filtered.length > 0 && (
+        <div className="flex items-center gap-6 text-xs text-muted-foreground px-1">
+          <span>{filtered.length} account{filtered.length !== 1 ? "s" : ""}</span>
+          <span>
+            Pipeline:{" "}
+            <span className="font-medium text-foreground">{formatCurrencyK(totalPipeline)}</span>
+          </span>
+          <span>
+            Won Revenue:{" "}
+            <span className="font-medium text-green-700 dark:text-green-400">
+              {formatCurrencyK(totalWon)}
+            </span>
+          </span>
         </div>
       )}
 

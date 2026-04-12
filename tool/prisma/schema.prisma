@@ -97,6 +97,14 @@ model Engagement {
   numberOfCompetitors Int?
   presalesHoursSpent Float?
   tags               String[]         @default([])
+  // Import provenance
+  importSource          String?    // "ZIP_IMPORT" | null
+  importFilePath        String?    // original folder name from ZIP
+  importedAt            DateTime?
+  financialProposalValue Float?    // actual amount from financial proposal
+  estimatedBudget       Float?     // tentative budget mentioned in TOR
+  deliveryTimeline      String?    // e.g. "6 months", "Q3 2026"
+  rfpIssuedAt           DateTime?  // when the RFP was issued
   // Outcome tracking (recorded via admin back-office)
   outcome            EngagementOutcome?
   lossReason         LossReason?
@@ -304,6 +312,75 @@ model PhaseExecution {
 
   @@index([engagementId])
   @@index([userId])
+}
+
+model ImportJob {
+  id             String       @id @default(cuid())
+  userId         String
+  source         String       // "ZIP_IMPORT"
+  sourcePath     String       // original ZIP filename
+  status         ImportStatus @default(PENDING)
+  totalFiles     Int          @default(0)
+  processedFiles Int          @default(0)
+  confirmedFiles Int          @default(0)
+  skippedFiles   Int          @default(0)
+  zipHash        String?      // SHA-256 hash of ZIP for dedup
+  autoConfirmThreshold Float? // e.g. 0.8 — auto-confirm items above this confidence
+  batchId        String?      // links multiple ZIPs uploaded together
+  errorMessage   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  items          ImportItem[]
+
+  @@index([batchId])
+}
+
+model ImportItem {
+  id                         String           @id @default(cuid())
+  importJob                  ImportJob        @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  importJobId                String
+  folderName                 String           // subfolder name from ZIP (= engagement grouping)
+  files                      Json             // [{ name, type: "TOR"|"ESTIMATE"|"PROPOSAL"|"FINANCIAL"|"OTHER", sizeBytes, isPrimary }]
+  primaryFileName            String?
+  // AI-inferred metadata (editable by admin before confirm)
+  inferredClient             String?
+  inferredIndustry           String?
+  inferredTechStack          String?
+  inferredEngagementType     String?
+  inferredProjectName        String?
+  inferredSubmissionDeadline DateTime?
+  inferredIssueDate          DateTime?
+  inferredDealValue          Float?
+  inferredFinancialValue     Float?
+  confidence                 Json?            // { clientName: 0.9, ... }
+  extractedTextPreview       String?          // first 500 chars for admin review
+  processedFiles             Json?            // [{ name, type, extractedText: boolean, artefactCreated: boolean, isSubmission: boolean }]
+  // Resolution
+  matchedAccountId           String?          // auto-matched or admin-selected
+  status                     ImportItemStatus @default(PENDING_REVIEW)
+  engagementId               String?          // set after confirm creates the Engagement
+  reviewedAt                 DateTime?
+  reviewedBy                 String?
+  errorMessage               String?
+  createdAt                  DateTime         @default(now())
+
+  @@index([importJobId])
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  PAUSED
+  REVIEW
+  COMPLETED
+  FAILED
+}
+
+enum ImportItemStatus {
+  PENDING_REVIEW
+  CONFIRMED
+  SKIPPED
+  FAILED
 }
 
 model PromptOverride {

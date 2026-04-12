@@ -14,6 +14,7 @@ interface EngagementItem {
   phaseProgress: { completed: number; total: number }
   updatedAt: Date
   costSummary?: { totalTokens: number; estimatedCostUsd: number; phasesRun: number } | null
+  importSource?: string | null
 }
 
 interface EngagementGridProps {

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Settings, LogOut, Clock, ShieldCheck, Users, FileBarChart, Gauge, BookOpen, MessageSquare } from "lucide-react"
+import { LayoutDashboard, Settings, LogOut, Clock, ShieldCheck, Users, FileBarChart, Gauge, BookOpen, MessageSquare, Upload, Building2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/hooks/useCurrentUser"
@@ -24,11 +24,13 @@ const navLinks = [
 ]
 
 const adminLinks = [
+  { href: "/admin/accounts", label: "Accounts", icon: Building2 },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/engagements", label: "Engagements", icon: FileBarChart },
   { href: "/admin/analytics", label: "Analytics", icon: Gauge },
   { href: "/admin/benchmarks", label: "Benchmarks", icon: BookOpen },
   { href: "/admin/prompts", label: "Prompts", icon: MessageSquare },
+  { href: "/admin/imports", label: "Imports", icon: Upload },
 ]
 
 interface RecentEngagement {

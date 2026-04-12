@@ -1,0 +1,782 @@
+/**
+ * Background worker for processing ZIP-based RFP imports.
+ * Extracts files, runs AI inference, matches accounts, creates ImportItems.
+ * Supports parallel folder processing (5 concurrent), AI rate limiting,
+ * pause/resume, and auto-confirm mode.
+ */
+import { Worker } from "bullmq";
+import AdmZip from "adm-zip";
+import { prisma } from "@/lib/db";
+import { downloadFile, uploadFile } from "@/lib/storage";
+import { extractTextFromPdf } from "@/lib/pdf-extractor";
+import { extractTextFromDocx } from "@/lib/docx-extractor";
+import { inferEngagementFromText, inferFromSecondaryDocument, classifyFileType } from "@/lib/ai/infer-engagement";
+import { aiLimiter } from "@/lib/ai/rate-limiter";
+import { redisConnection, ImportJobData } from "@/lib/queue";
+import { ArtefactType } from "@/generated/prisma/client";
+
+const FOLDER_CONCURRENCY = 5;
+
+function isPdf(name: string): boolean {
+  return name.toLowerCase().endsWith(".pdf");
+}
+
+function isDocx(name: string): boolean {
+  return name.toLowerCase().endsWith(".docx");
+}
+
+function isSupportedFile(name: string): boolean {
+  return isPdf(name) || isDocx(name);
+}
+
+interface AccountRecord {
+  id: string;
+  canonicalName: string;
+  aliases: string[];
+}
+
+/**
+ * Fuzzy match an inferred client name against a pre-loaded list of accounts.
+ * Returns the best matching account ID or null.
+ */
+function findMatchingAccountFromCache(
+  clientName: string,
+  accounts: AccountRecord[]
+): string | null {
+  if (!clientName) return null;
+
+  const needle = clientName.toLowerCase().trim();
+
+  // Exact or substring match first
+  for (const acc of accounts) {
+    const canon = acc.canonicalName.toLowerCase();
+    if (canon === needle || needle.includes(canon) || canon.includes(needle)) {
+      return acc.id;
+    }
+    for (const alias of acc.aliases) {
+      const aliasLower = alias.toLowerCase();
+      if (aliasLower === needle || needle.includes(aliasLower) || aliasLower.includes(needle)) {
+        return acc.id;
+      }
+    }
+  }
+
+  // Levenshtein distance <= 3
+  for (const acc of accounts) {
+    if (levenshtein(acc.canonicalName.toLowerCase(), needle) <= 3) {
+      return acc.id;
+    }
+  }
+
+  return null;
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Group ZIP entries by their top-level folder.
+ * Root-level files go into a "__root__" group.
+ */
+function groupEntriesByFolder(
+  entries: AdmZip.IZipEntry[]
+): Map<string, AdmZip.IZipEntry[]> {
+  const groups = new Map<string, AdmZip.IZipEntry[]>();
+
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+
+    const name = entry.entryName;
+    // Skip macOS resource forks and hidden files
+    if (name.includes("__MACOSX") || name.split("/").some((p) => p.startsWith("."))) {
+      continue;
+    }
+    if (!isSupportedFile(name)) continue;
+
+    const parts = name.split("/").filter(Boolean);
+    // If file is directly in root (no subfolder), group as __root__
+    const folder = parts.length > 1 ? parts[0] : "__root__";
+
+    if (!groups.has(folder)) groups.set(folder, []);
+    groups.get(folder)!.push(entry);
+  }
+
+  return groups;
+}
+
+/**
+ * Select the primary TOR file from a group of files.
+ * Prefers files classified as TOR, then largest PDF.
+ */
+function selectPrimaryFile(entries: AdmZip.IZipEntry[]): AdmZip.IZipEntry {
+  // Prefer files classified as TOR
+  const torFiles = entries.filter(
+    (e) => classifyFileType(e.name) === "TOR"
+  );
+  if (torFiles.length > 0) {
+    return torFiles.reduce((a, b) =>
+      (a.header.size ?? 0) > (b.header.size ?? 0) ? a : b
+    );
+  }
+
+  // Fallback: largest PDF, then largest DOCX
+  const pdfs = entries.filter((e) => isPdf(e.name));
+  if (pdfs.length > 0) {
+    return pdfs.reduce((a, b) =>
+      (a.header.size ?? 0) > (b.header.size ?? 0) ? a : b
+    );
+  }
+
+  // Fallback: largest file
+  return entries.reduce((a, b) =>
+    (a.header.size ?? 0) > (b.header.size ?? 0) ? a : b
+  );
+}
+
+interface ProcessedFileRecord {
+  name: string;
+  fullPath: string;
+  type: string;
+  isSubmission: boolean;
+  extractedText: boolean;
+  artefactCreated: boolean;
+  inferredBudget?: number | null;
+  inferredTimeline?: string | null;
+  inferredFinalCost?: number | null;
+}
+
+/**
+ * Process a single folder from the ZIP: extract text, run AI inference,
+ * match account, create ImportItem.
+ */
+async function processOneFolder(
+  folderName: string,
+  folderEntries: AdmZip.IZipEntry[],
+  importJobId: string,
+  accounts: AccountRecord[]
+): Promise<void> {
+  // Build files metadata — detect submissions subfolder
+  const filesMetadata = folderEntries.map((e) => {
+    const fileName = e.name.split("/").pop() || e.name;
+    const pathLower = e.entryName.toLowerCase();
+    const isSubmission = /\/(submissions?|final)\//i.test(pathLower);
+    return {
+      name: fileName,
+      fullPath: e.entryName,
+      type: classifyFileType(fileName),
+      sizeBytes: e.header.size ?? 0,
+      isPrimary: false,
+      isSubmission,
+    };
+  });
+
+  // Select primary file
+  const primaryEntry = selectPrimaryFile(folderEntries);
+  const primaryFileName = primaryEntry.name.split("/").pop() || primaryEntry.name;
+  filesMetadata.forEach((f) => {
+    if (f.fullPath === primaryEntry.entryName) f.isPrimary = true;
+  });
+
+  const processedFileRecords: ProcessedFileRecord[] = [];
+
+  // Extract text from primary file first
+  let extractedText = "";
+  try {
+    const fileBuffer = primaryEntry.getData();
+    if (isPdf(primaryEntry.name)) {
+      const result = await extractTextFromPdf(fileBuffer);
+      extractedText = result.text;
+    } else if (isDocx(primaryEntry.name)) {
+      const result = await extractTextFromDocx(fileBuffer);
+      extractedText = result.text;
+    }
+  } catch (extractErr) {
+    console.warn(
+      `[import-worker] Text extraction failed for ${primaryEntry.entryName}: ${extractErr instanceof Error ? extractErr.message : String(extractErr)}`
+    );
+  }
+
+  // Track primary file in processedFileRecords
+  const primaryMeta = filesMetadata.find((f) => f.fullPath === primaryEntry.entryName);
+  if (primaryMeta) {
+    processedFileRecords.push({
+      name: primaryMeta.name,
+      fullPath: primaryMeta.fullPath,
+      type: primaryMeta.type,
+      isSubmission: primaryMeta.isSubmission,
+      extractedText: extractedText.length > 0,
+      artefactCreated: false,
+    });
+  }
+
+  // Run AI inference on primary TOR if we got enough text — rate-limited
+  let inferred: Awaited<ReturnType<typeof inferEngagementFromText>> | null = null;
+  if (extractedText.length >= 100) {
+    try {
+      inferred = await aiLimiter.execute(() => inferEngagementFromText(extractedText));
+    } catch (inferErr) {
+      console.warn(
+        `[import-worker] AI inference failed for ${folderName}: ${inferErr instanceof Error ? inferErr.message : String(inferErr)}`
+      );
+    }
+  }
+
+  // Process secondary files (non-primary)
+  let mergedEstimatedBudget: number | null = inferred?.estimatedBudget ?? null;
+  let mergedDeliveryTimeline: string | null = inferred?.deliveryTimeline ?? null;
+  let mergedFinalCost: number | null = inferred?.finalCostSubmitted ?? null;
+
+  for (const fileMeta of filesMetadata) {
+    if (fileMeta.fullPath === primaryEntry.entryName) continue; // already processed
+
+    let secondaryText = "";
+    let extractedOk = false;
+    try {
+      const entry = folderEntries.find((e) => e.entryName === fileMeta.fullPath);
+      if (entry) {
+        const fileBuffer = entry.getData();
+        if (isPdf(fileMeta.name)) {
+          const result = await extractTextFromPdf(fileBuffer);
+          secondaryText = result.text;
+        } else if (isDocx(fileMeta.name)) {
+          const result = await extractTextFromDocx(fileBuffer);
+          secondaryText = result.text;
+        }
+        extractedOk = secondaryText.length > 0;
+      }
+    } catch (extractErr) {
+      console.warn(
+        `[import-worker] Secondary extraction failed for ${fileMeta.fullPath}: ${extractErr instanceof Error ? extractErr.message : String(extractErr)}`
+      );
+    }
+
+    const record: ProcessedFileRecord = {
+      name: fileMeta.name,
+      fullPath: fileMeta.fullPath,
+      type: fileMeta.type,
+      isSubmission: fileMeta.isSubmission,
+      extractedText: extractedOk,
+      artefactCreated: false,
+    };
+
+    // For FINANCIAL or ESTIMATE files, run secondary inference — rate-limited
+    if (extractedOk && secondaryText.length >= 100 && (fileMeta.type === "FINANCIAL" || fileMeta.type === "ESTIMATE")) {
+      try {
+        const secondaryInferred = await aiLimiter.execute(() =>
+          inferFromSecondaryDocument(
+            secondaryText,
+            fileMeta.type as "ESTIMATE" | "FINANCIAL"
+          )
+        );
+        record.inferredBudget = secondaryInferred.estimatedBudget;
+        record.inferredTimeline = secondaryInferred.deliveryTimeline;
+        record.inferredFinalCost = secondaryInferred.finalCostSubmitted;
+
+        // Merge — prefer secondary doc values for cost/timeline
+        if (secondaryInferred.estimatedBudget != null) mergedEstimatedBudget = secondaryInferred.estimatedBudget;
+        if (secondaryInferred.deliveryTimeline != null) mergedDeliveryTimeline = secondaryInferred.deliveryTimeline;
+        if (secondaryInferred.finalCostSubmitted != null) mergedFinalCost = secondaryInferred.finalCostSubmitted;
+      } catch (inferErr) {
+        console.warn(
+          `[import-worker] Secondary inference failed for ${fileMeta.fullPath}: ${inferErr instanceof Error ? inferErr.message : String(inferErr)}`
+        );
+      }
+    }
+
+    processedFileRecords.push(record);
+  }
+
+  // Match account using pre-loaded cache
+  let matchedAccountId: string | null = null;
+  if (inferred?.clientName) {
+    matchedAccountId = findMatchingAccountFromCache(inferred.clientName, accounts);
+  }
+
+  // Create ImportItem with full metadata including processedFiles
+  await prisma.importItem.create({
+    data: {
+      importJobId,
+      folderName: folderName === "__root__" ? "Root files" : folderName,
+      files: filesMetadata,
+      primaryFileName,
+      inferredClient: inferred?.clientName ?? null,
+      inferredIndustry: inferred?.industry ?? null,
+      inferredTechStack: inferred?.techStack ?? null,
+      inferredEngagementType: inferred?.engagementType ?? null,
+      inferredProjectName: inferred?.projectName ?? null,
+      inferredSubmissionDeadline: inferred?.submissionDeadline
+        ? new Date(inferred.submissionDeadline)
+        : null,
+      inferredIssueDate: inferred?.issueDate
+        ? new Date(inferred.issueDate)
+        : null,
+      inferredDealValue: inferred?.estimatedDealValue ?? null,
+      inferredFinancialValue: mergedFinalCost ?? inferred?.financialProposalValue ?? null,
+      confidence: inferred?.confidence ?? undefined,
+      extractedTextPreview: extractedText.slice(0, 500) || null,
+      processedFiles: JSON.parse(JSON.stringify(processedFileRecords)),
+      matchedAccountId,
+      status: extractedText.length < 100 ? "FAILED" : "PENDING_REVIEW",
+      errorMessage:
+        extractedText.length < 100
+          ? "Insufficient text extracted — manual review needed"
+          : null,
+    },
+  });
+}
+
+/**
+ * Compute average confidence score for an ImportItem.
+ * Returns null if confidence data is not available.
+ */
+function averageConfidence(confidence: unknown): number | null {
+  if (!confidence || typeof confidence !== "object") return null;
+  const values = Object.values(confidence as Record<string, unknown>)
+    .filter((v): v is number => typeof v === "number");
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+/**
+ * Auto-confirm a single ImportItem: creates engagement, phases, artefacts.
+ * Uses the same logic as the per-item confirm API route.
+ */
+async function autoConfirmItem(
+  item: {
+    id: string;
+    importJobId: string;
+    folderName: string;
+    files: unknown;
+    inferredClient: string | null;
+    inferredProjectName: string | null;
+    inferredTechStack: string | null;
+    inferredEngagementType: string | null;
+    inferredIndustry: string | null;
+    inferredDealValue: number | null;
+    inferredFinancialValue: number | null;
+    inferredSubmissionDeadline: Date | null;
+    inferredIssueDate: Date | null;
+    matchedAccountId: string | null;
+    processedFiles: unknown;
+  },
+  systemUserId: string
+): Promise<string> {
+  interface FileEntry {
+    name: string;
+    fullPath: string;
+    type: string;
+    isPrimary: boolean;
+    sizeBytes: number;
+    isSubmission?: boolean;
+  }
+
+  const allFiles = item.files as unknown as FileEntry[];
+  const clientName = item.inferredClient || item.folderName;
+  const projectName = item.inferredProjectName || item.folderName;
+  const techStack = item.inferredTechStack || "DRUPAL";
+  const engagementType = item.inferredEngagementType || "NEW_BUILD";
+
+  // Resolve account
+  let finalAccountId = item.matchedAccountId;
+  if (!finalAccountId && clientName) {
+    const existing = await prisma.account.findFirst({
+      where: { canonicalName: { equals: clientName, mode: "insensitive" } },
+    });
+    if (existing) {
+      finalAccountId = existing.id;
+    } else {
+      const newAccount = await prisma.account.create({
+        data: {
+          canonicalName: clientName,
+          industry: (item.inferredIndustry as "OTHER") ?? "OTHER",
+        },
+      });
+      finalAccountId = newAccount.id;
+    }
+  }
+
+  const hasEstimate = allFiles.some((f) => f.type === "ESTIMATE");
+  const hasProposal = allFiles.some((f) => f.type === "PROPOSAL");
+  const hasFinancial = allFiles.some((f) => f.type === "FINANCIAL");
+
+  const phasesToCreate: Array<{ phaseNumber: string; status: "APPROVED" }> = [
+    { phaseNumber: "0", status: "APPROVED" },
+  ];
+  if (hasEstimate || hasFinancial) {
+    phasesToCreate.push({ phaseNumber: "1A", status: "APPROVED" });
+  }
+  if (hasProposal) {
+    phasesToCreate.push({ phaseNumber: "5", status: "APPROVED" });
+  }
+
+  type ProcessedFileRecord = {
+    name: string;
+    fullPath: string;
+    type: string;
+    isSubmission: boolean;
+    extractedText: boolean;
+    artefactCreated: boolean;
+    inferredBudget?: number | null;
+    inferredTimeline?: string | null;
+    inferredFinalCost?: number | null;
+  };
+  const processedFilesArr = (item.processedFiles ?? []) as ProcessedFileRecord[];
+
+  let estimatedBudget: number | null = null;
+  let deliveryTimeline: string | null = null;
+  for (const pf of processedFilesArr) {
+    if (pf.inferredBudget != null) estimatedBudget = pf.inferredBudget;
+    if (pf.inferredTimeline != null) deliveryTimeline = pf.inferredTimeline;
+  }
+
+  const engagement = await prisma.engagement.create({
+    data: {
+      clientName,
+      projectName,
+      techStack: techStack as "DRUPAL",
+      engagementType: engagementType as "NEW_BUILD",
+      status: "ARCHIVED",
+      accountId: finalAccountId,
+      createdById: systemUserId,
+      importSource: "ZIP_IMPORT",
+      importFilePath: item.folderName,
+      importedAt: new Date(),
+      estimatedDealValue: item.inferredDealValue,
+      financialProposalValue: item.inferredFinancialValue,
+      submissionDeadline: item.inferredSubmissionDeadline,
+      estimatedBudget,
+      deliveryTimeline,
+      rfpIssuedAt: item.inferredIssueDate ?? null,
+      phases: {
+        create: phasesToCreate,
+      },
+    },
+    include: { phases: true },
+  });
+
+  const phaseMap = new Map(engagement.phases.map((p) => [p.phaseNumber, p.id]));
+
+  function getMimeType(fileName: string): string {
+    return fileName.toLowerCase().endsWith(".pdf")
+      ? "application/pdf"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+
+  function getS3Subfolder(fileType: string, isSubmission: boolean): string {
+    if (isSubmission) return "submissions";
+    switch (fileType) {
+      case "TOR": return "tor";
+      case "ESTIMATE": return "estimates";
+      case "PROPOSAL": return "claude-artefacts";
+      case "FINANCIAL": return "financials";
+      default: return "tor";
+    }
+  }
+
+  function getArtefactConfig(fileType: string): { phaseNumber: string; artefactType: ArtefactType; label: string } | null {
+    switch (fileType) {
+      case "TOR":
+      case "OTHER":
+        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: fileType === "TOR" ? "Imported TOR" : "" };
+      case "ESTIMATE":
+        return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE, label: "Imported Estimate" };
+      case "PROPOSAL":
+        return { phaseNumber: "5", artefactType: ArtefactType.PROPOSAL, label: "Imported Proposal" };
+      case "FINANCIAL":
+        return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE_STATE, label: "Financial Proposal" };
+      default:
+        return null;
+    }
+  }
+
+  try {
+    const zipBuffer = await downloadFile(`imports/${item.importJobId}/upload.zip`);
+    const zip = new AdmZip(zipBuffer);
+    const artefactVersions = new Map<string, number>();
+
+    for (const fileMeta of allFiles) {
+      const entry = zip.getEntry(fileMeta.fullPath);
+      if (!entry) continue;
+
+      const fileBuffer = entry.getData();
+      const artefactConfig = getArtefactConfig(fileMeta.type);
+      const subfolder = getS3Subfolder(fileMeta.type, fileMeta.isSubmission ?? false);
+      const mimeType = getMimeType(fileMeta.name);
+
+      try {
+        await uploadFile(
+          `engagements/${engagement.id}/${subfolder}/${fileMeta.name}`,
+          fileBuffer,
+          mimeType
+        );
+      } catch (uploadErr) {
+        console.warn(
+          `[import-worker/auto-confirm] S3 upload failed for ${fileMeta.fullPath}: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`
+        );
+      }
+
+      if (artefactConfig) {
+        const phaseId = phaseMap.get(artefactConfig.phaseNumber);
+        if (phaseId) {
+          try {
+            let extractedText = "";
+            if (fileMeta.name.toLowerCase().endsWith(".pdf")) {
+              const result = await extractTextFromPdf(fileBuffer);
+              extractedText = result.text;
+            } else if (fileMeta.name.toLowerCase().endsWith(".docx")) {
+              const result = await extractTextFromDocx(fileBuffer);
+              extractedText = result.text;
+            }
+
+            if (extractedText) {
+              const versionKey = `${phaseId}:${artefactConfig.artefactType}`;
+              const version = (artefactVersions.get(versionKey) ?? 0) + 1;
+              artefactVersions.set(versionKey, version);
+
+              await prisma.phaseArtefact.create({
+                data: {
+                  phaseId,
+                  artefactType: artefactConfig.artefactType,
+                  version,
+                  label: artefactConfig.label || `Imported: ${fileMeta.name}`,
+                  contentMd: extractedText,
+                  fileUrl: `engagements/${engagement.id}/${subfolder}/${fileMeta.name}`,
+                },
+              });
+            }
+          } catch (artefactErr) {
+            console.warn(
+              `[import-worker/auto-confirm] Artefact creation failed for ${fileMeta.fullPath}: ${artefactErr instanceof Error ? artefactErr.message : String(artefactErr)}`
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[import-worker/auto-confirm] File processing failed for engagement ${engagement.id}: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  await prisma.importItem.update({
+    where: { id: item.id },
+    data: {
+      status: "CONFIRMED",
+      engagementId: engagement.id,
+      matchedAccountId: finalAccountId,
+      reviewedAt: new Date(),
+      reviewedBy: systemUserId,
+    },
+  });
+
+  return engagement.id;
+}
+
+const worker = new Worker<ImportJobData>(
+  "rfp-import",
+  async (job) => {
+    const { importJobId } = job.data;
+
+    console.log(`[import-worker] Starting import job ${importJobId}`);
+
+    const importJob = await prisma.importJob.update({
+      where: { id: importJobId },
+      data: { status: "PROCESSING" },
+    });
+
+    try {
+      // Download ZIP from S3
+      const s3Key = `imports/${importJobId}/upload.zip`;
+      const zipBuffer = await downloadFile(s3Key);
+
+      const zip = new AdmZip(zipBuffer);
+      const entries = zip.getEntries();
+
+      // Group files by folder
+      const groups = groupEntriesByFolder(entries);
+      const totalFolders = groups.size;
+
+      await prisma.importJob.update({
+        where: { id: importJobId },
+        data: { totalFiles: totalFolders },
+      });
+
+      // Cache all accounts once at job start — avoids N per-folder DB queries
+      const accounts = await prisma.account.findMany({
+        select: { id: true, canonicalName: true, aliases: true },
+      });
+
+      // Step 7 (Resume): find folders already processed, skip them
+      const existingItems = await prisma.importItem.findMany({
+        where: { importJobId },
+        select: { folderName: true },
+      });
+      const processedFolderNames = new Set(
+        existingItems.map((item) =>
+          item.folderName === "Root files" ? "__root__" : item.folderName
+        )
+      );
+
+      // Filter to only unprocessed folders
+      const folders = Array.from(groups.entries()).filter(
+        ([folderName]) => !processedFolderNames.has(folderName)
+      );
+
+      let processedCount = existingItems.length; // start from already-done count
+
+      // Shared index counter for the semaphore pattern
+      let index = 0;
+      const indexLock = { value: 0 };
+
+      async function processNext(): Promise<void> {
+        while (true) {
+          // Claim the next folder index atomically
+          const current = indexLock.value++;
+          if (current >= folders.length) break;
+
+          const [folderName, folderEntries] = folders[current];
+
+          // Step 7 (Pause): check job status before processing each folder
+          const jobStatus = await prisma.importJob.findUnique({
+            where: { id: importJobId },
+            select: { status: true },
+          });
+          if (jobStatus?.status === "PAUSED") {
+            console.log(`[import-worker] Job ${importJobId} paused — stopping`);
+            return;
+          }
+
+          try {
+            await processOneFolder(folderName, folderEntries, importJobId, accounts);
+            processedCount++;
+            await prisma.importJob.update({
+              where: { id: importJobId },
+              data: { processedFiles: processedCount },
+            });
+
+            await job.updateProgress({
+              processed: processedCount,
+              total: totalFolders,
+              currentFolder: folderName,
+            });
+          } catch (folderErr) {
+            console.error(
+              `[import-worker] Error processing folder ${folderName}: ${folderErr instanceof Error ? folderErr.message : String(folderErr)}`
+            );
+            // Create a failed item so admin can see it
+            await prisma.importItem.create({
+              data: {
+                importJobId,
+                folderName: folderName === "__root__" ? "Root files" : folderName,
+                files: [],
+                status: "FAILED",
+                errorMessage: folderErr instanceof Error ? folderErr.message : String(folderErr),
+              },
+            });
+            processedCount++;
+            await prisma.importJob.update({
+              where: { id: importJobId },
+              data: { processedFiles: processedCount },
+            });
+          }
+        }
+      }
+
+      // Launch FOLDER_CONCURRENCY parallel workers
+      await Promise.all(
+        Array.from({ length: FOLDER_CONCURRENCY }, () => processNext())
+      );
+
+      // Check if job was paused mid-way — exit without moving to REVIEW
+      const finalJobStatus = await prisma.importJob.findUnique({
+        where: { id: importJobId },
+        select: { status: true },
+      });
+      if (finalJobStatus?.status === "PAUSED") {
+        console.log(`[import-worker] Job ${importJobId} paused cleanly after processing ${processedCount} folders`);
+        return;
+      }
+
+      // Step 4 (Auto-confirm): confirm qualifying items if threshold is set
+      const autoConfirmThreshold = importJob.autoConfirmThreshold;
+      if (autoConfirmThreshold != null) {
+        console.log(`[import-worker] Auto-confirm threshold: ${autoConfirmThreshold}`);
+
+        const pendingItems = await prisma.importItem.findMany({
+          where: { importJobId, status: "PENDING_REVIEW" },
+        });
+
+        // Get the job's userId to use as the system user for auto-confirms
+        const jobRecord = await prisma.importJob.findUnique({
+          where: { id: importJobId },
+          select: { userId: true },
+        });
+        const systemUserId = jobRecord?.userId ?? "";
+
+        let autoConfirmedCount = 0;
+        for (const item of pendingItems) {
+          const avgConf = averageConfidence(item.confidence);
+          if (avgConf != null && avgConf >= autoConfirmThreshold) {
+            try {
+              await autoConfirmItem(item, systemUserId);
+              autoConfirmedCount++;
+            } catch (confirmErr) {
+              console.warn(
+                `[import-worker] Auto-confirm failed for item ${item.id}: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`
+              );
+            }
+          }
+        }
+
+        if (autoConfirmedCount > 0) {
+          await prisma.importJob.update({
+            where: { id: importJobId },
+            data: { confirmedFiles: { increment: autoConfirmedCount } },
+          });
+          console.log(`[import-worker] Auto-confirmed ${autoConfirmedCount} items for job ${importJobId}`);
+        }
+      }
+
+      // All folders processed — move to REVIEW
+      await prisma.importJob.update({
+        where: { id: importJobId },
+        data: { status: "REVIEW" },
+      });
+
+      console.log(`[import-worker] Import job ${importJobId} complete — ${processedCount} folders processed`);
+    } catch (err) {
+      console.error(
+        `[import-worker] Import job ${importJobId} failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+      await prisma.importJob.update({
+        where: { id: importJobId },
+        data: {
+          status: "FAILED",
+          errorMessage: err instanceof Error ? err.message : String(err),
+        },
+      });
+      throw err;
+    }
+  },
+  {
+    concurrency: 1,
+    connection: redisConnection,
+  }
+);
+
+export default worker;
