@@ -5,6 +5,12 @@ import { listObjects, downloadFile, uploadFile } from "@/lib/storage";
 import { getToolDefinitions, getToolHandlers } from "@/lib/ai/tools";
 import { summarizeTool } from "@/lib/ai/hooks";
 import { prisma } from "@/lib/db";
+import {
+  loadPromptConfig,
+  loadAllBenchmarks,
+  loadPhaseTemplate,
+  interpolatePrompt,
+} from "@/lib/ai/prompt-loader";
 
 export interface PhaseConfig {
   engagementId: string;
@@ -56,9 +62,22 @@ function getModelForPhase(config: PhaseConfig): string {
 /**
  * Load benchmark files and inject them into the system prompt.
  * These provide reference effort ranges for estimation calibration.
- * First tries the database; falls back to markdown files on disk if DB is empty.
+ * Priority order:
+ *   1. PromptConfig BENCHMARK records (admin-editable via DB)
+ *   2. Benchmark structured records (prisma.benchmark table)
+ *   3. Markdown files on disk
  */
 async function loadBenchmarks(): Promise<string> {
+  // Try loading from PromptConfig BENCHMARK category first (admin-editable)
+  try {
+    const promptBenchmarks = await loadAllBenchmarks();
+    if (promptBenchmarks) {
+      return `\n\n---\n\n## Reference Benchmarks\n\nUse these effort ranges to calibrate your estimates. Flag significant deviations.\n\n${promptBenchmarks}`;
+    }
+  } catch {
+    // Fall through to structured benchmark table
+  }
+
   // Try loading from database first
   try {
     const dbBenchmarks = await prisma.benchmark.findMany({
@@ -134,8 +153,19 @@ Use this table to anchor every Backend and Frontend estimate line item to a know
 
 /**
  * Load the output template for a specific phase.
+ * Priority order:
+ *   1. PromptConfig TEMPLATE records (admin-editable via DB)
+ *   2. Markdown files on disk
  */
 async function loadTemplate(phaseNumber: string): Promise<string> {
+  // Try loading from PromptConfig TEMPLATE category first (admin-editable)
+  try {
+    const dbTemplate = await loadPhaseTemplate(phaseNumber);
+    if (dbTemplate) return dbTemplate;
+  } catch {
+    // Fall through to filesystem loading
+  }
+
   // Phases can have multiple templates (e.g., Phase 1A has solution architecture + estimate)
   const templateMap: Record<string, string[]> = {
     "0": ["customer-research-template.md"],
@@ -565,8 +595,47 @@ export async function* runPhase(
     collectPriorContext(config.engagementId, phaseStr, workDir),
   ]);
 
+  // 3b. Try to load prompt components from DB (admin-editable overrides).
+  // If DB returns content for system-base and/or carl-rules, reconstruct the
+  // system prompt from those DB versions. Falls back to config.systemPrompt
+  // (the hardcoded defaults) when the DB has no record.
+  let baseSystemPrompt = config.systemPrompt;
+  try {
+    const [dbSystemBase, dbCarlRules, dbPhasePrompt] = await Promise.all([
+      loadPromptConfig("system-base"),
+      loadPromptConfig("carl-rules"),
+      loadPromptConfig(`phase-${phaseStr.toLowerCase()}`),
+    ]);
+
+    const resolvedSystemBase = dbSystemBase
+      ? interpolatePrompt(dbSystemBase, { techStack: config.techStack })
+      : null;
+    const resolvedCarlRules = dbCarlRules ?? null;
+    const resolvedPhasePrompt = dbPhasePrompt
+      ? interpolatePrompt(dbPhasePrompt, {
+          techStack: config.techStack,
+          engagementType: "", // engagementType not on PhaseConfig; interpolation is a no-op if placeholder absent
+        })
+      : null;
+
+    // Only override if at least system-base is available from DB
+    if (resolvedSystemBase) {
+      const parts: string[] = [resolvedSystemBase];
+      if (resolvedCarlRules) parts.push(resolvedCarlRules);
+      baseSystemPrompt = parts.join("\n\n---\n\n");
+    }
+
+    // If a DB phase prompt exists, override config.userPrompt
+    // (userPrompt is the phase-specific instruction, separate from systemPrompt)
+    if (resolvedPhasePrompt) {
+      config = { ...config, userPrompt: resolvedPhasePrompt };
+    }
+  } catch {
+    // DB unavailable — fall back to hardcoded config.systemPrompt
+  }
+
   // Enrich system prompt with benchmarks and template
-  const enrichedSystemPrompt = config.systemPrompt + benchmarks + template;
+  const enrichedSystemPrompt = baseSystemPrompt + benchmarks + template;
 
   // Enrich user prompt with prior phase artefacts
   const enrichedUserPrompt = config.userPrompt + priorContext;

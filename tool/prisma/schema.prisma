@@ -383,6 +383,39 @@ enum ImportItemStatus {
   FAILED
 }
 
+model PromptConfig {
+  id          String          @id @default(cuid())
+  key         String          @unique  // e.g., "system-base", "phase-0", "phase-1a-estimate", "carl-rules"
+  label       String                   // Human-readable name
+  category    PromptCategory
+  content     String                   // The prompt/benchmark/template text
+  isDefault   Boolean         @default(true) // true if unchanged from code default
+  updatedBy   String?
+  updatedAt   DateTime        @updatedAt
+  createdAt   DateTime        @default(now())
+  versions    PromptVersion[]
+}
+
+enum PromptCategory {
+  SYSTEM_BASE
+  PHASE_PROMPT
+  CARL_RULES
+  BENCHMARK
+  TEMPLATE
+}
+
+model PromptVersion {
+  id             String       @id @default(cuid())
+  promptConfig   PromptConfig @relation(fields: [promptConfigId], references: [id], onDelete: Cascade)
+  promptConfigId String
+  content        String       // Snapshot of content at this version
+  changedBy      String       // User ID
+  changeNote     String?      // Optional description of change
+  createdAt      DateTime     @default(now())
+
+  @@index([promptConfigId])
+}
+
 model PromptOverride {
   id          String   @id @default(cuid())
   phaseNumber String

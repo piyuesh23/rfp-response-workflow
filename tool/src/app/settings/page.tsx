@@ -1,7 +1,20 @@
 "use client"
 
 import * as React from "react"
-import { PlusIcon, Trash2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react"
+import {
+  PlusIcon,
+  Trash2Icon,
+  PencilIcon,
+  CheckIcon,
+  XIcon,
+  Save,
+  RotateCcw,
+  Loader2,
+  FileText,
+  Shield,
+  BarChart3,
+  Layout,
+} from "lucide-react"
 import { useCurrentUser } from "@/hooks/useCurrentUser"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -49,6 +62,27 @@ interface Benchmark {
   isActive: boolean
 }
 
+interface PromptConfigSummary {
+  key: string
+  label: string
+  category: string
+  isDefault: boolean
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+interface PromptConfigVersion {
+  id: string
+  createdAt: string
+  changeNote: string | null
+  changedBy: string | null
+}
+
+interface PromptConfigDetail extends PromptConfigSummary {
+  content: string
+  versions: PromptConfigVersion[]
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TECH_STACKS = ["All", "DRUPAL", "DRUPAL_NEXTJS", "WORDPRESS", "WORDPRESS_NEXTJS", "NEXTJS", "REACT"]
@@ -60,6 +94,23 @@ const TECH_DISPLAY: Record<string, string> = {
   WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—"
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(dateStr))
+  } catch {
+    return dateStr
+  }
 }
 
 // ─── Inline editable hours cell ───────────────────────────────────────────────
@@ -297,6 +348,286 @@ function AddBenchmarkDialog({ categories, onAdd }: AddBenchmarkDialogProps) {
   )
 }
 
+// ─── Prompt Editor ────────────────────────────────────────────────────────────
+
+function PromptEditor({
+  configKey,
+  isAdmin,
+  onDirty,
+}: {
+  configKey: string
+  isAdmin: boolean
+  onDirty?: (dirty: boolean) => void
+}) {
+  const [config, setConfig] = React.useState<PromptConfigDetail | null>(null)
+  const [content, setContent] = React.useState("")
+  const [originalContent, setOriginalContent] = React.useState("")
+  const [loading, setLoading] = React.useState(true)
+  const [saving, setSaving] = React.useState(false)
+  const [showVersions, setShowVersions] = React.useState(false)
+  const [versions, setVersions] = React.useState<PromptConfigVersion[]>([])
+
+  async function fetchConfig() {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/prompt-configs/${encodeURIComponent(configKey)}`)
+      if (res.ok) {
+        const data: PromptConfigDetail = await res.json()
+        setConfig(data)
+        setContent(data.content)
+        setOriginalContent(data.content)
+        setVersions(data.versions ?? [])
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  React.useEffect(() => {
+    fetchConfig()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configKey])
+
+  React.useEffect(() => {
+    onDirty?.(content !== originalContent)
+  }, [content, originalContent, onDirty])
+
+  async function handleSave() {
+    const changeNote = window.prompt("Change note (optional):") ?? undefined
+    setSaving(true)
+    try {
+      await fetch(`/api/admin/prompt-configs/${encodeURIComponent(configKey)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, changeNote }),
+      })
+      await fetchConfig()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReset() {
+    if (!window.confirm("Reset to default? This will overwrite your changes.")) return
+    await fetch(`/api/admin/prompt-configs/${encodeURIComponent(configKey)}/reset`, {
+      method: "POST",
+    })
+    await fetchConfig()
+  }
+
+  async function handleRestore(versionId: string) {
+    if (!window.confirm("Restore this version? Current content will be saved as a new version.")) return
+    await fetch(
+      `/api/admin/prompt-configs/${encodeURIComponent(configKey)}/versions/${versionId}/restore`,
+      { method: "POST" }
+    )
+    await fetchConfig()
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+        <Loader2 className="size-4 mr-2 animate-spin" />
+        Loading…
+      </div>
+    )
+  }
+
+  if (!config) {
+    return (
+      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+        Failed to load config.
+      </div>
+    )
+  }
+
+  const isDirty = content !== originalContent
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-3">
+        <div>
+          <h3 className="font-medium text-sm">{config.label}</h3>
+          <p className="text-xs text-muted-foreground">
+            {config.isDefault
+              ? "Default (unchanged)"
+              : `Edited by ${config.updatedBy ?? "unknown"} at ${formatDate(config.updatedAt)}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {!isAdmin && (
+            <Badge variant="outline" className="text-xs">
+              Read-only
+            </Badge>
+          )}
+          {isAdmin && !config.isDefault && (
+            <Button variant="outline" size="sm" onClick={handleReset}>
+              <RotateCcw className="size-3.5 mr-1.5" />
+              Reset to Default
+            </Button>
+          )}
+          {isAdmin && (
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={saving || !isDirty}
+            >
+              {saving ? (
+                <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="size-3.5 mr-1.5" />
+              )}
+              Save
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Textarea editor */}
+      <textarea
+        className="flex-1 min-h-[400px] rounded-md border bg-muted/30 p-3 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        readOnly={!isAdmin}
+      />
+
+      {/* Version history */}
+      <div className="mt-3 border-t pt-3">
+        <button
+          type="button"
+          onClick={() => setShowVersions(!showVersions)}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Version History ({versions.length})
+        </button>
+        {showVersions && (
+          <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
+            {versions.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-2">No version history yet.</p>
+            ) : (
+              versions.map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between text-xs py-1 border-b last:border-b-0"
+                >
+                  <span className="text-muted-foreground">
+                    {formatDate(v.createdAt)}
+                    {v.changedBy ? ` — ${v.changedBy}` : ""}
+                    {v.changeNote ? ` — ${v.changeNote}` : " — No note"}
+                  </span>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={() => handleRestore(v.id)}
+                    >
+                      Restore
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Config Category Tab ──────────────────────────────────────────────────────
+
+function ConfigCategoryTab({
+  categories,
+  isAdmin,
+}: {
+  categories: string[]
+  isAdmin: boolean
+}) {
+  const [configs, setConfigs] = React.useState<PromptConfigSummary[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [selectedKey, setSelectedKey] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    async function fetchAll() {
+      setLoading(true)
+      try {
+        const results = await Promise.all(
+          categories.map((cat) =>
+            fetch(`/api/admin/prompt-configs?category=${encodeURIComponent(cat)}`)
+              .then((r) => (r.ok ? r.json() : []))
+          )
+        )
+        const all: PromptConfigSummary[] = results.flat()
+        setConfigs(all)
+        if (all.length > 0 && !selectedKey) {
+          setSelectedKey(all[0].key)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchAll()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories.join(",")])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+        <Loader2 className="size-4 mr-2 animate-spin" />
+        Loading configs…
+      </div>
+    )
+  }
+
+  if (configs.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+        No configs found for this category.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-0 rounded-xl border overflow-hidden h-[600px]">
+      {/* Sidebar */}
+      <div className="w-56 shrink-0 border-r bg-muted/20 overflow-y-auto">
+        <ul className="py-1">
+          {configs.map((c) => (
+            <li key={c.key}>
+              <button
+                type="button"
+                onClick={() => setSelectedKey(c.key)}
+                className={[
+                  "w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-muted/60",
+                  selectedKey === c.key ? "bg-muted/80 font-medium" : "",
+                ].join(" ")}
+              >
+                <span className="block truncate">{c.label}</span>
+                {!c.isDefault && (
+                  <span className="block text-xs text-amber-600 mt-0.5">Modified</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Editor panel */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {selectedKey ? (
+          <PromptEditor configKey={selectedKey} isAdmin={isAdmin} />
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            Select a config from the sidebar.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Benchmarks Tab ───────────────────────────────────────────────────────────
 
 function BenchmarksTab() {
@@ -325,7 +656,6 @@ function BenchmarksTab() {
     fetchBenchmarks()
   }, [])
 
-  // Derive unique categories from fetched data
   const uniqueCategories = React.useMemo(
     () => Array.from(new Set(data.map((b) => b.category))).sort(),
     [data]
@@ -583,25 +913,82 @@ function AccountTab() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const currentUser = useCurrentUser()
+  const isAdmin = currentUser?.role === "ADMIN"
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-6 flex flex-col gap-1">
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Manage benchmark reference ranges and account preferences.
+          Manage prompt configurations, CARL rules, benchmark reference ranges, and output templates.
         </p>
       </div>
 
       <Separator className="mb-6" />
 
-      <Tabs defaultValue="benchmarks">
+      <Tabs defaultValue="prompts">
         <TabsList className="mb-6">
-          <TabsTrigger value="benchmarks">Benchmarks</TabsTrigger>
+          <TabsTrigger value="prompts" className="gap-1.5">
+            <FileText className="size-3.5" />
+            Prompts
+          </TabsTrigger>
+          <TabsTrigger value="rules" className="gap-1.5">
+            <Shield className="size-3.5" />
+            Rules
+          </TabsTrigger>
+          <TabsTrigger value="benchmarks" className="gap-1.5">
+            <BarChart3 className="size-3.5" />
+            Benchmarks
+          </TabsTrigger>
+          <TabsTrigger value="templates" className="gap-1.5">
+            <Layout className="size-3.5" />
+            Templates
+          </TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="prompts">
+          <div className="flex flex-col gap-2 mb-4">
+            <p className="text-sm text-muted-foreground">
+              Base system prompts and phase-specific prompts used by the AI agents.
+              {!isAdmin && " Read-only — contact an admin to make changes."}
+            </p>
+          </div>
+          <ConfigCategoryTab
+            categories={["SYSTEM_BASE", "PHASE_PROMPT"]}
+            isAdmin={isAdmin}
+          />
+        </TabsContent>
+
+        <TabsContent value="rules">
+          <div className="flex flex-col gap-2 mb-4">
+            <p className="text-sm text-muted-foreground">
+              CARL rules that govern estimation quality and coverage enforcement.
+              {!isAdmin && " Read-only — contact an admin to make changes."}
+            </p>
+          </div>
+          <ConfigCategoryTab
+            categories={["CARL_RULES"]}
+            isAdmin={isAdmin}
+          />
+        </TabsContent>
+
         <TabsContent value="benchmarks">
           <BenchmarksTab />
+        </TabsContent>
+
+        <TabsContent value="templates">
+          <div className="flex flex-col gap-2 mb-4">
+            <p className="text-sm text-muted-foreground">
+              Output structure templates used to format artefacts produced by each phase.
+              {!isAdmin && " Read-only — contact an admin to make changes."}
+            </p>
+          </div>
+          <ConfigCategoryTab
+            categories={["TEMPLATE"]}
+            isAdmin={isAdmin}
+          />
         </TabsContent>
 
         <TabsContent value="account">
