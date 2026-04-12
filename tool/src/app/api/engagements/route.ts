@@ -55,11 +55,12 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { clientName, projectName, techStack, engagementType } = body as {
+  const { clientName, projectName, techStack, engagementType, accountId } = body as {
     clientName: string;
     projectName?: string;
     techStack: TechStack;
     engagementType?: EngagementType;
+    accountId?: string;
   };
 
   if (!clientName || !techStack) {
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
       projectName: projectName ?? null,
       techStack,
       engagementType: engagementType ?? "NEW_BUILD",
+      accountId: accountId ?? null,
       createdById: session.user.id,
       phases: {
         create: phaseNumbers.map((phaseNumber) => ({

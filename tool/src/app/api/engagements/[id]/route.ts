@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import type { EngagementStatus } from "@/generated/prisma/enums";
+import type { EngagementStatus, RfpSource } from "@/generated/prisma/enums";
 
 export async function GET(
   _request: NextRequest,
@@ -57,11 +57,30 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { clientName, projectName, status, workflowPath } = body as {
+  const {
+    clientName,
+    projectName,
+    status,
+    workflowPath,
+    rfpSource,
+    estimatedDealValue,
+    submissionDeadline,
+    presalesOwner,
+    salesOwner,
+    isCompetitiveBid,
+    accountId,
+  } = body as {
     clientName?: string;
     projectName?: string;
     status?: EngagementStatus;
     workflowPath?: string;
+    rfpSource?: RfpSource;
+    estimatedDealValue?: number;
+    submissionDeadline?: string;
+    presalesOwner?: string;
+    salesOwner?: string;
+    isCompetitiveBid?: boolean;
+    accountId?: string;
   };
 
   const updated = await prisma.engagement.update({
@@ -71,6 +90,13 @@ export async function PATCH(
       ...(projectName !== undefined && { projectName }),
       ...(status !== undefined && { status }),
       ...(workflowPath !== undefined && { workflowPath: workflowPath as "NO_RESPONSE" | "HAS_RESPONSE" }),
+      ...(rfpSource !== undefined && { rfpSource }),
+      ...(estimatedDealValue !== undefined && { estimatedDealValue }),
+      ...(submissionDeadline !== undefined && { submissionDeadline: new Date(submissionDeadline) }),
+      ...(presalesOwner !== undefined && { presalesOwner }),
+      ...(salesOwner !== undefined && { salesOwner }),
+      ...(isCompetitiveBid !== undefined && { isCompetitiveBid }),
+      ...(accountId !== undefined && { accountId }),
     },
   });
 
