@@ -14,6 +14,8 @@ export interface DocumentClassification {
     | "FINANCIAL"
     | "QA_RESPONSE"
     | "RESEARCH"
+    | "ADDENDUM"
+    | "QUESTIONS"
     | "OTHER";
   engagementPhase: string;
   confidence: number;
@@ -27,6 +29,8 @@ const PHASE_MAP: Record<DocumentClassification["documentType"], string> = {
   FINANCIAL: "1A",
   QA_RESPONSE: "2",
   RESEARCH: "0",
+  ADDENDUM: "2",
+  QUESTIONS: "1",
   OTHER: "0",
 };
 
@@ -38,6 +42,8 @@ const SYSTEM_PROMPT = `You are a presales document classifier. Given text extrac
 - **FINANCIAL**: Financial proposal or commercial bid. Contains pricing, cost breakdown, payment terms, commercial terms. Often has total cost, payment schedule, validity period.
 - **QA_RESPONSE**: Clarification questions and answers. Contains questions and answers, clarification responses. Often numbered Q&A format.
 - **RESEARCH**: Background research, market analysis, or technology assessment. Contains market research, competitor analysis, technology assessment. Background/contextual information.
+- **ADDENDUM**: Contains addendums, corrigenda, amendments to the original TOR/RFP, pre-bid meeting minutes, or official answers/clarifications FROM the issuing organization to bidder queries. Key signals: "Addendum No.", "Corrigendum", "Amendment", "Clarification", "Pre-Bid Conference Minutes", "Answers to Queries", "Response to Questions from bidders".
+- **QUESTIONS**: Contains questions or queries FROM our organization (the bidder) TO the customer/issuing organization, requesting clarification on TOR requirements. Key signals: numbered question lists referencing TOR sections, "Clarification Request", "Queries regarding", "Questions for", "Pre-bid Queries".
 - **OTHER**: Does not fit any of the above categories.
 
 Respond ONLY with valid JSON in this exact format:

@@ -151,10 +151,14 @@ const FILE_TYPE_COLORS: Record<string, string> = {
   ESTIMATE: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
   PROPOSAL: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
   FINANCIAL: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+  ADDENDUM: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
+  QUESTIONS: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  QA_RESPONSE: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
+  RESEARCH: "bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-300",
   OTHER: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300",
 };
 
-const FILE_TYPE_ORDER = ["TOR", "ESTIMATE", "PROPOSAL", "FINANCIAL", "OTHER"];
+const FILE_TYPE_ORDER = ["TOR", "QUESTIONS", "ADDENDUM", "QA_RESPONSE", "ESTIMATE", "PROPOSAL", "FINANCIAL", "RESEARCH", "OTHER"];
 
 function groupFilesByType(files: FileInfo[]): Record<string, FileInfo[]> {
   const groups: Record<string, FileInfo[]> = {};
@@ -164,6 +168,43 @@ function groupFilesByType(files: FileInfo[]): Record<string, FileInfo[]> {
     groups[key].push(f);
   }
   return groups;
+}
+
+const LIFECYCLE_STAGES = [
+  { label: "Phase 0 — Research", types: ["RESEARCH"] },
+  { label: "Phase 1 — TOR & Questions", types: ["TOR", "QUESTIONS"] },
+  { label: "Phase 2 — Clarifications & Addendums", types: ["ADDENDUM", "QA_RESPONSE"] },
+  { label: "Phase 1A — Estimates & Financials", types: ["ESTIMATE", "FINANCIAL"] },
+  { label: "Phase 5 — Proposals", types: ["PROPOSAL"] },
+  { label: "Other", types: ["OTHER"] },
+];
+
+function getDestinationLabel(fileType: string): string {
+  switch (fileType) {
+    case "TOR": return "→ Phase 0 RESEARCH";
+    case "ESTIMATE": return "→ Phase 1A ESTIMATE";
+    case "PROPOSAL": return "→ Phase 5 PROPOSAL";
+    case "FINANCIAL": return "→ Phase 1A ESTIMATE STATE";
+    case "ADDENDUM": return "→ Phase 2 RESPONSE ANALYSIS";
+    case "QUESTIONS": return "→ Phase 1 QUESTIONS";
+    case "QA_RESPONSE": return "→ Phase 0 RESEARCH";
+    case "RESEARCH": return "→ Phase 0 RESEARCH";
+    default: return "→ Phase 0 RESEARCH";
+  }
+}
+
+function EstimatePreview({ meta }: { meta: Record<string, unknown> }) {
+  const hoursByTab = meta.hoursByTab as Record<string, { low?: number; high?: number }> | undefined;
+  const totalHours = meta.totalHours as { low?: number; high?: number } | undefined;
+  return (
+    <>
+      {hoursByTab?.backend && <div>Backend: {hoursByTab.backend.low}-{hoursByTab.backend.high} hrs</div>}
+      {hoursByTab?.frontend && <div>Frontend: {hoursByTab.frontend.low}-{hoursByTab.frontend.high} hrs</div>}
+      {hoursByTab?.fixedCost && <div>Fixed Cost: {hoursByTab.fixedCost.low}-{hoursByTab.fixedCost.high} hrs</div>}
+      {hoursByTab?.ai && <div>AI: {hoursByTab.ai.low}-{hoursByTab.ai.high} hrs</div>}
+      <div className="font-medium">Total: {totalHours?.low ?? "?"}-{totalHours?.high ?? "?"} hrs ({(meta.lineItemCount as number) ?? 0} items)</div>
+    </>
+  );
 }
 
 function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProps) {
@@ -342,98 +383,120 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
           )}
         </div>
 
-        {/* Right column: Files grouped by type */}
+        {/* Right column: Files grouped by lifecycle stage */}
         <div className="space-y-3">
           <h3 className="text-sm font-medium">Files in folder</h3>
 
-          {/* Files grouped by type */}
           {item.files.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Files in folder</label>
-              {FILE_TYPE_ORDER.filter((t) => fileGroups[t]).map((fileType) => (
-                <div key={fileType} className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[fileType] ?? FILE_TYPE_COLORS.OTHER}`}>
-                      {fileType}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {fileType === "TOR" && "→ Phase 0 RESEARCH"}
-                      {fileType === "ESTIMATE" && "→ Phase 1A ESTIMATE"}
-                      {fileType === "PROPOSAL" && "→ Phase 5 PROPOSAL"}
-                      {fileType === "FINANCIAL" && "→ Phase 1A ESTIMATE STATE"}
-                      {fileType === "OTHER" && "→ Phase 0 RESEARCH"}
-                    </span>
-                  </div>
-                  <div className="rounded border p-2 space-y-1 max-h-40 overflow-y-auto">
-                    {fileGroups[fileType].map((f, i) => {
-                      const pf = processedMap.get(f.fullPath);
-                      const aiType = pf?.classifiedType;
-                      const aiConf = pf?.classificationConfidence;
-                      const aiReasoning = pf?.classificationReasoning;
-                      const hasAiClass = aiType != null && aiConf != null && aiConf > 0;
-                      const lowConfidence = hasAiClass && aiConf < 0.6;
-                      const confPct = aiConf != null ? Math.round(aiConf * 100) : null;
-                      return (
-                        <div key={i} className="space-y-0.5">
-                          <div className="flex items-center justify-between text-xs gap-2">
-                            <span className={f.isPrimary ? "font-medium truncate" : "text-muted-foreground truncate"}>
-                              {f.isPrimary && <Badge variant="outline" className="mr-1 text-[10px] py-0">Primary</Badge>}
-                              {f.isSubmission && (
-                                <Badge variant="secondary" className="mr-1 text-[10px] py-0 bg-amber-100 text-amber-800">Final Submission</Badge>
-                              )}
-                              {f.name}
-                            </span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              {hasAiClass && (
-                                <span
-                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[aiType] ?? FILE_TYPE_COLORS.OTHER}`}
-                                  title={aiReasoning ?? undefined}
-                                >
-                                  {aiType}
+            <div className="space-y-3">
+              {LIFECYCLE_STAGES.map((stage) => {
+                const stageFiles = stage.types.flatMap((t) => fileGroups[t] ?? []);
+                if (stageFiles.length === 0) return null;
+                const mainFiles = stageFiles.filter((f) => !f.isSubmission);
+                const submissionFiles = stageFiles.filter((f) => f.isSubmission);
+                return (
+                  <div key={stage.label} className="space-y-1">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{stage.label}</p>
+                    {mainFiles.length > 0 && (
+                      <div className="rounded border p-2 space-y-1 max-h-48 overflow-y-auto">
+                        {mainFiles.map((f, i) => {
+                          const pfRecord = processedMap.get(f.fullPath);
+                          const aiType = pfRecord?.classifiedType;
+                          const aiConf = pfRecord?.classificationConfidence;
+                          const aiReasoning = pfRecord?.classificationReasoning;
+                          const hasAiClass = aiType != null && aiConf != null && aiConf > 0;
+                          const lowConfidence = hasAiClass && aiConf! < 0.6;
+                          const confPct = aiConf != null ? Math.round(aiConf * 100) : null;
+                          const displayType = aiType ?? f.type;
+                          return (
+                            <div key={i} className="space-y-0.5">
+                              <div className="flex items-center justify-between text-xs gap-2">
+                                <span className={f.isPrimary ? "font-medium truncate" : "text-muted-foreground truncate"}>
+                                  {f.isPrimary && <Badge variant="outline" className="mr-1 text-[10px] py-0">Primary</Badge>}
+                                  {f.name}
                                 </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[displayType] ?? FILE_TYPE_COLORS.OTHER}`}
+                                    title={aiReasoning ?? undefined}>
+                                    {displayType}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground">{getDestinationLabel(displayType)}</span>
+                                  {confPct != null && (
+                                    <span
+                                      className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                        confPct >= 80
+                                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                                          : confPct >= 60
+                                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                                            : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                                      }`}
+                                      title={aiReasoning ?? undefined}
+                                    >
+                                      {confPct}%
+                                    </span>
+                                  )}
+                                  {pfRecord && (
+                                    <span className={`text-[10px] ${pfRecord.extractedText ? "text-green-600" : "text-red-500"}`}>
+                                      {pfRecord.extractedText ? "extracted" : "failed"}
+                                    </span>
+                                  )}
+                                  <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
+                                </div>
+                              </div>
+                              {lowConfidence && (
+                                <p className="text-[10px] text-amber-600 dark:text-amber-400 pl-2">
+                                  Low confidence — please verify classification
+                                </p>
                               )}
-                              {confPct != null && (
-                                <span
-                                  className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                                    confPct >= 80
-                                      ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                                      : confPct >= 60
-                                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                                        : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                                  }`}
-                                  title={aiReasoning ?? undefined}
-                                >
-                                  {confPct}%
-                                </span>
+                              {pfRecord?.deliverableMetadata && (
+                                <div className="text-[10px] text-muted-foreground mt-0.5 pl-2 border-l-2 space-y-0.5">
+                                  {pfRecord.classifiedType === "TOR" && (
+                                    <div>{`${(pfRecord.deliverableMetadata as Record<string, unknown>).requirementCount ?? 0} requirements, ${(pfRecord.deliverableMetadata as Record<string, unknown>).integrationCount ?? 0} integrations`}</div>
+                                  )}
+                                  {pfRecord.classifiedType === "ESTIMATE" && (
+                                    <EstimatePreview meta={pfRecord.deliverableMetadata as Record<string, unknown>} />
+                                  )}
+                                  {pfRecord.classifiedType === "PROPOSAL" && (
+                                    <div>{`${((pfRecord.deliverableMetadata as Record<string, unknown>).sections as unknown[] | undefined)?.length ?? 0} sections`}</div>
+                                  )}
+                                  {pfRecord.classifiedType === "FINANCIAL" && (
+                                    <div>{`Total: $${((pfRecord.deliverableMetadata as Record<string, unknown>).totalCost as number | undefined)?.toLocaleString() ?? "N/A"}`}</div>
+                                  )}
+                                  {pfRecord.classifiedType === "QA_RESPONSE" && (
+                                    <div>{`${(pfRecord.deliverableMetadata as Record<string, unknown>).questionCount ?? 0} questions, ${(pfRecord.deliverableMetadata as Record<string, unknown>).answeredCount ?? 0} answered`}</div>
+                                  )}
+                                </div>
                               )}
-                              {pf && (
-                                <span className={`text-[10px] ${pf.extractedText ? "text-green-600" : "text-red-500"}`}>
-                                  {pf.extractedText ? "extracted" : "failed"}
-                                </span>
-                              )}
-                              <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
                             </div>
-                          </div>
-                          {lowConfidence && (
-                            <p className="text-[10px] text-amber-600 dark:text-amber-400 pl-2">
-                              Low confidence — please verify classification
-                            </p>
-                          )}
-                          {pf?.deliverableMetadata && (
-                            <div className="text-[10px] text-muted-foreground mt-0.5 pl-2 border-l-2">
-                              {pf.classifiedType === "TOR" && `${(pf.deliverableMetadata as Record<string, unknown>).requirementCount ?? 0} requirements, ${(pf.deliverableMetadata as Record<string, unknown>).integrationCount ?? 0} integrations`}
-                              {pf.classifiedType === "ESTIMATE" && `${(pf.deliverableMetadata as Record<string, unknown>).lineItemCount ?? 0} line items, ${((pf.deliverableMetadata as Record<string, unknown>).totalHours as { low?: number; high?: number } | undefined)?.low ?? 0}–${((pf.deliverableMetadata as Record<string, unknown>).totalHours as { low?: number; high?: number } | undefined)?.high ?? 0} hrs`}
-                              {pf.classifiedType === "PROPOSAL" && `${((pf.deliverableMetadata as Record<string, unknown>).sections as unknown[] | undefined)?.length ?? 0} sections`}
-                              {pf.classifiedType === "FINANCIAL" && `Total: $${((pf.deliverableMetadata as Record<string, unknown>).totalCost as number | undefined)?.toLocaleString() ?? "N/A"}`}
-                              {pf.classifiedType === "QA_RESPONSE" && `${(pf.deliverableMetadata as Record<string, unknown>).questionCount ?? 0} questions, ${(pf.deliverableMetadata as Record<string, unknown>).answeredCount ?? 0} answered`}
-                            </div>
-                          )}
+                          );
+                        })}
+                      </div>
+                    )}
+                    {submissionFiles.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400 pl-1">Final Submission</p>
+                        <div className="rounded border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-2 space-y-1 max-h-32 overflow-y-auto">
+                          {submissionFiles.map((f, i) => {
+                            const pfRecord = processedMap.get(f.fullPath);
+                            const displayType = pfRecord?.classifiedType ?? f.type;
+                            return (
+                              <div key={i} className="flex items-center justify-between text-xs gap-2">
+                                <span className="text-muted-foreground truncate">{f.name}</span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[displayType] ?? FILE_TYPE_COLORS.OTHER}`}>
+                                    {displayType}
+                                  </span>
+                                  <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

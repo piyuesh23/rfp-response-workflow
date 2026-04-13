@@ -11,6 +11,8 @@ import { ArtefactType } from "@/generated/prisma/client";
 import AdmZip from "adm-zip";
 import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
+import { copyMasterTemplate } from "@/lib/template-populator";
+import ExcelJS from "exceljs";
 
 export async function POST(
   request: NextRequest,
@@ -83,15 +85,36 @@ export async function POST(
   }
 
   const allFiles = item.files as unknown as FileEntry[];
-  const hasEstimate = allFiles.some((f) => f.type === "ESTIMATE");
-  const hasProposal = allFiles.some((f) => f.type === "PROPOSAL");
-  const hasFinancial = allFiles.some((f) => f.type === "FINANCIAL");
+
+  // Helper: get the effective document type, preferring AI classification when confident
+  function getEffectiveType(file: FileEntry): string {
+    const pfRecord = (item!.processedFiles as ProcessedFileRecord[] ?? []).find(
+      (pf) => pf.fullPath === file.fullPath
+    );
+    const aiType =
+      pfRecord?.classificationConfidence != null && pfRecord.classificationConfidence >= 0.6
+        ? pfRecord.classifiedType
+        : undefined;
+    return aiType ?? file.type;
+  }
+
+  const hasEstimate = allFiles.some((f) => getEffectiveType(f) === "ESTIMATE");
+  const hasProposal = allFiles.some((f) => getEffectiveType(f) === "PROPOSAL");
+  const hasFinancial = allFiles.some((f) => getEffectiveType(f) === "FINANCIAL");
+  const hasAddendum = allFiles.some((f) => getEffectiveType(f) === "ADDENDUM");
+  const hasTorOrQuestions = allFiles.some((f) => ["TOR", "QUESTIONS"].includes(getEffectiveType(f)));
 
   const phasesToCreate: Array<{ phaseNumber: string; status: "APPROVED" }> = [
     { phaseNumber: "0", status: "APPROVED" },
   ];
+  if (hasTorOrQuestions) {
+    phasesToCreate.push({ phaseNumber: "1", status: "APPROVED" });
+  }
   if (hasEstimate || hasFinancial) {
     phasesToCreate.push({ phaseNumber: "1A", status: "APPROVED" });
+  }
+  if (hasAddendum) {
+    phasesToCreate.push({ phaseNumber: "2", status: "APPROVED" });
   }
   if (hasProposal) {
     phasesToCreate.push({ phaseNumber: "5", status: "APPROVED" });
@@ -155,6 +178,122 @@ export async function POST(
   // Build a map from phaseNumber to phase id
   const phaseMap = new Map(engagement.phases.map((p) => [p.phaseNumber, p.id]));
 
+  // 4C: Populate Master Estimate Template from XLSX data if available
+  const xlsxEstimateFile = processedFiles.find(
+    (pf) => pf.classifiedType === "ESTIMATE" && pf.deliverableMetadata?.rawData
+  );
+
+  if (xlsxEstimateFile) {
+    try {
+      const templateKey = await copyMasterTemplate(engagement.id);
+      const templateBuffer = await downloadFile(templateKey);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(new Uint8Array(templateBuffer).buffer as ArrayBuffer);
+
+      type EstimateRow = {
+        task: string;
+        description: string;
+        hours: number;
+        conf: number;
+        lowHrs: number;
+        highHrs: number;
+        assumptions: string;
+        solutionOrExclusions: string;
+        links: string;
+        domain?: string;
+      };
+
+      const rawData = xlsxEstimateFile.deliverableMetadata!.rawData as {
+        backend: EstimateRow[];
+        frontend: EstimateRow[];
+        fixedCost: EstimateRow[];
+        ai: EstimateRow[];
+      };
+
+      const XLSX_DATA_START_ROW = 7;
+
+      const tabConfigs = [
+        { name: "Backend", data: rawData.backend, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
+        { name: "Frontend", data: rawData.frontend, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
+        { name: "Fixed Cost Items", data: rawData.fixedCost, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 11, extra: -1, links: 13 } },
+        { name: "AI", data: rawData.ai, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
+      ];
+
+      const tabStatus: Record<string, boolean> = {};
+
+      for (const tab of tabConfigs) {
+        const sheet = workbook.getWorksheet(tab.name);
+        const statusKey = tab.name === "Fixed Cost Items" ? "fixedCost" : tab.name.toLowerCase();
+        if (!sheet || tab.data.length === 0) {
+          tabStatus[statusKey] = false;
+          continue;
+        }
+
+        let rowIdx = XLSX_DATA_START_ROW;
+        let currentDomain = "";
+
+        for (const row of tab.data) {
+          if (row.domain && row.domain !== currentDomain) {
+            currentDomain = row.domain;
+            sheet.getCell(rowIdx, tab.cols.task).value = currentDomain;
+            sheet.getCell(rowIdx, tab.cols.task).font = { bold: true };
+            rowIdx++;
+          }
+
+          sheet.getCell(rowIdx, tab.cols.task).value = row.task;
+          sheet.getCell(rowIdx, tab.cols.desc).value = row.description;
+          sheet.getCell(rowIdx, tab.cols.hrs).value = row.hours;
+          sheet.getCell(rowIdx, tab.cols.conf).value = row.conf;
+          sheet.getCell(rowIdx, tab.cols.low).value = row.lowHrs;
+          sheet.getCell(rowIdx, tab.cols.high).value = row.highHrs;
+          sheet.getCell(rowIdx, tab.cols.assumptions).value = row.assumptions;
+          if (tab.cols.extra > 0) {
+            sheet.getCell(rowIdx, tab.cols.extra).value = row.solutionOrExclusions;
+          }
+          if (tab.cols.links > 0) {
+            sheet.getCell(rowIdx, tab.cols.links).value = row.links;
+          }
+
+          for (const col of Object.values(tab.cols)) {
+            if (col > 0) {
+              sheet.getCell(rowIdx, col).alignment = { wrapText: true, vertical: "top" };
+            }
+          }
+          rowIdx++;
+        }
+
+        tabStatus[statusKey] = true;
+      }
+
+      const outputBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+      await uploadFile(templateKey, outputBuffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+      await prisma.engagement.update({
+        where: { id: engagement.id },
+        data: {
+          templateFileUrl: templateKey,
+          templateStatus: JSON.parse(JSON.stringify(tabStatus)),
+        },
+      });
+    } catch (err) {
+      console.warn(`[import-confirm] Failed to populate estimate template: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 4D: Prefer submission folder files for financial metadata
+  const submissionFinancial = processedFiles.find(
+    (pf) => pf.isSubmission && pf.classifiedType === "FINANCIAL"
+  );
+  if (submissionFinancial?.deliverableMetadata) {
+    const meta = submissionFinancial.deliverableMetadata as { totalCost?: number };
+    if (meta.totalCost) {
+      await prisma.engagement.update({
+        where: { id: engagement.id },
+        data: { financialProposalValue: meta.totalCost },
+      });
+    }
+  }
+
   // Helper: get MIME type
   function getMimeType(fileName: string): string {
     return fileName.toLowerCase().endsWith(".pdf")
@@ -192,6 +331,10 @@ export async function POST(
         return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: "Imported Q&A Response" };
       case "RESEARCH":
         return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: "Imported Research" };
+      case "ADDENDUM":
+        return { phaseNumber: "2", artefactType: ArtefactType.RESPONSE_ANALYSIS, label: "Imported Addendum" };
+      case "QUESTIONS":
+        return { phaseNumber: "1", artefactType: ArtefactType.QUESTIONS, label: "Imported Questions" };
       default:
         return null;
     }

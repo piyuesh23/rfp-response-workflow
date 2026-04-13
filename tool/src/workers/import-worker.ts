@@ -10,6 +10,7 @@ import { prisma } from "@/lib/db";
 import { downloadFile, uploadFile } from "@/lib/storage";
 import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
+import { readEstimateFromXlsx, xlsxEstimateToMarkdown } from "@/lib/xlsx-estimate-reader";
 import { inferEngagementFromText, inferFromSecondaryDocument, classifyFileType } from "@/lib/ai/infer-engagement";
 import { classifyDocument } from "@/lib/ai/classify-document";
 import { extractDeliverables } from "@/lib/ai/extract-deliverables";
@@ -27,8 +28,12 @@ function isDocx(name: string): boolean {
   return name.toLowerCase().endsWith(".docx");
 }
 
+function isXlsx(name: string): boolean {
+  return /\.xlsx?$/i.test(name);
+}
+
 function isSupportedFile(name: string): boolean {
-  return isPdf(name) || isDocx(name);
+  return isPdf(name) || isDocx(name) || isXlsx(name);
 }
 
 interface AccountRecord {
@@ -288,6 +293,21 @@ async function processOneFolder(
 
     let secondaryText = "";
     let extractedOk = false;
+    let xlsxSkipAiClassify = false;
+
+    const record: ProcessedFileRecord = {
+      name: fileMeta.name,
+      fullPath: fileMeta.fullPath,
+      type: fileMeta.type,
+      isSubmission: fileMeta.isSubmission,
+      extractedText: false,
+      artefactCreated: false,
+      classifiedType: classifyFileType(fileMeta.name),
+      classificationConfidence: 0,
+      classificationReasoning: "",
+      deliverableMetadata: null,
+    };
+
     try {
       const entry = folderEntries.find((e) => e.entryName === fileMeta.fullPath);
       if (entry) {
@@ -295,11 +315,53 @@ async function processOneFolder(
         if (isPdf(fileMeta.name)) {
           const result = await extractTextFromPdf(fileBuffer);
           secondaryText = result.text;
+          extractedOk = secondaryText.length > 0;
         } else if (isDocx(fileMeta.name)) {
           const result = await extractTextFromDocx(fileBuffer);
           secondaryText = result.text;
+          extractedOk = secondaryText.length > 0;
+        } else if (isXlsx(fileMeta.name)) {
+          try {
+            const xlsxData = await readEstimateFromXlsx(fileBuffer);
+            const totalItems =
+              xlsxData.backend.length +
+              xlsxData.frontend.length +
+              xlsxData.fixedCost.length +
+              xlsxData.ai.length;
+            if (totalItems > 0) {
+              secondaryText = xlsxEstimateToMarkdown(xlsxData);
+              extractedOk = true;
+              xlsxSkipAiClassify = true;
+              // XLSX files are definitively estimates — skip AI classification
+              record.classifiedType = "ESTIMATE";
+              record.classificationConfidence = 0.95;
+              record.classificationReasoning = `XLSX estimate sheet with ${totalItems} line items across ${[
+                xlsxData.backend.length > 0 && "Backend",
+                xlsxData.frontend.length > 0 && "Frontend",
+                xlsxData.fixedCost.length > 0 && "Fixed Cost",
+                xlsxData.ai.length > 0 && "AI",
+              ]
+                .filter(Boolean)
+                .join(", ")} tabs`;
+              record.deliverableMetadata = {
+                totalHours: xlsxData.summary.totalHours,
+                hoursByTab: {
+                  backend: xlsxData.summary.backendHours,
+                  frontend: xlsxData.summary.frontendHours,
+                  fixedCost: xlsxData.summary.fixedCostHours,
+                  ai: xlsxData.summary.aiHours,
+                },
+                lineItemCount: totalItems,
+                rawData: xlsxData,
+              };
+              fileMeta.type = "ESTIMATE";
+            }
+          } catch (xlsxErr) {
+            console.warn(
+              `[import-worker] XLSX parsing failed for ${fileMeta.name}: ${xlsxErr instanceof Error ? xlsxErr.message : String(xlsxErr)}`
+            );
+          }
         }
-        extractedOk = secondaryText.length > 0;
       }
     } catch (extractErr) {
       console.warn(
@@ -307,50 +369,37 @@ async function processOneFolder(
       );
     }
 
-    // AI classify and extract metadata for secondary file
-    let secondaryClassifiedType: string = classifyFileType(fileMeta.name);
-    let secondaryClassificationConfidence = 0;
-    let secondaryClassificationReasoning = "";
-    let secondaryDeliverableMetadata: Record<string, unknown> | null = null;
+    record.extractedText = extractedOk;
 
-    if (extractedOk && secondaryText.length >= 200) {
+    // AI classify and extract metadata for non-XLSX secondary files
+    if (!xlsxSkipAiClassify && extractedOk && secondaryText.length >= 200) {
       try {
         const classification = await aiLimiter.execute(() => classifyDocument(secondaryText));
-        secondaryClassifiedType = classification.documentType;
-        secondaryClassificationConfidence = classification.confidence;
-        secondaryClassificationReasoning = classification.reasoning;
+        record.classifiedType = classification.documentType;
+        record.classificationConfidence = classification.confidence;
+        record.classificationReasoning = classification.reasoning;
       } catch {
         // Keep filename-based classification as fallback
       }
 
-      if (secondaryClassificationConfidence >= 0.6) {
+      if ((record.classificationConfidence ?? 0) >= 0.6) {
         try {
-          secondaryDeliverableMetadata = await aiLimiter.execute(() =>
-            extractDeliverables(secondaryText, secondaryClassifiedType)
+          record.deliverableMetadata = await aiLimiter.execute(() =>
+            extractDeliverables(secondaryText, record.classifiedType!)
           );
         } catch {
           // Non-fatal — proceed without metadata
         }
         // Update filesMetadata type if AI confidence is high enough
-        fileMeta.type = secondaryClassifiedType as typeof fileMeta.type;
+        fileMeta.type = record.classifiedType as typeof fileMeta.type;
       }
     }
 
-    const record: ProcessedFileRecord = {
-      name: fileMeta.name,
-      fullPath: fileMeta.fullPath,
-      type: fileMeta.type,
-      isSubmission: fileMeta.isSubmission,
-      extractedText: extractedOk,
-      artefactCreated: false,
-      classifiedType: secondaryClassifiedType,
-      classificationConfidence: secondaryClassificationConfidence,
-      classificationReasoning: secondaryClassificationReasoning,
-      deliverableMetadata: secondaryDeliverableMetadata,
-    };
+    // Sync record type with (possibly updated) fileMeta type
+    record.type = fileMeta.type;
 
     // For FINANCIAL or ESTIMATE files, run secondary inference — rate-limited
-    if (extractedOk && secondaryText.length >= 100 && (fileMeta.type === "FINANCIAL" || fileMeta.type === "ESTIMATE")) {
+    if (extractedOk && secondaryText.length >= 100 && !xlsxSkipAiClassify && (fileMeta.type === "FINANCIAL" || fileMeta.type === "ESTIMATE")) {
       try {
         const secondaryInferred = await aiLimiter.execute(() =>
           inferFromSecondaryDocument(
