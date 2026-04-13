@@ -171,6 +171,36 @@ interface BusinessData {
   summary: BusinessSummary;
 }
 
+interface EffortByTechStack {
+  techStack: string;
+  avgTotalHours: number;
+  avgBackend: number;
+  avgFrontend: number;
+  avgFixedCost: number;
+  avgAi: number;
+  sampleSize: number;
+}
+
+interface EffortByIndustry {
+  industry: string;
+  avgTotalHours: number;
+  avgBackend: number;
+  avgFrontend: number;
+  sampleSize: number;
+}
+
+interface EffortByEngType {
+  type: string;
+  avgTotalHours: number;
+  sampleSize: number;
+}
+
+interface EffortBenchmarks {
+  byTechStack: EffortByTechStack[];
+  byIndustry: EffortByIndustry[];
+  byEngagementType: EffortByEngType[];
+}
+
 interface AnalyticsData {
   totals: AnalyticsTotals;
   byUser: UserStat[];
@@ -179,6 +209,7 @@ interface AnalyticsData {
   byModel: ModelStat[];
   byEngagement: EngagementStat[];
   business?: BusinessData;
+  effortBenchmarks?: EffortBenchmarks;
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +623,10 @@ export default function AdminAnalyticsPage() {
           <TabsTrigger value="business">
             <BarChart2 className="h-3.5 w-3.5" />
             Business
+          </TabsTrigger>
+          <TabsTrigger value="benchmarks">
+            <Target className="h-3.5 w-3.5" />
+            Effort Benchmarks
           </TabsTrigger>
         </TabsList>
 
@@ -1331,6 +1366,116 @@ export default function AdminAnalyticsPage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* EFFORT BENCHMARKS TAB                                              */}
+        {/* ------------------------------------------------------------------ */}
+        <TabsContent value="benchmarks">
+          {data.effortBenchmarks && (
+            <div className="space-y-8 pt-4">
+              {/* By Tech Stack — bar chart */}
+              {data.effortBenchmarks.byTechStack.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Average Hours by Tech Stack</h3>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data.effortBenchmarks.byTechStack}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="techStack" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="avgBackend" name="Backend" fill="#3b82f6" stackId="hours" />
+                        <Bar dataKey="avgFrontend" name="Frontend" fill="#8b5cf6" stackId="hours" />
+                        <Bar dataKey="avgFixedCost" name="Fixed Cost" fill="#f59e0b" stackId="hours" />
+                        <Bar dataKey="avgAi" name="AI" fill="#10b981" stackId="hours" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Tech Stack</TableHead>
+                        <TableHead className="text-xs text-right">Avg Total</TableHead>
+                        <TableHead className="text-xs text-right">Backend</TableHead>
+                        <TableHead className="text-xs text-right">Frontend</TableHead>
+                        <TableHead className="text-xs text-right">Fixed Cost</TableHead>
+                        <TableHead className="text-xs text-right">AI</TableHead>
+                        <TableHead className="text-xs text-right">Samples</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.effortBenchmarks.byTechStack.map((row) => (
+                        <TableRow key={row.techStack}>
+                          <TableCell className="text-xs font-medium">{row.techStack.replace(/_/g, " ")}</TableCell>
+                          <TableCell className="text-xs text-right font-semibold">{row.avgTotalHours}h</TableCell>
+                          <TableCell className="text-xs text-right">{row.avgBackend}h</TableCell>
+                          <TableCell className="text-xs text-right">{row.avgFrontend}h</TableCell>
+                          <TableCell className="text-xs text-right">{row.avgFixedCost}h</TableCell>
+                          <TableCell className="text-xs text-right">{row.avgAi}h</TableCell>
+                          <TableCell className="text-xs text-right text-muted-foreground">{row.sampleSize}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {/* By Industry */}
+              {data.effortBenchmarks.byIndustry.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Average Hours by Industry</h3>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Industry</TableHead>
+                        <TableHead className="text-xs text-right">Avg Total</TableHead>
+                        <TableHead className="text-xs text-right">Backend</TableHead>
+                        <TableHead className="text-xs text-right">Frontend</TableHead>
+                        <TableHead className="text-xs text-right">Samples</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.effortBenchmarks.byIndustry.map((row) => (
+                        <TableRow key={row.industry}>
+                          <TableCell className="text-xs font-medium">{row.industry.replace(/_/g, " ")}</TableCell>
+                          <TableCell className="text-xs text-right font-semibold">{row.avgTotalHours}h</TableCell>
+                          <TableCell className="text-xs text-right">{row.avgBackend}h</TableCell>
+                          <TableCell className="text-xs text-right">{row.avgFrontend}h</TableCell>
+                          <TableCell className="text-xs text-right text-muted-foreground">{row.sampleSize}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {/* By Engagement Type */}
+              {data.effortBenchmarks.byEngagementType.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Average Hours by Engagement Type</h3>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data.effortBenchmarks.byEngagementType}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="type" tick={{ fontSize: 11 }} tickFormatter={(v: string) => v.replace(/_/g, " ")} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="avgTotalHours" name="Avg Hours" fill="#6366f1" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {data.effortBenchmarks.byTechStack.length === 0 &&
+                data.effortBenchmarks.byIndustry.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-8 text-center">
+                    No estimate data available yet. Import RFPs with estimate documents to see effort benchmarks.
+                  </p>
+                )}
             </div>
           )}
         </TabsContent>

@@ -24,6 +24,22 @@ export interface TorMetadata {
   estimatedBudget: number | null;
 }
 
+export interface EstimateAssumption {
+  text: string;
+  torReference: string | null;
+  impactIfWrong: string;
+}
+
+export interface EstimateRisk {
+  task: string;
+  tab: string;
+  conf: number;
+  risk: string;
+  openQuestion: string;
+  recommendedAction: string;
+  hoursAtRisk: number;
+}
+
 export interface EstimateMetadata {
   totalHours: { low: number; high: number };
   hoursByTab: {
@@ -37,6 +53,8 @@ export interface EstimateMetadata {
   assumptionCount: number;
   riskCount: number;
   techStack: string | null;
+  assumptions: EstimateAssumption[];
+  risks: EstimateRisk[];
 }
 
 export interface ProposalMetadata {
@@ -63,6 +81,30 @@ export interface QaMetadata {
   keyDecisions: string[];
 }
 
+export interface AnnexureMetadata {
+  annexureNumber: string | null;
+  title: string | null;
+  type: "TECHNICAL_SPEC" | "DATA_SCHEMA" | "DRAWINGS" | "SAMPLE_CONTENT" | "REFERENCE" | "OTHER";
+  referencedTorSections: string[];
+  keySpecifications: string[];
+}
+
+export interface PrerequisitesMetadata {
+  eligibilityCriteria: string[];
+  mandatoryCertifications: string[];
+  technicalPrereqs: string[];
+  complianceRequirements: string[];
+  disqualificationRisks: string[];
+}
+
+export interface ResponseFormatMetadata {
+  requiredSections: string[];
+  scoringCriteria: Array<{ criterion: string; weight: number | null }>;
+  pageLimit: number | null;
+  submissionFormat: string | null;
+  evaluationMethodology: string | null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function parseJsonFromResponse(text: string): unknown | null {
@@ -77,12 +119,13 @@ function parseJsonFromResponse(text: string): unknown | null {
 
 async function callSonnet(
   system: string,
-  userContent: string
+  userContent: string,
+  maxTokens = 800
 ): Promise<string> {
   const anthropic = new Anthropic();
   const response = await anthropic.messages.create({
     model: SONNET_MODEL,
-    max_tokens: 800,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: "user", content: userContent }],
   });
@@ -168,6 +211,8 @@ export async function extractEstimateDeliverables(
     assumptionCount: 0,
     riskCount: 0,
     techStack: null,
+    assumptions: [],
+    risks: [],
   };
 
   const truncated = text.slice(0, 12000);
@@ -183,6 +228,8 @@ Extract:
 - Assumption count (rows in assumption register table or list).
 - Risk count (rows in risk register table).
 - Tech stack (e.g., "Drupal", "Drupal + Next.js", "WordPress") or null if not specified.
+- assumptions: Array of assumption objects with { text, torReference (section ref or null), impactIfWrong }. Extract from Assumption Register/table or bullet lists.
+- risks: Array of risk objects with { task, tab, conf, risk, openQuestion, recommendedAction, hoursAtRisk }. Extract from Risk Register table.
 
 Respond ONLY with valid JSON:
 {
@@ -197,13 +244,16 @@ Respond ONLY with valid JSON:
   "confidenceDistribution": { "high56": 0, "medium4": 0, "low123": 0 },
   "assumptionCount": 0,
   "riskCount": 0,
-  "techStack": null
+  "techStack": null,
+  "assumptions": [],
+  "risks": []
 }`;
 
   try {
     const responseText = await callSonnet(
       system,
-      `Extract metadata from this estimate document:\n\n${truncated}`
+      `Extract metadata from this estimate document:\n\n${truncated}`,
+      1500
     );
     const parsed = parseJsonFromResponse(responseText);
     if (!parsed) return defaultResult;
@@ -351,6 +401,144 @@ Respond ONLY with valid JSON:
   }
 }
 
+/**
+ * Extract structured metadata from an annexure or appendix document.
+ */
+export async function extractAnnexureDeliverables(
+  text: string
+): Promise<AnnexureMetadata> {
+  const defaultResult: AnnexureMetadata = {
+    annexureNumber: null,
+    title: null,
+    type: "OTHER",
+    referencedTorSections: [],
+    keySpecifications: [],
+  };
+
+  const truncated = text.slice(0, 12000);
+  const system = `You are a presales analyst reviewing an annexure or appendix document attached to a TOR/RFP.
+
+Extract:
+- annexureNumber: The annexure/appendix/attachment identifier (e.g., "Annexure A", "Appendix 1", "Attachment 2") or null if not labelled.
+- title: The title or subject of the annexure (e.g., "Technical Specifications", "Data Schema") or null.
+- type: One of "TECHNICAL_SPEC" (technical specifications, architecture diagrams), "DATA_SCHEMA" (data models, database schemas, ERDs), "DRAWINGS" (wireframes, mockups, drawings), "SAMPLE_CONTENT" (sample data, content examples), "REFERENCE" (reference documents, standards, guidelines), "OTHER".
+- referencedTorSections: List of TOR/RFP section numbers or names this annexure relates to (up to 10).
+- keySpecifications: List of key technical specifications or requirements found in this annexure (up to 10 short strings).
+
+Respond ONLY with valid JSON:
+{
+  "annexureNumber": null,
+  "title": null,
+  "type": "OTHER",
+  "referencedTorSections": [],
+  "keySpecifications": []
+}`;
+
+  try {
+    const responseText = await callSonnet(
+      system,
+      `Extract metadata from this annexure document:\n\n${truncated}`
+    );
+    const parsed = parseJsonFromResponse(responseText);
+    if (!parsed) return defaultResult;
+    return { ...defaultResult, ...(parsed as Partial<AnnexureMetadata>) };
+  } catch {
+    return defaultResult;
+  }
+}
+
+/**
+ * Extract structured metadata from a prerequisites or eligibility criteria document.
+ */
+export async function extractPrerequisitesDeliverables(
+  text: string
+): Promise<PrerequisitesMetadata> {
+  const defaultResult: PrerequisitesMetadata = {
+    eligibilityCriteria: [],
+    mandatoryCertifications: [],
+    technicalPrereqs: [],
+    complianceRequirements: [],
+    disqualificationRisks: [],
+  };
+
+  const truncated = text.slice(0, 12000);
+  const system = `You are a presales analyst reviewing a prerequisites or eligibility criteria document for a tender/RFP.
+
+Extract:
+- eligibilityCriteria: List of general eligibility requirements (e.g., "Minimum 5 years experience", "Annual turnover > $5M") — up to 10 items.
+- mandatoryCertifications: List of required certifications, accreditations, or registrations (e.g., "ISO 27001", "CMMI Level 3") — up to 10 items.
+- technicalPrereqs: Technical capability requirements (e.g., "Must have delivered 3 Drupal projects", "AWS Partner status") — up to 10 items.
+- complianceRequirements: Regulatory, legal, or policy compliance requirements (e.g., "GDPR compliant", "Local government entity") — up to 10 items.
+- disqualificationRisks: Any conditions that would automatically disqualify a bidder (e.g., "Conflict of interest", "Outstanding litigation") — up to 5 items.
+
+Respond ONLY with valid JSON:
+{
+  "eligibilityCriteria": [],
+  "mandatoryCertifications": [],
+  "technicalPrereqs": [],
+  "complianceRequirements": [],
+  "disqualificationRisks": []
+}`;
+
+  try {
+    const responseText = await callSonnet(
+      system,
+      `Extract metadata from this prerequisites document:\n\n${truncated}`
+    );
+    const parsed = parseJsonFromResponse(responseText);
+    if (!parsed) return defaultResult;
+    return { ...defaultResult, ...(parsed as Partial<PrerequisitesMetadata>) };
+  } catch {
+    return defaultResult;
+  }
+}
+
+/**
+ * Extract structured metadata from a response format or submission template document.
+ */
+export async function extractResponseFormatDeliverables(
+  text: string
+): Promise<ResponseFormatMetadata> {
+  const defaultResult: ResponseFormatMetadata = {
+    requiredSections: [],
+    scoringCriteria: [],
+    pageLimit: null,
+    submissionFormat: null,
+    evaluationMethodology: null,
+  };
+
+  const truncated = text.slice(0, 12000);
+  const system = `You are a presales analyst reviewing a response format, submission template, or evaluation scoring document for a tender/RFP.
+
+Extract:
+- requiredSections: List of mandatory sections the proposal must contain (e.g., "Executive Summary", "Technical Approach", "Team CVs") — up to 15 items.
+- scoringCriteria: Array of {criterion, weight} pairs from the evaluation/scoring matrix. weight is a number (percentage or points) or null if not specified.
+- pageLimit: Maximum page count for the submission as a number, or null if not specified.
+- submissionFormat: Required format or medium (e.g., "PDF via online portal", "3 hard copies + USB") or null.
+- evaluationMethodology: How proposals will be evaluated (e.g., "Lowest price technically acceptable", "Weighted scoring 70/30 technical/commercial") or null.
+
+Respond ONLY with valid JSON:
+{
+  "requiredSections": [],
+  "scoringCriteria": [],
+  "pageLimit": null,
+  "submissionFormat": null,
+  "evaluationMethodology": null
+}`;
+
+  try {
+    const responseText = await callSonnet(
+      system,
+      `Extract metadata from this response format document:\n\n${truncated}`
+    );
+    const parsed = parseJsonFromResponse(responseText);
+    if (!parsed) return defaultResult;
+    return { ...defaultResult, ...(parsed as Partial<ResponseFormatMetadata>) };
+  } catch {
+    return defaultResult;
+  }
+}
+
 // ─── Dispatcher ───────────────────────────────────────────────────────────────
 
 /**
@@ -363,6 +551,7 @@ export async function extractDeliverables(
 ): Promise<Record<string, unknown> | null> {
   switch (documentType) {
     case "TOR":
+    case "ADDENDUM":
       return extractTorDeliverables(text) as unknown as Promise<Record<string, unknown>>;
     case "ESTIMATE":
       return extractEstimateDeliverables(text) as unknown as Promise<Record<string, unknown>>;
@@ -371,7 +560,14 @@ export async function extractDeliverables(
     case "FINANCIAL":
       return extractFinancialDeliverables(text) as unknown as Promise<Record<string, unknown>>;
     case "QA_RESPONSE":
+    case "QUESTIONS":
       return extractQaResponseDeliverables(text) as unknown as Promise<Record<string, unknown>>;
+    case "ANNEXURE":
+      return extractAnnexureDeliverables(text) as unknown as Promise<Record<string, unknown>>;
+    case "PREREQUISITES":
+      return extractPrerequisitesDeliverables(text) as unknown as Promise<Record<string, unknown>>;
+    case "RESPONSE_FORMAT":
+      return extractResponseFormatDeliverables(text) as unknown as Promise<Record<string, unknown>>;
     default:
       return null;
   }

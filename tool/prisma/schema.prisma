@@ -123,6 +123,7 @@ model Engagement {
   phases          Phase[]
   assumptions     Assumption[]
   risks           RiskRegisterEntry[]
+  stageSummaries  EngagementStageSummary[]
 
   @@index([accountId])
 }
@@ -236,6 +237,9 @@ enum ArtefactType {
   REVIEW
   RESPONSE_ANALYSIS
   ESTIMATE_STATE
+  ANNEXURE
+  PREREQUISITES
+  RESPONSE_FORMAT
 }
 
 model Assumption {
@@ -328,6 +332,10 @@ model ImportJob {
   autoConfirmThreshold Float? // e.g. 0.8 — auto-confirm items above this confidence
   batchId        String?      // links multiple ZIPs uploaded together
   errorMessage   String?
+  estimatedCostUsd  Float?
+  actualCostUsd     Float?
+  inputTokensUsed   Int      @default(0)
+  outputTokensUsed  Int      @default(0)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   items          ImportItem[]
@@ -381,6 +389,33 @@ enum ImportItemStatus {
   CONFIRMED
   SKIPPED
   FAILED
+}
+
+model EngagementStageSummary {
+  id            String     @id @default(cuid())
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId  String
+  phaseNumber   String     // "0", "1", "1A", "2", "5"
+  summary       String     // AI-generated summary
+  documentCount Int        @default(0)
+  keyFindings   Json?      // { requirements: [...], risks: [...], decisions: [...] }
+  generatedAt   DateTime   @default(now())
+
+  @@unique([engagementId, phaseNumber])
+  @@index([engagementId])
+}
+
+model ClassificationCorrection {
+  id                 String   @id @default(cuid())
+  fileName           String
+  originalType       String
+  correctedType      String
+  originalConfidence Float
+  textSnippet        String?
+  correctedBy        String
+  createdAt          DateTime @default(now())
+
+  @@index([correctedType])
 }
 
 model PromptConfig {

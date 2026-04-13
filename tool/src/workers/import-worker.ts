@@ -12,7 +12,7 @@ import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
 import { readEstimateFromXlsx, xlsxEstimateToMarkdown } from "@/lib/xlsx-estimate-reader";
 import { inferEngagementFromText, inferFromSecondaryDocument, classifyFileType } from "@/lib/ai/infer-engagement";
-import { classifyDocument } from "@/lib/ai/classify-document";
+import { classifyDocument, isLikelyTemplate } from "@/lib/ai/classify-document";
 import { extractDeliverables } from "@/lib/ai/extract-deliverables";
 import { aiLimiter } from "@/lib/ai/rate-limiter";
 import { redisConnection, ImportJobData } from "@/lib/queue";
@@ -169,6 +169,8 @@ interface ProcessedFileRecord {
   classificationConfidence?: number;
   classificationReasoning?: string;
   deliverableMetadata?: Record<string, unknown> | null;
+  isTemplate?: boolean;
+  combinedMetadata?: { technical: Record<string, unknown> | null; financial: Record<string, unknown> | null } | null;
 }
 
 /**
@@ -250,6 +252,38 @@ async function processOneFolder(
     }
   }
 
+  // Combined proposal detection
+  let combinedMetadata: { technical: Record<string, unknown> | null; financial: Record<string, unknown> | null } | null = null;
+  if (primaryClassifiedType === "PROPOSAL" && primaryClassificationConfidence >= 0.7) {
+    try {
+      const { detectCombinedProposal } = await import("@/lib/ai/classify-document");
+      const combined = await aiLimiter.execute(() => detectCombinedProposal(extractedText));
+      if (combined.isCombined && combined.technicalSection && combined.financialSection) {
+        const techText = extractedText.slice(combined.technicalSection.startOffset, combined.technicalSection.endOffset);
+        const finText = extractedText.slice(combined.financialSection.startOffset, combined.financialSection.endOffset);
+        const [techMeta, finMeta] = await Promise.all([
+          aiLimiter.execute(() => extractDeliverables(techText, "PROPOSAL")),
+          aiLimiter.execute(() => extractDeliverables(finText, "FINANCIAL")),
+        ]);
+        combinedMetadata = { technical: techMeta, financial: finMeta };
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // Template detection for primary file
+  let primaryIsTemplate = false;
+  if (primaryClassifiedType === "ESTIMATE" && extractedText.length > 0) {
+    const templateCheck = isLikelyTemplate(extractedText);
+    if (templateCheck.isTemplate) {
+      primaryIsTemplate = true;
+      primaryClassifiedType = "OTHER";
+      primaryClassificationConfidence = 0.3;
+      primaryClassificationReasoning = `Downgraded from ESTIMATE: ${templateCheck.reason}`;
+    }
+  }
+
   // Update filesMetadata type for primary file if AI confidence is high enough
   if (primaryMeta && primaryClassificationConfidence >= 0.6) {
     primaryMeta.type = primaryClassifiedType as typeof primaryMeta.type;
@@ -268,6 +302,8 @@ async function processOneFolder(
       classificationConfidence: primaryClassificationConfidence,
       classificationReasoning: primaryClassificationReasoning,
       deliverableMetadata: primaryDeliverableMetadata,
+      isTemplate: primaryIsTemplate,
+      ...(combinedMetadata !== null ? { combinedMetadata } : {}),
     });
   }
 
@@ -332,17 +368,27 @@ async function processOneFolder(
               secondaryText = xlsxEstimateToMarkdown(xlsxData);
               extractedOk = true;
               xlsxSkipAiClassify = true;
-              // XLSX files are definitively estimates — skip AI classification
-              record.classifiedType = "ESTIMATE";
-              record.classificationConfidence = 0.95;
-              record.classificationReasoning = `XLSX estimate sheet with ${totalItems} line items across ${[
-                xlsxData.backend.length > 0 && "Backend",
-                xlsxData.frontend.length > 0 && "Frontend",
-                xlsxData.fixedCost.length > 0 && "Fixed Cost",
-                xlsxData.ai.length > 0 && "AI",
-              ]
-                .filter(Boolean)
-                .join(", ")} tabs`;
+
+              // XLSX template detection: flag as template if very few items
+              if (totalItems < 3) {
+                record.classifiedType = "OTHER";
+                record.classificationConfidence = 0.3;
+                record.isTemplate = true;
+                record.classificationReasoning = `XLSX template detected: only ${totalItems} line items — likely a blank template`;
+              } else {
+                // XLSX files are definitively estimates — skip AI classification
+                record.classifiedType = "ESTIMATE";
+                record.classificationConfidence = 0.95;
+                record.classificationReasoning = `XLSX estimate sheet with ${totalItems} line items across ${[
+                  xlsxData.backend.length > 0 && "Backend",
+                  xlsxData.frontend.length > 0 && "Frontend",
+                  xlsxData.fixedCost.length > 0 && "Fixed Cost",
+                  xlsxData.ai.length > 0 && "AI",
+                ]
+                  .filter(Boolean)
+                  .join(", ")} tabs`;
+                fileMeta.type = "ESTIMATE";
+              }
               record.deliverableMetadata = {
                 totalHours: xlsxData.summary.totalHours,
                 hoursByTab: {
@@ -354,7 +400,6 @@ async function processOneFolder(
                 lineItemCount: totalItems,
                 rawData: xlsxData,
               };
-              fileMeta.type = "ESTIMATE";
             }
           } catch (xlsxErr) {
             console.warn(
@@ -380,6 +425,17 @@ async function processOneFolder(
         record.classificationReasoning = classification.reasoning;
       } catch {
         // Keep filename-based classification as fallback
+      }
+
+      // Template detection for non-XLSX files classified as ESTIMATE
+      if (record.classifiedType === "ESTIMATE") {
+        const templateCheck = isLikelyTemplate(secondaryText);
+        if (templateCheck.isTemplate) {
+          record.classifiedType = "OTHER";
+          record.classificationConfidence = 0.3;
+          record.classificationReasoning = `Downgraded from ESTIMATE: ${templateCheck.reason}`;
+          record.isTemplate = true;
+        }
       }
 
       if ((record.classificationConfidence ?? 0) >= 0.6) {
@@ -623,6 +679,12 @@ async function autoConfirmItem(
         return { phaseNumber: "5", artefactType: ArtefactType.PROPOSAL, label: "Imported Proposal" };
       case "FINANCIAL":
         return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE_STATE, label: "Financial Proposal" };
+      case "ANNEXURE":
+        return { phaseNumber: "0", artefactType: ArtefactType.ANNEXURE, label: "Imported Annexure" };
+      case "PREREQUISITES":
+        return { phaseNumber: "1", artefactType: ArtefactType.PREREQUISITES, label: "Imported Prerequisites" };
+      case "RESPONSE_FORMAT":
+        return { phaseNumber: "1", artefactType: ArtefactType.RESPONSE_FORMAT, label: "Imported Response Format" };
       default:
         return null;
     }

@@ -45,6 +45,7 @@ interface ProcessedFileRecord {
   classificationConfidence?: number;
   classificationReasoning?: string;
   deliverableMetadata?: Record<string, unknown> | null;
+  isTemplate?: boolean;
 }
 
 interface ImportItem {
@@ -156,9 +157,12 @@ const FILE_TYPE_COLORS: Record<string, string> = {
   QA_RESPONSE: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
   RESEARCH: "bg-gray-100 text-gray-600 dark:bg-gray-900/30 dark:text-gray-300",
   OTHER: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300",
+  ANNEXURE: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  PREREQUISITES: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
+  RESPONSE_FORMAT: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
 };
 
-const FILE_TYPE_ORDER = ["TOR", "QUESTIONS", "ADDENDUM", "QA_RESPONSE", "ESTIMATE", "PROPOSAL", "FINANCIAL", "RESEARCH", "OTHER"];
+const FILE_TYPE_ORDER = ["TOR", "ANNEXURE", "PREREQUISITES", "RESPONSE_FORMAT", "QUESTIONS", "ADDENDUM", "QA_RESPONSE", "ESTIMATE", "PROPOSAL", "FINANCIAL", "RESEARCH", "OTHER"];
 
 function groupFilesByType(files: FileInfo[]): Record<string, FileInfo[]> {
   const groups: Record<string, FileInfo[]> = {};
@@ -171,8 +175,8 @@ function groupFilesByType(files: FileInfo[]): Record<string, FileInfo[]> {
 }
 
 const LIFECYCLE_STAGES = [
-  { label: "Phase 0 — Research", types: ["RESEARCH"] },
-  { label: "Phase 1 — TOR & Questions", types: ["TOR", "QUESTIONS"] },
+  { label: "Phase 0 — Research & Annexures", types: ["RESEARCH", "ANNEXURE"] },
+  { label: "Phase 1 — TOR, Questions & Requirements", types: ["TOR", "QUESTIONS", "PREREQUISITES", "RESPONSE_FORMAT"] },
   { label: "Phase 2 — Clarifications & Addendums", types: ["ADDENDUM", "QA_RESPONSE"] },
   { label: "Phase 1A — Estimates & Financials", types: ["ESTIMATE", "FINANCIAL"] },
   { label: "Phase 5 — Proposals", types: ["PROPOSAL"] },
@@ -182,6 +186,9 @@ const LIFECYCLE_STAGES = [
 function getDestinationLabel(fileType: string): string {
   switch (fileType) {
     case "TOR": return "→ Phase 0 RESEARCH";
+    case "ANNEXURE": return "→ Phase 0 ANNEXURE";
+    case "PREREQUISITES": return "→ Phase 1 PREREQUISITES";
+    case "RESPONSE_FORMAT": return "→ Phase 1 RESPONSE FORMAT";
     case "ESTIMATE": return "→ Phase 1A ESTIMATE";
     case "PROPOSAL": return "→ Phase 5 PROPOSAL";
     case "FINANCIAL": return "→ Phase 1A ESTIMATE STATE";
@@ -208,6 +215,7 @@ function EstimatePreview({ meta }: { meta: Record<string, unknown> }) {
 }
 
 function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProps) {
+  const { id: importJobId } = useParams<{ id: string }>();
   const [clientName, setClientName] = React.useState(item.inferredClient ?? "");
   const [projectName, setProjectName] = React.useState(item.inferredProjectName ?? "");
   const [techStack, setTechStack] = React.useState(item.inferredTechStack ?? "DRUPAL");
@@ -219,6 +227,37 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
     item.inferredFinancialValue != null ? String(item.inferredFinancialValue) : ""
   );
   const [saving, setSaving] = React.useState(false);
+  const [localProcessedFiles, setLocalProcessedFiles] = React.useState(item.processedFiles ?? []);
+  const [localFiles, setLocalFiles] = React.useState(item.files ?? []);
+  const [reclassifying, setReclassifying] = React.useState<string | null>(null);
+
+  async function handleReclassify(fullPath: string, newType: string) {
+    setReclassifying(fullPath);
+    try {
+      const res = await fetch(`/api/imports/${importJobId}/items/${item.id}/reclassify`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullPath, newType }),
+      });
+      if (res.ok) {
+        // Update local state to reflect the change immediately
+        setLocalProcessedFiles((prev) =>
+          prev.map((pf) =>
+            pf.fullPath === fullPath
+              ? { ...pf, classifiedType: newType, classificationConfidence: 1.0, classificationReasoning: `Manual override`, type: newType }
+              : pf
+          )
+        );
+        setLocalFiles((prev) =>
+          prev.map((f) =>
+            f.fullPath === fullPath ? { ...f, type: newType } : f
+          )
+        );
+      }
+    } finally {
+      setReclassifying(null);
+    }
+  }
 
   // Initialise budget/timeline from processedFiles inference
   React.useEffect(() => {
@@ -250,10 +289,36 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
     }
   }
 
-  const fileGroups = groupFilesByType(item.files as FileInfo[]);
+  const fileGroups = groupFilesByType(localFiles as FileInfo[]);
   const processedMap = new Map(
-    (item.processedFiles ?? []).map((pf) => [pf.fullPath, pf])
+    localProcessedFiles.map((pf) => [pf.fullPath, pf])
   );
+
+  // Workstream C: Compute superseded paths (standard files that have submission counterparts)
+  const supersededPaths = React.useMemo(() => {
+    const paths = new Set<string>();
+    const byType = new Map<string, { submission: FileInfo[]; standard: FileInfo[] }>();
+    for (const f of localFiles) {
+      const pfr = processedMap.get(f.fullPath);
+      const effectiveType = pfr?.classifiedType ?? f.type;
+      if (!byType.has(effectiveType)) byType.set(effectiveType, { submission: [], standard: [] });
+      const group = byType.get(effectiveType)!;
+      if (f.isSubmission) {
+        group.submission.push(f);
+      } else {
+        group.standard.push(f);
+      }
+    }
+    for (const [, group] of byType) {
+      if (group.submission.length > 0 && group.standard.length > 0) {
+        for (const std of group.standard) {
+          paths.add(std.fullPath);
+        }
+      }
+    }
+    return paths;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localFiles, localProcessedFiles]);
 
   // Compute file count summary for each type
   const typeCounts = FILE_TYPE_ORDER.filter((t) => fileGroups[t]).map((t) => ({
@@ -342,7 +407,17 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
           {/* Budget / Timeline / Final Cost */}
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Budget (USD)</label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-muted-foreground">Budget (USD)</label>
+                {!budget && !localProcessedFiles.some(
+                  (pf) => (pf.classifiedType === "TOR" || pf.classifiedType === "ADDENDUM") &&
+                    (pf.deliverableMetadata as Record<string, unknown> | null)?.estimatedBudget != null
+                ) && (
+                  <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title="No budget found in TOR or Addendum documents">
+                    Not in docs
+                  </span>
+                )}
+              </div>
               <Input
                 type="number"
                 placeholder="e.g. 250000"
@@ -387,121 +462,312 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
         <div className="space-y-3">
           <h3 className="text-sm font-medium">Files in folder</h3>
 
-          {item.files.length > 0 && (
-            <div className="space-y-3">
-              {LIFECYCLE_STAGES.map((stage) => {
-                const stageFiles = stage.types.flatMap((t) => fileGroups[t] ?? []);
-                if (stageFiles.length === 0) return null;
-                const mainFiles = stageFiles.filter((f) => !f.isSubmission);
-                const submissionFiles = stageFiles.filter((f) => f.isSubmission);
-                return (
-                  <div key={stage.label} className="space-y-1">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{stage.label}</p>
-                    {mainFiles.length > 0 && (
-                      <div className="rounded border p-2 space-y-1 max-h-48 overflow-y-auto">
-                        {mainFiles.map((f, i) => {
-                          const pfRecord = processedMap.get(f.fullPath);
-                          const aiType = pfRecord?.classifiedType;
-                          const aiConf = pfRecord?.classificationConfidence;
-                          const aiReasoning = pfRecord?.classificationReasoning;
-                          const hasAiClass = aiType != null && aiConf != null && aiConf > 0;
-                          const lowConfidence = hasAiClass && aiConf! < 0.6;
-                          const confPct = aiConf != null ? Math.round(aiConf * 100) : null;
-                          const displayType = aiType ?? f.type;
-                          return (
-                            <div key={i} className="space-y-0.5">
-                              <div className="flex items-center justify-between text-xs gap-2">
-                                <span className={f.isPrimary ? "font-medium truncate" : "text-muted-foreground truncate"}>
-                                  {f.isPrimary && <Badge variant="outline" className="mr-1 text-[10px] py-0">Primary</Badge>}
-                                  {f.name}
-                                </span>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[displayType] ?? FILE_TYPE_COLORS.OTHER}`}
-                                    title={aiReasoning ?? undefined}>
-                                    {displayType}
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground">{getDestinationLabel(displayType)}</span>
-                                  {confPct != null && (
-                                    <span
-                                      className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                                        confPct >= 80
-                                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                                          : confPct >= 60
-                                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
-                                            : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                                      }`}
-                                      title={aiReasoning ?? undefined}
-                                    >
-                                      {confPct}%
-                                    </span>
-                                  )}
-                                  {pfRecord && (
-                                    <span className={`text-[10px] ${pfRecord.extractedText ? "text-green-600" : "text-red-500"}`}>
-                                      {pfRecord.extractedText ? "extracted" : "failed"}
-                                    </span>
-                                  )}
-                                  <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
-                                </div>
-                              </div>
-                              {lowConfidence && (
-                                <p className="text-[10px] text-amber-600 dark:text-amber-400 pl-2">
-                                  Low confidence — please verify classification
-                                </p>
-                              )}
-                              {pfRecord?.deliverableMetadata && (
-                                <div className="text-[10px] text-muted-foreground mt-0.5 pl-2 border-l-2 space-y-0.5">
-                                  {pfRecord.classifiedType === "TOR" && (
-                                    <div>{`${(pfRecord.deliverableMetadata as Record<string, unknown>).requirementCount ?? 0} requirements, ${(pfRecord.deliverableMetadata as Record<string, unknown>).integrationCount ?? 0} integrations`}</div>
-                                  )}
-                                  {pfRecord.classifiedType === "ESTIMATE" && (
-                                    <EstimatePreview meta={pfRecord.deliverableMetadata as Record<string, unknown>} />
-                                  )}
-                                  {pfRecord.classifiedType === "PROPOSAL" && (
-                                    <div>{`${((pfRecord.deliverableMetadata as Record<string, unknown>).sections as unknown[] | undefined)?.length ?? 0} sections`}</div>
-                                  )}
-                                  {pfRecord.classifiedType === "FINANCIAL" && (
-                                    <div>{`Total: $${((pfRecord.deliverableMetadata as Record<string, unknown>).totalCost as number | undefined)?.toLocaleString() ?? "N/A"}`}</div>
-                                  )}
-                                  {pfRecord.classifiedType === "QA_RESPONSE" && (
-                                    <div>{`${(pfRecord.deliverableMetadata as Record<string, unknown>).questionCount ?? 0} questions, ${(pfRecord.deliverableMetadata as Record<string, unknown>).answeredCount ?? 0} answered`}</div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {submissionFiles.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400 pl-1">Final Submission</p>
-                        <div className="rounded border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-2 space-y-1 max-h-32 overflow-y-auto">
-                          {submissionFiles.map((f, i) => {
-                            const pfRecord = processedMap.get(f.fullPath);
-                            const displayType = pfRecord?.classifiedType ?? f.type;
-                            return (
-                              <div key={i} className="flex items-center justify-between text-xs gap-2">
-                                <span className="text-muted-foreground truncate">{f.name}</span>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${FILE_TYPE_COLORS[displayType] ?? FILE_TYPE_COLORS.OTHER}`}>
-                                    {displayType}
-                                  </span>
-                                  <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+          {localFiles.length > 0 && (() => {
+            const allSubmissionFiles = localFiles.filter((f) => f.isSubmission);
+            const allNonSubmissionFiles = localFiles.filter((f) => !f.isSubmission);
+            const nonSubGroups = groupFilesByType(allNonSubmissionFiles);
+
+            // Shared file row renderer
+            function renderFileRow(f: FileInfo, i: number, options?: { showSubmissionBadge?: boolean }) {
+              const pfRecord = processedMap.get(f.fullPath);
+              const aiType = pfRecord?.classifiedType;
+              const aiConf = pfRecord?.classificationConfidence;
+              const aiReasoning = pfRecord?.classificationReasoning;
+              const hasAiClass = aiType != null && aiConf != null && aiConf > 0;
+              const lowConfidence = hasAiClass && aiConf! < 0.6;
+              const confPct = aiConf != null ? Math.round(aiConf * 100) : null;
+              const displayType = aiType ?? f.type;
+              const isSuperseded = supersededPaths.has(f.fullPath);
+              const isFileTemplate = pfRecord?.isTemplate === true;
+              return (
+                <div key={i} className={`space-y-0.5 ${isSuperseded ? "opacity-50" : ""}`}>
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <span className={f.isPrimary ? "font-medium truncate" : "text-muted-foreground truncate"}>
+                      {f.isPrimary && <Badge variant="outline" className="mr-1 text-[10px] py-0">Primary</Badge>}
+                      {options?.showSubmissionBadge && (
+                        <Badge variant="outline" className="mr-1 text-[10px] py-0 border-amber-300 text-amber-700 dark:text-amber-400">Submission</Badge>
+                      )}
+                      {f.name}
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Reclassify dropdown */}
+                      <Select
+                        value={displayType}
+                        onValueChange={(v) => { if (v && v !== displayType) handleReclassify(f.fullPath, v); }}
+                        disabled={reclassifying === f.fullPath}
+                      >
+                        <SelectTrigger
+                          className={`h-5 px-1.5 py-0 text-[10px] font-medium border-0 w-auto min-w-0 ${FILE_TYPE_COLORS[displayType] ?? FILE_TYPE_COLORS.OTHER}`}
+                          title={aiReasoning ?? undefined}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FILE_TYPE_ORDER.map((t) => (
+                            <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {isFileTemplate && (
+                        <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                          Template?
+                        </span>
+                      )}
+                      {isSuperseded && (
+                        <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                          superseded
+                        </span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">{getDestinationLabel(displayType)}</span>
+                      {confPct != null && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            confPct >= 80
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                              : confPct >= 60
+                                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                                : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                          }`}
+                          title={aiReasoning ?? undefined}
+                        >
+                          {confPct}%
+                        </span>
+                      )}
+                      {pfRecord && (
+                        <span className={`text-[10px] ${pfRecord.extractedText ? "text-green-600" : "text-red-500"}`}>
+                          {pfRecord.extractedText ? "extracted" : "failed"}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground text-[10px]">{formatBytes(f.sizeBytes)}</span>
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  {lowConfidence && !isFileTemplate && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400 pl-2">
+                      Low confidence — please verify classification
+                    </p>
+                  )}
+                  {pfRecord?.deliverableMetadata && (
+                    <div className="text-[10px] text-muted-foreground mt-0.5 pl-2 border-l-2 space-y-0.5">
+                      {pfRecord.classifiedType === "TOR" && (
+                        <div>{`${(pfRecord.deliverableMetadata as Record<string, unknown>).requirementCount ?? 0} requirements, ${(pfRecord.deliverableMetadata as Record<string, unknown>).integrationCount ?? 0} integrations`}</div>
+                      )}
+                      {pfRecord.classifiedType === "ESTIMATE" && (
+                        <EstimatePreview meta={pfRecord.deliverableMetadata as Record<string, unknown>} />
+                      )}
+                      {pfRecord.classifiedType === "PROPOSAL" && (
+                        <div>{`${((pfRecord.deliverableMetadata as Record<string, unknown>).sections as unknown[] | undefined)?.length ?? 0} sections`}</div>
+                      )}
+                      {pfRecord.classifiedType === "FINANCIAL" && (
+                        <div>{`Total: $${((pfRecord.deliverableMetadata as Record<string, unknown>).totalCost as number | undefined)?.toLocaleString() ?? "N/A"}`}</div>
+                      )}
+                      {pfRecord.classifiedType === "QA_RESPONSE" && (
+                        <div>{`${(pfRecord.deliverableMetadata as Record<string, unknown>).questionCount ?? 0} questions, ${(pfRecord.deliverableMetadata as Record<string, unknown>).answeredCount ?? 0} answered`}</div>
+                      )}
+                      {pfRecord.classifiedType === "ANNEXURE" && (
+                        <div>{`${((pfRecord.deliverableMetadata as Record<string, unknown>).keySpecifications as unknown[] | undefined)?.length ?? 0} specifications, type: ${(pfRecord.deliverableMetadata as Record<string, unknown>).type ?? "N/A"}`}</div>
+                      )}
+                      {pfRecord.classifiedType === "PREREQUISITES" && (
+                        <div>{`${((pfRecord.deliverableMetadata as Record<string, unknown>).eligibilityCriteria as unknown[] | undefined)?.length ?? 0} criteria, ${((pfRecord.deliverableMetadata as Record<string, unknown>).mandatoryCertifications as unknown[] | undefined)?.length ?? 0} certifications`}</div>
+                      )}
+                      {pfRecord.classifiedType === "RESPONSE_FORMAT" && (
+                        <div>{`${((pfRecord.deliverableMetadata as Record<string, unknown>).requiredSections as unknown[] | undefined)?.length ?? 0} sections, ${((pfRecord.deliverableMetadata as Record<string, unknown>).scoringCriteria as unknown[] | undefined)?.length ?? 0} scoring criteria`}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                {/* Consolidated Final Submission section at the top */}
+                {allSubmissionFiles.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                      Final Submission ({allSubmissionFiles.length} files)
+                    </p>
+                    <div className="rounded border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-2 space-y-1 max-h-48 overflow-y-auto">
+                      {allSubmissionFiles.map((f, i) => renderFileRow(f, i, { showSubmissionBadge: false }))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Non-submission files grouped by lifecycle stage */}
+                {LIFECYCLE_STAGES.map((stage) => {
+                  const stageFiles = stage.types.flatMap((t) => nonSubGroups[t] ?? []);
+                  if (stageFiles.length === 0) return null;
+                  return (
+                    <div key={stage.label} className="space-y-1">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{stage.label}</p>
+                      <div className="rounded border p-2 space-y-1 max-h-48 overflow-y-auto">
+                        {stageFiles.map((f, i) => renderFileRow(f, i))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Batch Outcome Panel
+// ---------------------------------------------------------------------------
+
+const OUTCOMES = ["WON", "LOST", "NO_DECISION", "WITHDRAWN", "PARTIAL_WIN", "DEFERRED", "NOT_SUBMITTED"] as const;
+const LOSS_REASONS = ["PRICE_TOO_HIGH", "SCOPE_MISMATCH", "COMPETITOR_PREFERRED", "TIMELINE_MISMATCH", "BUDGET_CUT", "RELATIONSHIP", "TECHNICAL_FIT", "NO_DECISION_MADE", "OTHER"] as const;
+
+function BatchOutcomePanel({ importJobId, items, onSaved }: {
+  importJobId: string;
+  items: ImportItem[];
+  onSaved: () => void;
+}) {
+  const [outcomes, setOutcomes] = React.useState<Record<string, {
+    outcome: string;
+    lossReason: string;
+    actualContractValue: string;
+    competitorWhoWon: string;
+  }>>(() => {
+    const initial: Record<string, { outcome: string; lossReason: string; actualContractValue: string; competitorWhoWon: string }> = {};
+    for (const item of items) {
+      if (item.engagementId) {
+        initial[item.engagementId] = { outcome: "", lossReason: "", actualContractValue: "", competitorWhoWon: "" };
+      }
+    }
+    return initial;
+  });
+  const [saving, setSaving] = React.useState(false);
+  const [applyAllOutcome, setApplyAllOutcome] = React.useState("");
+
+  function updateOutcome(engId: string, field: string, value: string) {
+    setOutcomes((prev) => ({
+      ...prev,
+      [engId]: { ...prev[engId], [field]: value },
+    }));
+  }
+
+  function applyToAll() {
+    if (!applyAllOutcome) return;
+    setOutcomes((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        next[key] = { ...next[key], outcome: applyAllOutcome };
+      }
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    const payload = Object.entries(outcomes)
+      .filter(([, v]) => v.outcome)
+      .map(([engagementId, v]) => ({
+        engagementId,
+        outcome: v.outcome,
+        lossReason: v.outcome === "LOST" && v.lossReason ? v.lossReason : null,
+        actualContractValue: v.outcome === "WON" && v.actualContractValue ? parseFloat(v.actualContractValue) : null,
+        competitorWhoWon: v.outcome === "LOST" && v.competitorWhoWon ? v.competitorWhoWon : null,
+      }));
+
+    if (payload.length === 0) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/imports/${importJobId}/batch-outcomes`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcomes: payload }),
+      });
+      if (res.ok) onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 border rounded-lg p-4 space-y-3 bg-muted/30">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Tag Outcomes</h3>
+        <div className="flex items-center gap-2">
+          <Select value={applyAllOutcome} onValueChange={(v) => setApplyAllOutcome(v ?? "")}>
+            <SelectTrigger className="h-7 text-xs w-36"><SelectValue placeholder="Apply to all..." /></SelectTrigger>
+            <SelectContent>
+              {OUTCOMES.map((o) => <SelectItem key={o} value={o} className="text-xs">{o.replace(/_/g, " ")}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={applyToAll}>Apply</Button>
+          <Button size="sm" className="h-7 text-xs" disabled={saving} onClick={handleSave}>
+            {saving ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
+            Save All
+          </Button>
+        </div>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-xs">Engagement</TableHead>
+            <TableHead className="text-xs">Outcome</TableHead>
+            <TableHead className="text-xs">Loss Reason</TableHead>
+            <TableHead className="text-xs">Contract Value</TableHead>
+            <TableHead className="text-xs">Competitor</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => {
+            if (!item.engagementId) return null;
+            const o = outcomes[item.engagementId];
+            if (!o) return null;
+            return (
+              <TableRow key={item.engagementId}>
+                <TableCell className="text-xs font-medium">{item.inferredClient ?? item.folderName}</TableCell>
+                <TableCell>
+                  <Select value={o.outcome} onValueChange={(v) => { if (v) updateOutcome(item.engagementId!, "outcome", v); }}>
+                    <SelectTrigger className="h-7 text-xs w-32"><SelectValue placeholder="Select..." /></SelectTrigger>
+                    <SelectContent>
+                      {OUTCOMES.map((oc) => <SelectItem key={oc} value={oc} className="text-xs">{oc.replace(/_/g, " ")}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+                <TableCell>
+                  {o.outcome === "LOST" && (
+                    <Select value={o.lossReason} onValueChange={(v) => { if (v) updateOutcome(item.engagementId!, "lossReason", v); }}>
+                      <SelectTrigger className="h-7 text-xs w-36"><SelectValue placeholder="Reason..." /></SelectTrigger>
+                      <SelectContent>
+                        {LOSS_REASONS.map((lr) => <SelectItem key={lr} value={lr} className="text-xs">{lr.replace(/_/g, " ")}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {o.outcome === "WON" && (
+                    <Input
+                      type="number"
+                      placeholder="USD"
+                      value={o.actualContractValue}
+                      onChange={(e) => updateOutcome(item.engagementId!, "actualContractValue", e.target.value)}
+                      className="h-7 text-xs w-28"
+                    />
+                  )}
+                </TableCell>
+                <TableCell>
+                  {o.outcome === "LOST" && (
+                    <Input
+                      placeholder="Competitor"
+                      value={o.competitorWhoWon}
+                      onChange={(e) => updateOutcome(item.engagementId!, "competitorWhoWon", e.target.value)}
+                      className="h-7 text-xs w-28"
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -978,6 +1244,13 @@ export default function ImportDetailPage() {
           </Table>
         </div>
       )}
+
+      {/* Batch Outcome Tagging — shown when job is COMPLETED */}
+      {job.status === "COMPLETED" && (() => {
+        const confirmedItems = job.items.filter((i) => i.status === "CONFIRMED" && i.engagementId);
+        if (confirmedItems.length === 0) return null;
+        return <BatchOutcomePanel importJobId={id} items={confirmedItems} onSaved={fetchData} />;
+      })()}
     </div>
   );
 }

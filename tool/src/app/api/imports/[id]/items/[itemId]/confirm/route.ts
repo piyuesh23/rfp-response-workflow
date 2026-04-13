@@ -12,6 +12,7 @@ import AdmZip from "adm-zip";
 import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
 import { copyMasterTemplate } from "@/lib/template-populator";
+import { extractAssumptions, extractRiskRegister } from "@/lib/ai/metadata-extractor";
 import ExcelJS from "exceljs";
 
 export async function POST(
@@ -103,11 +104,14 @@ export async function POST(
   const hasFinancial = allFiles.some((f) => getEffectiveType(f) === "FINANCIAL");
   const hasAddendum = allFiles.some((f) => getEffectiveType(f) === "ADDENDUM");
   const hasTorOrQuestions = allFiles.some((f) => ["TOR", "QUESTIONS"].includes(getEffectiveType(f)));
+  const hasPrereqs = allFiles.some((f) => getEffectiveType(f) === "PREREQUISITES");
+  const hasResponseFormat = allFiles.some((f) => getEffectiveType(f) === "RESPONSE_FORMAT");
+  const hasAnnexure = allFiles.some((f) => getEffectiveType(f) === "ANNEXURE");
 
   const phasesToCreate: Array<{ phaseNumber: string; status: "APPROVED" }> = [
     { phaseNumber: "0", status: "APPROVED" },
   ];
-  if (hasTorOrQuestions) {
+  if (hasTorOrQuestions || hasPrereqs || hasResponseFormat) {
     phasesToCreate.push({ phaseNumber: "1", status: "APPROVED" });
   }
   if (hasEstimate || hasFinancial) {
@@ -119,6 +123,8 @@ export async function POST(
   if (hasProposal) {
     phasesToCreate.push({ phaseNumber: "5", status: "APPROVED" });
   }
+  // hasAnnexure files go to phase 0 (already created above); variable used for future extension
+  void hasAnnexure;
 
   // Extract issueDate / estimatedBudget / deliveryTimeline from item metadata
   // processedFiles carries secondary inference results and AI classification data
@@ -136,6 +142,7 @@ export async function POST(
     classificationConfidence?: number;
     classificationReasoning?: string;
     deliverableMetadata?: Record<string, unknown> | null;
+    combinedMetadata?: { technical: Record<string, unknown> | null; financial: Record<string, unknown> | null } | null;
   };
   const processedFiles = (item.processedFiles ?? []) as ProcessedFileRecord[];
 
@@ -309,6 +316,9 @@ export async function POST(
       case "ESTIMATE": return "estimates";
       case "PROPOSAL": return "claude-artefacts";
       case "FINANCIAL": return "financials";
+      case "ANNEXURE": return "tor";
+      case "PREREQUISITES": return "tor";
+      case "RESPONSE_FORMAT": return "tor";
       default: return "tor";
     }
   }
@@ -335,8 +345,39 @@ export async function POST(
         return { phaseNumber: "2", artefactType: ArtefactType.RESPONSE_ANALYSIS, label: "Imported Addendum" };
       case "QUESTIONS":
         return { phaseNumber: "1", artefactType: ArtefactType.QUESTIONS, label: "Imported Questions" };
+      case "ANNEXURE":
+        return { phaseNumber: "0", artefactType: ArtefactType.ANNEXURE, label: "Imported Annexure" };
+      case "PREREQUISITES":
+        return { phaseNumber: "1", artefactType: ArtefactType.PREREQUISITES, label: "Imported Prerequisites" };
+      case "RESPONSE_FORMAT":
+        return { phaseNumber: "1", artefactType: ArtefactType.RESPONSE_FORMAT, label: "Imported Response Format" };
       default:
         return null;
+    }
+  }
+
+  // Workstream C: Build superseded set — standard files superseded by submission counterparts
+  const supersededPaths = new Set<string>();
+  {
+    // Group files by effective type
+    const byType = new Map<string, { submission: FileEntry[]; standard: FileEntry[] }>();
+    for (const f of allFiles) {
+      const effectiveType = getEffectiveType(f);
+      if (!byType.has(effectiveType)) byType.set(effectiveType, { submission: [], standard: [] });
+      const group = byType.get(effectiveType)!;
+      if (f.isSubmission) {
+        group.submission.push(f);
+      } else {
+        group.standard.push(f);
+      }
+    }
+    // Mark standard files as superseded when a submission counterpart exists
+    for (const [, group] of byType) {
+      if (group.submission.length > 0 && group.standard.length > 0) {
+        for (const std of group.standard) {
+          supersededPaths.add(std.fullPath);
+        }
+      }
     }
   }
 
@@ -379,8 +420,11 @@ export async function POST(
         );
       }
 
-      // Create artefact if we have a matching phase
-      if (artefactConfig) {
+      // Skip artefact creation for superseded files (Workstream C)
+      const isSuperseded = supersededPaths.has(fileMeta.fullPath);
+
+      // Create artefact if we have a matching phase and file is not superseded
+      if (artefactConfig && !isSuperseded) {
         const phaseId = phaseMap.get(artefactConfig.phaseNumber);
         if (phaseId) {
           try {
@@ -428,6 +472,121 @@ export async function POST(
     );
   }
 
+  // Handle combined proposals - create additional artefact for financial section
+  try {
+    for (const pf of processedFiles) {
+      if (pf.combinedMetadata?.financial) {
+        const phase1AId = phaseMap.get("1A") ?? null;
+        if (phase1AId) {
+          const artefactVersions2 = new Map<string, number>();
+          const versionKey = `${phase1AId}:${ArtefactType.ESTIMATE_STATE}`;
+          const version = (artefactVersions2.get(versionKey) ?? 0) + 1;
+          artefactVersions2.set(versionKey, version);
+          await prisma.phaseArtefact.create({
+            data: {
+              phaseId: phase1AId,
+              artefactType: ArtefactType.ESTIMATE_STATE,
+              version,
+              label: "Financial Section (from combined proposal)",
+              contentMd: "Extracted from combined technical/financial proposal",
+              metadata: JSON.parse(JSON.stringify(pf.combinedMetadata.financial)),
+            },
+          });
+          // Update financial value from combined metadata
+          const finMeta = pf.combinedMetadata.financial as { totalCost?: number };
+          if (finMeta?.totalCost) {
+            await prisma.engagement.update({
+              where: { id: engagement.id },
+              data: { financialProposalValue: finMeta.totalCost },
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[import-confirm] Combined proposal processing failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Workstream E: Populate Assumptions and Risks from imported estimate data
+  try {
+    const estimateFiles = processedFiles.filter(
+      (pf) => pf.classifiedType === "ESTIMATE" || pf.classifiedType === "FINANCIAL"
+    );
+
+    const phase1A = engagement.phases.find((p) => p.phaseNumber === "1A");
+    const sourcePhaseId = phase1A?.id ?? engagement.phases[0]?.id ?? "";
+
+    for (const estFile of estimateFiles) {
+      const meta = estFile.deliverableMetadata as Record<string, unknown> | null;
+
+      // Try AI-extracted assumptions/risks from deliverableMetadata first
+      let assumptions: Array<{ text: string; torReference: string | null; impactIfWrong: string }> = [];
+      let risks: Array<{ task: string; tab: string; conf: number; risk: string; openQuestion: string; recommendedAction: string; hoursAtRisk: number }> = [];
+
+      if (meta?.assumptions && Array.isArray(meta.assumptions) && (meta.assumptions as unknown[]).length > 0) {
+        assumptions = meta.assumptions as typeof assumptions;
+      }
+      if (meta?.risks && Array.isArray(meta.risks) && (meta.risks as unknown[]).length > 0) {
+        risks = meta.risks as typeof risks;
+      }
+
+      // Fallback for PDF/DOCX: use markdown-based extractors if no AI-extracted data
+      if (assumptions.length === 0 || risks.length === 0) {
+        // Find the artefact content to parse markdown from
+        const artefact = await prisma.phaseArtefact.findFirst({
+          where: {
+            phaseId: sourcePhaseId,
+            artefactType: "ESTIMATE",
+            label: { contains: estFile.name },
+          },
+          select: { contentMd: true },
+        });
+
+        if (artefact?.contentMd) {
+          if (assumptions.length === 0) {
+            assumptions = extractAssumptions(artefact.contentMd);
+          }
+          if (risks.length === 0) {
+            risks = extractRiskRegister(artefact.contentMd);
+          }
+        }
+      }
+
+      // Create assumption records
+      if (assumptions.length > 0) {
+        await prisma.assumption.createMany({
+          data: assumptions.map((a) => ({
+            engagementId: engagement.id,
+            sourcePhaseId,
+            text: a.text,
+            torReference: a.torReference ?? null,
+            impactIfWrong: a.impactIfWrong || "Unknown",
+          })),
+        });
+      }
+
+      // Create risk register entries
+      if (risks.length > 0) {
+        await prisma.riskRegisterEntry.createMany({
+          data: risks.map((r) => ({
+            engagementId: engagement.id,
+            task: r.task,
+            tab: r.tab || "Backend",
+            conf: r.conf || 3,
+            risk: r.risk,
+            openQuestion: r.openQuestion || "",
+            recommendedAction: r.recommendedAction || "",
+            hoursAtRisk: r.hoursAtRisk || 0,
+          })),
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[import-confirm] Assumptions/risks population failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   // Update import item
   await prisma.importItem.update({
     where: { id: itemId },
@@ -448,6 +607,13 @@ export async function POST(
 
   // Check if all items are resolved
   await maybeCompleteJob(importJobId);
+
+  // Fire-and-forget: generate per-stage AI summaries
+  import("@/lib/ai/generate-stage-summary").then(({ generateAllStageSummaries }) => {
+    generateAllStageSummaries(engagement.id).catch((err) =>
+      console.warn(`[import-confirm] Stage summary generation failed: ${err instanceof Error ? err.message : String(err)}`)
+    );
+  });
 
   return NextResponse.json({ engagementId: engagement.id });
 }

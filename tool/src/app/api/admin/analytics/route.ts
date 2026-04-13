@@ -437,5 +437,123 @@ export async function GET() {
     summary: businessSummary,
   };
 
-  return NextResponse.json({ totals, byUser, byPhase, daily, byModel, byEngagement, business });
+  // ---------------------------------------------------------------------------
+  // Effort benchmarks — aggregate hours from imported estimate artefacts
+  // ---------------------------------------------------------------------------
+
+  const estimateArtefacts = await prisma.phaseArtefact.findMany({
+    where: { artefactType: "ESTIMATE", metadata: { not: undefined } },
+    select: {
+      metadata: true,
+      phase: {
+        select: {
+          engagement: {
+            select: {
+              techStack: true,
+              engagementType: true,
+              account: { select: { industry: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Aggregate by tech stack
+  const benchByStack = new Map<
+    string,
+    { count: number; totalHours: number; backend: number; frontend: number; fixedCost: number; ai: number }
+  >();
+  // Aggregate by industry
+  const benchByIndustry = new Map<
+    string,
+    { count: number; totalHours: number; backend: number; frontend: number }
+  >();
+  // Aggregate by engagement type
+  const benchByType = new Map<
+    string,
+    { count: number; totalHours: number }
+  >();
+
+  for (const art of estimateArtefacts) {
+    const meta = art.metadata as Record<string, unknown> | null;
+    if (!meta) continue;
+
+    const hoursByTab = meta.hoursByTab as Record<string, { low?: number; high?: number }> | undefined;
+    const totalHours = meta.totalHours as { low?: number; high?: number } | undefined;
+
+    // Use average of low/high, or just the available value
+    const avgTotal = totalHours
+      ? ((totalHours.low ?? 0) + (totalHours.high ?? totalHours.low ?? 0)) / 2
+      : 0;
+    if (avgTotal === 0) continue;
+
+    const avgBackend = hoursByTab?.backend
+      ? ((hoursByTab.backend.low ?? 0) + (hoursByTab.backend.high ?? hoursByTab.backend.low ?? 0)) / 2
+      : 0;
+    const avgFrontend = hoursByTab?.frontend
+      ? ((hoursByTab.frontend.low ?? 0) + (hoursByTab.frontend.high ?? hoursByTab.frontend.low ?? 0)) / 2
+      : 0;
+    const avgFixedCost = hoursByTab?.fixedCost
+      ? ((hoursByTab.fixedCost.low ?? 0) + (hoursByTab.fixedCost.high ?? hoursByTab.fixedCost.low ?? 0)) / 2
+      : 0;
+    const avgAi = hoursByTab?.ai
+      ? ((hoursByTab.ai.low ?? 0) + (hoursByTab.ai.high ?? hoursByTab.ai.low ?? 0)) / 2
+      : 0;
+
+    const eng = art.phase.engagement;
+    const stack = eng.techStack as string;
+    const industry = (eng.account?.industry as string) ?? "UNKNOWN";
+    const engType = eng.engagementType as string;
+
+    // By tech stack
+    const stackEntry = benchByStack.get(stack) ?? { count: 0, totalHours: 0, backend: 0, frontend: 0, fixedCost: 0, ai: 0 };
+    stackEntry.count++;
+    stackEntry.totalHours += avgTotal;
+    stackEntry.backend += avgBackend;
+    stackEntry.frontend += avgFrontend;
+    stackEntry.fixedCost += avgFixedCost;
+    stackEntry.ai += avgAi;
+    benchByStack.set(stack, stackEntry);
+
+    // By industry
+    const indEntry = benchByIndustry.get(industry) ?? { count: 0, totalHours: 0, backend: 0, frontend: 0 };
+    indEntry.count++;
+    indEntry.totalHours += avgTotal;
+    indEntry.backend += avgBackend;
+    indEntry.frontend += avgFrontend;
+    benchByIndustry.set(industry, indEntry);
+
+    // By engagement type
+    const typeEntry = benchByType.get(engType) ?? { count: 0, totalHours: 0 };
+    typeEntry.count++;
+    typeEntry.totalHours += avgTotal;
+    benchByType.set(engType, typeEntry);
+  }
+
+  const effortBenchmarks = {
+    byTechStack: Array.from(benchByStack.entries()).map(([techStack, s]) => ({
+      techStack,
+      avgTotalHours: s.count > 0 ? Math.round(s.totalHours / s.count) : 0,
+      avgBackend: s.count > 0 ? Math.round(s.backend / s.count) : 0,
+      avgFrontend: s.count > 0 ? Math.round(s.frontend / s.count) : 0,
+      avgFixedCost: s.count > 0 ? Math.round(s.fixedCost / s.count) : 0,
+      avgAi: s.count > 0 ? Math.round(s.ai / s.count) : 0,
+      sampleSize: s.count,
+    })).sort((a, b) => b.sampleSize - a.sampleSize),
+    byIndustry: Array.from(benchByIndustry.entries()).map(([industry, s]) => ({
+      industry,
+      avgTotalHours: s.count > 0 ? Math.round(s.totalHours / s.count) : 0,
+      avgBackend: s.count > 0 ? Math.round(s.backend / s.count) : 0,
+      avgFrontend: s.count > 0 ? Math.round(s.frontend / s.count) : 0,
+      sampleSize: s.count,
+    })).sort((a, b) => b.sampleSize - a.sampleSize),
+    byEngagementType: Array.from(benchByType.entries()).map(([type, s]) => ({
+      type,
+      avgTotalHours: s.count > 0 ? Math.round(s.totalHours / s.count) : 0,
+      sampleSize: s.count,
+    })).sort((a, b) => b.sampleSize - a.sampleSize),
+  };
+
+  return NextResponse.json({ totals, byUser, byPhase, daily, byModel, byEngagement, business, effortBenchmarks });
 }
