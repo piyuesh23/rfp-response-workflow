@@ -189,12 +189,12 @@ Or if combined:
 
 /**
  * Classify a document by reading its content with AI (Haiku for speed/cost).
- * Reads first 4000 chars of text. Incorporates few-shot examples from past corrections.
+ * Reads first 12000 chars of text for better accuracy. Incorporates few-shot examples from past corrections.
  */
 export async function classifyDocument(
   text: string
 ): Promise<DocumentClassification> {
-  const truncated = text.slice(0, 4000);
+  const truncated = text.slice(0, 12000);
   const anthropic = new Anthropic();
 
   // Build few-shot examples from past corrections (Workstream D)
@@ -203,7 +203,7 @@ export async function classifyDocument(
   try {
     const response = await anthropic.messages.create({
       model: HAIKU_MODEL,
-      max_tokens: 200,
+      max_tokens: 300,
       system: SYSTEM_PROMPT + fewShotExamples,
       messages: [
         {

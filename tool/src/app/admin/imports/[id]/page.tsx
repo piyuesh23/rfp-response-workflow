@@ -175,28 +175,28 @@ function groupFilesByType(files: FileInfo[]): Record<string, FileInfo[]> {
 }
 
 const LIFECYCLE_STAGES = [
-  { label: "Phase 0 — Research & Annexures", types: ["RESEARCH", "ANNEXURE"] },
-  { label: "Phase 1 — TOR, Questions & Requirements", types: ["TOR", "QUESTIONS", "PREREQUISITES", "RESPONSE_FORMAT"] },
+  { label: "Phase 0 — Research", types: ["RESEARCH"] },
+  { label: "Phase 1 — TOR & Requirements", types: ["TOR", "QUESTIONS", "ANNEXURE", "PREREQUISITES", "RESPONSE_FORMAT"] },
   { label: "Phase 2 — Clarifications & Addendums", types: ["ADDENDUM", "QA_RESPONSE"] },
-  { label: "Phase 1A — Estimates & Financials", types: ["ESTIMATE", "FINANCIAL"] },
+  { label: "Phase 1A/3 — Estimates & Financials", types: ["ESTIMATE", "FINANCIAL"] },
   { label: "Phase 5 — Proposals", types: ["PROPOSAL"] },
   { label: "Other", types: ["OTHER"] },
 ];
 
 function getDestinationLabel(fileType: string): string {
   switch (fileType) {
-    case "TOR": return "→ Phase 0 RESEARCH";
-    case "ANNEXURE": return "→ Phase 0 ANNEXURE";
-    case "PREREQUISITES": return "→ Phase 1 PREREQUISITES";
-    case "RESPONSE_FORMAT": return "→ Phase 1 RESPONSE FORMAT";
-    case "ESTIMATE": return "→ Phase 1A ESTIMATE";
+    case "TOR": return "→ Phase 1 TOR_ASSESSMENT";
+    case "ANNEXURE": return "→ Phase 1 TOR_ASSESSMENT";
+    case "PREREQUISITES": return "→ Phase 1 TOR_ASSESSMENT";
+    case "RESPONSE_FORMAT": return "→ Phase 1 TOR_ASSESSMENT";
+    case "ESTIMATE": return "→ Phase 1A/3 ESTIMATE";
     case "PROPOSAL": return "→ Phase 5 PROPOSAL";
-    case "FINANCIAL": return "→ Phase 1A ESTIMATE STATE";
-    case "ADDENDUM": return "→ Phase 2 RESPONSE ANALYSIS";
+    case "FINANCIAL": return "→ Phase 5 PROPOSAL";
+    case "ADDENDUM": return "→ Phase 2 RESPONSE_ANALYSIS";
     case "QUESTIONS": return "→ Phase 1 QUESTIONS";
-    case "QA_RESPONSE": return "→ Phase 0 RESEARCH";
+    case "QA_RESPONSE": return "→ Phase 2 RESPONSE_ANALYSIS";
     case "RESEARCH": return "→ Phase 0 RESEARCH";
-    default: return "→ Phase 0 RESEARCH";
+    default: return "→ Skipped";
   }
 }
 

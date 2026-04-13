@@ -593,16 +593,37 @@ async function autoConfirmItem(
   const hasEstimate = allFiles.some((f) => f.type === "ESTIMATE");
   const hasProposal = allFiles.some((f) => f.type === "PROPOSAL");
   const hasFinancial = allFiles.some((f) => f.type === "FINANCIAL");
+  const hasAddendum = allFiles.some((f) => f.type === "ADDENDUM");
+  const hasQaResponse = allFiles.some((f) => f.type === "QA_RESPONSE");
+  const hasTorOrQuestions = allFiles.some((f) => ["TOR", "QUESTIONS"].includes(f.type));
 
-  const phasesToCreate: Array<{ phaseNumber: string; status: "APPROVED" }> = [
-    { phaseNumber: "0", status: "APPROVED" },
-  ];
-  if (hasEstimate || hasFinancial) {
-    phasesToCreate.push({ phaseNumber: "1A", status: "APPROVED" });
-  }
-  if (hasProposal) {
-    phasesToCreate.push({ phaseNumber: "5", status: "APPROVED" });
-  }
+  // Determine workflow path: HAS_RESPONSE if customer responded (QA or addendum)
+  const workflowPath = (hasQaResponse || hasAddendum) ? "HAS_RESPONSE" : "NO_RESPONSE";
+
+  // Create all 7 phases (same as regular engagement) with APPROVED/SKIPPED status
+  const docPhaseMapping: Record<string, string[]> = {
+    "0": ["RESEARCH"],
+    "1": ["TOR", "QUESTIONS", "ANNEXURE", "PREREQUISITES", "RESPONSE_FORMAT"],
+    "1A": workflowPath === "NO_RESPONSE" ? ["ESTIMATE"] : [],
+    "2": ["QA_RESPONSE", "ADDENDUM"],
+    "3": workflowPath === "HAS_RESPONSE" ? ["ESTIMATE"] : [],
+    "4": [],
+    "5": ["PROPOSAL", "FINANCIAL"],
+  };
+
+  const ALL_PHASES = ["0", "1", "1A", "2", "3", "4", "5"] as const;
+  const phasesToCreate = ALL_PHASES.map((phaseNumber) => {
+    const relevantTypes = docPhaseMapping[phaseNumber] || [];
+    const hasDocs = relevantTypes.length > 0 && allFiles.some((f) => relevantTypes.includes(f.type));
+    return { phaseNumber, status: (hasDocs ? "APPROVED" : "SKIPPED") as "APPROVED" | "SKIPPED" };
+  });
+
+  // Ensure Phase 0 is always APPROVED
+  const phase0 = phasesToCreate.find((p) => p.phaseNumber === "0");
+  if (phase0) phase0.status = "APPROVED";
+  // Phase 1 needs APPROVED if TOR or questions exist
+  const phase1 = phasesToCreate.find((p) => p.phaseNumber === "1");
+  if (phase1 && hasTorOrQuestions) phase1.status = "APPROVED";
 
   type ProcessedFileRecord = {
     name: string;
@@ -630,7 +651,8 @@ async function autoConfirmItem(
       projectName,
       techStack: techStack as "DRUPAL",
       engagementType: engagementType as "NEW_BUILD",
-      status: "ARCHIVED",
+      status: "COMPLETED",
+      workflowPath: workflowPath as "HAS_RESPONSE" | "NO_RESPONSE",
       accountId: finalAccountId,
       createdById: systemUserId,
       importSource: "ZIP_IMPORT",
@@ -661,9 +683,16 @@ async function autoConfirmItem(
     if (isSubmission) return "submissions";
     switch (fileType) {
       case "TOR": return "tor";
+      case "ANNEXURE": return "tor";
+      case "PREREQUISITES": return "tor";
+      case "RESPONSE_FORMAT": return "tor";
+      case "QUESTIONS": return "initial_questions";
+      case "QA_RESPONSE": return "responses_qna";
+      case "ADDENDUM": return "responses_qna";
       case "ESTIMATE": return "estimates";
+      case "RESEARCH": return "claude-artefacts";
       case "PROPOSAL": return "claude-artefacts";
-      case "FINANCIAL": return "financials";
+      case "FINANCIAL": return "claude-artefacts";
       default: return "tor";
     }
   }
@@ -671,20 +700,27 @@ async function autoConfirmItem(
   function getArtefactConfig(fileType: string): { phaseNumber: string; artefactType: ArtefactType; label: string } | null {
     switch (fileType) {
       case "TOR":
-      case "OTHER":
-        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: fileType === "TOR" ? "Imported TOR" : "" };
-      case "ESTIMATE":
-        return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE, label: "Imported Estimate" };
-      case "PROPOSAL":
-        return { phaseNumber: "5", artefactType: ArtefactType.PROPOSAL, label: "Imported Proposal" };
-      case "FINANCIAL":
-        return { phaseNumber: "1A", artefactType: ArtefactType.ESTIMATE_STATE, label: "Financial Proposal" };
+        return { phaseNumber: "1", artefactType: ArtefactType.TOR_ASSESSMENT, label: "Imported TOR Assessment" };
+      case "QUESTIONS":
+        return { phaseNumber: "1", artefactType: ArtefactType.QUESTIONS, label: "Imported Questions" };
       case "ANNEXURE":
-        return { phaseNumber: "0", artefactType: ArtefactType.ANNEXURE, label: "Imported Annexure" };
+        return { phaseNumber: "1", artefactType: ArtefactType.TOR_ASSESSMENT, label: "Imported Annexure" };
       case "PREREQUISITES":
-        return { phaseNumber: "1", artefactType: ArtefactType.PREREQUISITES, label: "Imported Prerequisites" };
+        return { phaseNumber: "1", artefactType: ArtefactType.TOR_ASSESSMENT, label: "Imported Prerequisites" };
       case "RESPONSE_FORMAT":
-        return { phaseNumber: "1", artefactType: ArtefactType.RESPONSE_FORMAT, label: "Imported Response Format" };
+        return { phaseNumber: "1", artefactType: ArtefactType.TOR_ASSESSMENT, label: "Imported Response Format" };
+      case "RESEARCH":
+        return { phaseNumber: "0", artefactType: ArtefactType.RESEARCH, label: "Imported Research" };
+      case "QA_RESPONSE":
+        return { phaseNumber: "2", artefactType: ArtefactType.RESPONSE_ANALYSIS, label: "Imported Q&A Response" };
+      case "ADDENDUM":
+        return { phaseNumber: "2", artefactType: ArtefactType.RESPONSE_ANALYSIS, label: "Imported Addendum" };
+      case "ESTIMATE":
+        return { phaseNumber: workflowPath === "HAS_RESPONSE" ? "3" : "1A", artefactType: ArtefactType.ESTIMATE, label: "Imported Estimate" };
+      case "FINANCIAL":
+        return { phaseNumber: "5", artefactType: ArtefactType.PROPOSAL, label: "Imported Financial Proposal" };
+      case "PROPOSAL":
+        return { phaseNumber: "5", artefactType: ArtefactType.PROPOSAL, label: "Imported Technical Proposal" };
       default:
         return null;
     }
