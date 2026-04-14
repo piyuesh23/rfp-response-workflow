@@ -147,7 +147,14 @@ export async function inferFromSecondaryDocument(
   text: string,
   fileType: "ESTIMATE" | "PROPOSAL" | "FINANCIAL"
 ): Promise<SecondaryDocumentInference> {
-  const truncated = text.slice(0, 6000);
+  // Grand totals and bottom-line figures live near the end of a proposal.
+  // Sample both the opening (budget/scope context) and the closing (final
+  // commercials) so long docs don't hide their pricing from extraction.
+  const MAX_INPUT_CHARS = 20000;
+  const truncated =
+    text.length <= MAX_INPUT_CHARS
+      ? text
+      : `${text.slice(0, MAX_INPUT_CHARS / 2)}\n\n[... middle of document omitted for length ...]\n\n${text.slice(-MAX_INPUT_CHARS / 2)}`;
   const anthropic = new Anthropic();
 
   const typeHint =

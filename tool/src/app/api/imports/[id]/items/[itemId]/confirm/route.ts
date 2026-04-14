@@ -552,16 +552,11 @@ export async function POST(
 
               const artefactLabel = artefactConfig.label || `Imported: ${fileMeta.name}`;
 
-              // Convert raw PDF/DOCX text to clean markdown for key document types
-              let contentMd = extractedText;
-              if (["PROPOSAL", "TOR", "FINANCIAL"].includes(effectiveType) && extractedText.length >= 200) {
-                try {
-                  const { convertToMarkdown } = await import("@/lib/ai/markdown-converter");
-                  contentMd = await convertToMarkdown(extractedText, effectiveType, artefactLabel);
-                } catch {
-                  // Non-fatal — use raw text as fallback
-                }
-              }
+              // Store raw extracted text. Markdown polishing happens in the import
+              // worker (background) so the confirm route stays fast — running
+              // Sonnet conversion here pushed confirm past serverless timeouts
+              // for imports with multiple large PROPOSAL/TOR docs.
+              const contentMd = extractedText;
 
               await prisma.phaseArtefact.create({
                 data: {

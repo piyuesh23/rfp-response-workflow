@@ -712,7 +712,9 @@ export default function EngagementOverviewPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground">Proposal Value</label>
+                    <label className="text-xs text-muted-foreground" title="What we quoted in our proposal, before any negotiation">
+                      Proposal Value <span className="text-muted-foreground/70">(our bid)</span>
+                    </label>
                     <input
                       type="number"
                       className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
@@ -831,11 +833,13 @@ export default function EngagementOverviewPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground">Contract Value</label>
+                    <label className="text-xs text-muted-foreground" title="The value actually signed into the contract after negotiation — only meaningful once the deal is won">
+                      Contract Value <span className="text-muted-foreground/70">(signed)</span>
+                    </label>
                     <input
                       type="number"
                       className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                      placeholder="Actual value"
+                      placeholder="Post-negotiation value"
                       defaultValue={engagement?.actualContractValue ?? ""}
                       key={`cv-${engagement?.actualContractValue}`}
                       onBlur={(e) => {
