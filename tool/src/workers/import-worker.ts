@@ -477,12 +477,13 @@ async function processOneFolder(
             fileMeta.type as "ESTIMATE" | "FINANCIAL"
           )
         );
-        record.inferredBudget = secondaryInferred.estimatedBudget;
+        // Budget must come only from TOR/RFP docs (primary inference), never from our financial proposal
+        record.inferredBudget = fileMeta.type === "ESTIMATE" ? secondaryInferred.estimatedBudget : null;
         record.inferredTimeline = secondaryInferred.deliveryTimeline;
         record.inferredFinalCost = secondaryInferred.finalCostSubmitted;
 
-        // Merge — prefer secondary doc values for cost/timeline
-        if (secondaryInferred.estimatedBudget != null) mergedEstimatedBudget = secondaryInferred.estimatedBudget;
+        // Merge — only accept budget from ESTIMATE docs, not FINANCIAL (our bid)
+        if (fileMeta.type === "ESTIMATE" && secondaryInferred.estimatedBudget != null) mergedEstimatedBudget = secondaryInferred.estimatedBudget;
         if (secondaryInferred.deliveryTimeline != null) mergedDeliveryTimeline = secondaryInferred.deliveryTimeline;
         if (secondaryInferred.finalCostSubmitted != null) mergedFinalCost = secondaryInferred.finalCostSubmitted;
       } catch (inferErr) {
