@@ -376,16 +376,29 @@ export async function POST(
 
   // 4D: Prefer submission folder files for financial metadata
   // Check both AI classifiedType and static file type (AI may have failed)
-  const submissionFinancial = processedFiles.find(
-    (pf) => pf.isSubmission && (pf.classifiedType === "FINANCIAL" || pf.type === "FINANCIAL")
-  );
-  if (submissionFinancial?.deliverableMetadata) {
-    const meta = submissionFinancial.deliverableMetadata as { totalCost?: number };
-    if (meta.totalCost) {
-      await prisma.engagement.update({
-        where: { id: engagement.id },
-        data: { financialProposalValue: meta.totalCost },
-      });
+  // Prefer versioned files (v2, v2.0, etc.) over unversioned ones
+  {
+    const submissionFinancials = processedFiles.filter(
+      (pf) => pf.isSubmission && (pf.classifiedType === "FINANCIAL" || pf.type === "FINANCIAL")
+    );
+    // Sort: versioned files first (higher version wins), then by name
+    const versionRegex = /v(\d+(?:\.\d+)?)/i;
+    submissionFinancials.sort((a, b) => {
+      const aMatch = a.name.match(versionRegex);
+      const bMatch = b.name.match(versionRegex);
+      const aVer = aMatch ? parseFloat(aMatch[1]) : 0;
+      const bVer = bMatch ? parseFloat(bMatch[1]) : 0;
+      return bVer - aVer; // Higher version first
+    });
+    const bestFinancial = submissionFinancials[0];
+    if (bestFinancial?.deliverableMetadata) {
+      const meta = bestFinancial.deliverableMetadata as { totalCost?: number };
+      if (meta.totalCost) {
+        await prisma.engagement.update({
+          where: { id: engagement.id },
+          data: { financialProposalValue: meta.totalCost },
+        });
+      }
     }
   }
 
