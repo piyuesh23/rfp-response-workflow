@@ -29,6 +29,7 @@ function tabLabel(data: EstimateData, item: LineItem): string {
   if (data.backend.find((r) => r.id === item.id)) return "Backend"
   if (data.frontend.find((r) => r.id === item.id)) return "Frontend"
   if (data.fixed.find((r) => r.id === item.id)) return "Fixed Cost"
+  if (data.design.find((r) => r.id === item.id)) return "Design"
   return "AI"
 }
 

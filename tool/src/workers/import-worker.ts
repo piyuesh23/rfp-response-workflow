@@ -363,6 +363,7 @@ async function processOneFolder(
               xlsxData.backend.length +
               xlsxData.frontend.length +
               xlsxData.fixedCost.length +
+              xlsxData.design.length +
               xlsxData.ai.length;
             if (totalItems > 0) {
               secondaryText = xlsxEstimateToMarkdown(xlsxData);
@@ -383,6 +384,7 @@ async function processOneFolder(
                   xlsxData.backend.length > 0 && "Backend",
                   xlsxData.frontend.length > 0 && "Frontend",
                   xlsxData.fixedCost.length > 0 && "Fixed Cost",
+                  xlsxData.design.length > 0 && "Design",
                   xlsxData.ai.length > 0 && "AI",
                 ]
                   .filter(Boolean)
@@ -395,6 +397,7 @@ async function processOneFolder(
                   backend: xlsxData.summary.backendHours,
                   frontend: xlsxData.summary.frontendHours,
                   fixedCost: xlsxData.summary.fixedCostHours,
+                  design: xlsxData.summary.designHours,
                   ai: xlsxData.summary.aiHours,
                 },
                 lineItemCount: totalItems,

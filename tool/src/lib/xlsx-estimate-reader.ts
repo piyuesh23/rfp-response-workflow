@@ -21,11 +21,13 @@ export interface XlsxEstimateData {
   backend: XlsxEstimateRow[];
   frontend: XlsxEstimateRow[];
   fixedCost: XlsxEstimateRow[];
+  design: XlsxEstimateRow[];
   ai: XlsxEstimateRow[];
   summary: {
     backendHours: { low: number; high: number };
     frontendHours: { low: number; high: number };
     fixedCostHours: { low: number; high: number };
+    designHours: { low: number; high: number };
     aiHours: { low: number; high: number };
     totalHours: { low: number; high: number };
   };
@@ -44,6 +46,10 @@ const TAB_COLUMNS = {
   "Fixed Cost Items": {
     task: 2, description: 3, hours: 5, conf: 6,
     lowHrs: 7, highHrs: 8, assumptions: 11, solutionOrExclusions: 0, links: 13,
+  },
+  Design: {
+    task: 2, description: 3, hours: 5, conf: 6,
+    lowHrs: 7, highHrs: 8, assumptions: 9, solutionOrExclusions: 10, links: 11,
   },
   AI: {
     task: 2, description: 3, hours: 5, conf: 6,
@@ -164,31 +170,36 @@ export async function readEstimateFromXlsx(buffer: Buffer): Promise<XlsxEstimate
   const backendSheet = getWorksheetCaseInsensitive(wb, "Backend");
   const frontendSheet = getWorksheetCaseInsensitive(wb, "Frontend");
   const fixedCostSheet = getWorksheetCaseInsensitive(wb, "Fixed Cost Items");
+  const designSheet = getWorksheetCaseInsensitive(wb, "Design");
   const aiSheet = getWorksheetCaseInsensitive(wb, "AI");
 
   const backend = backendSheet ? readTab(backendSheet, TAB_COLUMNS.Backend) : [];
   const frontend = frontendSheet ? readTab(frontendSheet, TAB_COLUMNS.Frontend) : [];
   const fixedCost = fixedCostSheet ? readTab(fixedCostSheet, TAB_COLUMNS["Fixed Cost Items"]) : [];
+  const design = designSheet ? readTab(designSheet, TAB_COLUMNS.Design) : [];
   const ai = aiSheet ? readTab(aiSheet, TAB_COLUMNS.AI) : [];
 
   const backendHours = sumHours(backend);
   const frontendHours = sumHours(frontend);
   const fixedCostHours = sumHours(fixedCost);
+  const designHours = sumHours(design);
   const aiHours = sumHours(ai);
 
   return {
     backend,
     frontend,
     fixedCost,
+    design,
     ai,
     summary: {
       backendHours,
       frontendHours,
       fixedCostHours,
+      designHours,
       aiHours,
       totalHours: {
-        low: backendHours.low + frontendHours.low + fixedCostHours.low + aiHours.low,
-        high: backendHours.high + frontendHours.high + fixedCostHours.high + aiHours.high,
+        low: backendHours.low + frontendHours.low + fixedCostHours.low + designHours.low + aiHours.low,
+        high: backendHours.high + frontendHours.high + fixedCostHours.high + designHours.high + aiHours.high,
       },
     },
   };
@@ -236,6 +247,9 @@ export function xlsxEstimateToMarkdown(data: XlsxEstimateData): string {
   lines.push("\n## Fixed Cost Items\n");
   lines.push(rowsToMarkdownTable(data.fixedCost, false));
 
+  lines.push("\n## Design\n");
+  lines.push(rowsToMarkdownTable(data.design, false));
+
   lines.push("\n## AI\n");
   lines.push(rowsToMarkdownTable(data.ai, false));
 
@@ -245,6 +259,7 @@ export function xlsxEstimateToMarkdown(data: XlsxEstimateData): string {
   lines.push(`| Backend | ${summary.backendHours.low} | ${summary.backendHours.high} |`);
   lines.push(`| Frontend | ${summary.frontendHours.low} | ${summary.frontendHours.high} |`);
   lines.push(`| Fixed Cost Items | ${summary.fixedCostHours.low} | ${summary.fixedCostHours.high} |`);
+  lines.push(`| Design | ${summary.designHours.low} | ${summary.designHours.high} |`);
   lines.push(`| AI | ${summary.aiHours.low} | ${summary.aiHours.high} |`);
   lines.push(`| **Total** | **${summary.totalHours.low}** | **${summary.totalHours.high}** |`);
 

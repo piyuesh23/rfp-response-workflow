@@ -226,6 +226,7 @@ export async function POST(
         backend: EstimateRow[];
         frontend: EstimateRow[];
         fixedCost: EstimateRow[];
+        design: EstimateRow[];
         ai: EstimateRow[];
       };
 
@@ -235,6 +236,7 @@ export async function POST(
         { name: "Backend", data: rawData.backend, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
         { name: "Frontend", data: rawData.frontend, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
         { name: "Fixed Cost Items", data: rawData.fixedCost, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 11, extra: -1, links: 13 } },
+        { name: "Design", data: rawData.design ?? [], cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
         { name: "AI", data: rawData.ai, cols: { task: 2, desc: 3, hrs: 5, conf: 6, low: 7, high: 8, assumptions: 9, extra: 10, links: 11 } },
       ];
 
@@ -296,6 +298,17 @@ export async function POST(
       });
     } catch (err) {
       console.warn(`[import-confirm] Failed to populate estimate template: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // Add "AI" tag if XLSX estimate has an AI tab with data
+  if (xlsxEstimateFile) {
+    const rawDataForTags = xlsxEstimateFile.deliverableMetadata?.rawData as { ai?: unknown[] } | undefined;
+    if (rawDataForTags?.ai && Array.isArray(rawDataForTags.ai) && rawDataForTags.ai.length > 0) {
+      await prisma.engagement.update({
+        where: { id: engagement.id },
+        data: { tags: ["AI"] },
+      });
     }
   }
 

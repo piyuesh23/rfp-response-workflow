@@ -10,6 +10,7 @@ export interface EngagementStatsData {
     backend: { low: number; high: number }
     frontend: { low: number; high: number }
     fixedCost: { low: number; high: number }
+    design: { low: number; high: number }
     ai: { low: number; high: number }
   }
   requirementCount: number
@@ -130,6 +131,7 @@ export function EngagementStats({ stats, className }: EngagementStatsProps) {
     hoursByTab.backend.high,
     hoursByTab.frontend.high,
     hoursByTab.fixedCost.high,
+    hoursByTab.design.high,
     hoursByTab.ai.high,
     1
   )
@@ -201,6 +203,12 @@ export function EngagementStats({ stats, className }: EngagementStatsProps) {
             value={hoursByTab.fixedCost.high}
             max={tabMax}
             colorClass="bg-slate-400"
+          />
+          <HBar
+            label="Design"
+            value={hoursByTab.design.high}
+            max={tabMax}
+            colorClass="bg-pink-500"
           />
           <HBar
             label="AI"

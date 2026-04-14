@@ -11,12 +11,13 @@ import { cn } from "@/lib/utils"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type TabKey = "backend" | "frontend" | "fixed" | "ai"
+export type TabKey = "backend" | "frontend" | "fixed" | "design" | "ai"
 
 export interface EstimateData {
   backend: LineItem[]
   frontend: LineItem[]
   fixed: LineItem[]
+  design: LineItem[]
   ai: LineItem[]
 }
 
@@ -31,6 +32,7 @@ const TAB_CONFIG: { key: TabKey; label: string; value: string }[] = [
   { key: "backend", label: "Backend", value: "backend" },
   { key: "frontend", label: "Frontend", value: "frontend" },
   { key: "fixed", label: "Fixed Cost Items", value: "fixed" },
+  { key: "design", label: "Design", value: "design" },
   { key: "ai", label: "AI", value: "ai" },
 ]
 

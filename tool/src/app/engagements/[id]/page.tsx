@@ -25,6 +25,7 @@ interface TemplateStatus {
   backend?: boolean
   frontend?: boolean
   fixedCost?: boolean
+  design?: boolean
   ai?: boolean
 }
 
@@ -47,6 +48,7 @@ const EMPTY_STATS: EngagementStatsData = {
     backend: { low: 0, high: 0 },
     frontend: { low: 0, high: 0 },
     fixedCost: { low: 0, high: 0 },
+    design: { low: 0, high: 0 },
     ai: { low: 0, high: 0 },
   },
   requirementCount: 0,
@@ -560,6 +562,7 @@ export default function EngagementOverviewPage() {
                 { key: "backend", label: "Backend", phases: ["1A", "3"] },
                 { key: "frontend", label: "Frontend", phases: ["1A", "3"] },
                 { key: "fixedCost", label: "Fixed Cost Items", phases: ["1A", "3"] },
+                { key: "design", label: "Design", phases: ["1A", "3"] },
                 { key: "ai", label: "AI", phases: ["1A", "3"] },
               ] as const).map(({ key, label, phases: relevantPhases }) => {
                 const done = !!(engagement.templateStatus as TemplateStatus)?.[key]

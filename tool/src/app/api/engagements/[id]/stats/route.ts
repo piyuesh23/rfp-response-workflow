@@ -73,6 +73,7 @@ export async function GET(
     backend: { low: 0, high: 0 },
     frontend: { low: 0, high: 0 },
     fixedCost: { low: 0, high: 0 },
+    design: { low: 0, high: 0 },
     ai: { low: 0, high: 0 },
   };
   let requirementCount = 0;
@@ -95,7 +96,7 @@ export async function GET(
 
       if (meta.hoursByTab && typeof meta.hoursByTab === "object") {
         const hbt = meta.hoursByTab as Record<string, { low?: number; high?: number }>;
-        for (const tab of ["backend", "frontend", "fixedCost", "ai"] as const) {
+        for (const tab of ["backend", "frontend", "fixedCost", "design", "ai"] as const) {
           if (hbt[tab]) {
             if ((hbt[tab].low ?? 0) > 0) hoursByTab[tab].low = hbt[tab].low!;
             if ((hbt[tab].high ?? 0) > 0) hoursByTab[tab].high = hbt[tab].high!;
@@ -155,7 +156,7 @@ export async function GET(
         }
         if (fm.hoursByTab && typeof fm.hoursByTab === "object") {
           const hbt = fm.hoursByTab as Record<string, { low?: number; high?: number }>;
-          for (const tab of ["backend", "frontend", "fixedCost", "ai"] as const) {
+          for (const tab of ["backend", "frontend", "fixedCost", "design", "ai"] as const) {
             if (hbt[tab]) {
               if (hoursByTab[tab].low === 0 && (hbt[tab].low ?? 0) > 0) hoursByTab[tab].low = hbt[tab].low!;
               if (hoursByTab[tab].high === 0 && (hbt[tab].high ?? 0) > 0) hoursByTab[tab].high = hbt[tab].high!;

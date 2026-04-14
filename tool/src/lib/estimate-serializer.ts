@@ -10,6 +10,7 @@ const TAB_HEADINGS: Record<TabKey, string> = {
   backend: "## Backend",
   frontend: "## Frontend",
   fixed: "## Fixed Cost Items",
+  design: "## Design",
   ai: "## AI",
 };
 
@@ -19,7 +20,7 @@ const SEPARATOR = "| --- | --- | --- | --- | --- | --- | --- | --- |";
 export function serializeEstimateMarkdown(data: EstimateData): string {
   const sections: string[] = [];
 
-  const tabs: TabKey[] = ["backend", "frontend", "fixed", "ai"];
+  const tabs: TabKey[] = ["backend", "frontend", "fixed", "design", "ai"];
 
   for (const tab of tabs) {
     const rows = data[tab];

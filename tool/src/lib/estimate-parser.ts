@@ -135,24 +135,31 @@ export function parseEstimateMarkdown(markdown: string): EstimateData {
   const backendStart = /^#{1,2}\s+Backend\b/i;
   const frontendStart = /^#{1,2}\s+Frontend\b/i;
   const fixedStart = /^#{1,2}\s+Fixed\s+Cost/i;
+  const designStart = /^#{1,2}\s+Design\b/i;
   const aiStart = /^#{1,2}\s+AI\b/i;
-  const endSections = /^#{1,2}\s+(Risk\s+Register|Assumption|Coverage|State\s+File|Total\s+Effort|Traceability|Integration\s+Req|Key\s+Assumption|Dependencies|Delivery)/i;
+  const endSections = /^#{1,2}\s+(Risk\s+Register|Assumption|Coverage|State\s+File|Total\s+Effort|Traceability|Integration\s+Req|Key\s+Assumption|Dependencies|Delivery|Summary)/i;
 
   const backend = parseTablesInSection(
     markdown,
     backendStart,
-    new RegExp(`(${frontendStart.source})|(${fixedStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
+    new RegExp(`(${frontendStart.source})|(${fixedStart.source})|(${designStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
   );
 
   const frontend = parseTablesInSection(
     markdown,
     frontendStart,
-    new RegExp(`(${fixedStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
+    new RegExp(`(${fixedStart.source})|(${designStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
   );
 
   const fixed = parseTablesInSection(
     markdown,
     fixedStart,
+    new RegExp(`(${designStart.source})|(${aiStart.source})|(${endSections.source})`, "i")
+  );
+
+  const design = parseTablesInSection(
+    markdown,
+    designStart,
     new RegExp(`(${aiStart.source})|(${endSections.source})`, "i")
   );
 
@@ -166,6 +173,7 @@ export function parseEstimateMarkdown(markdown: string): EstimateData {
     backend: toLineItems(backend, "be"),
     frontend: toLineItems(frontend, "fe"),
     fixed: toLineItems(fixed, "fc"),
+    design: toLineItems(design, "ds"),
     ai: toLineItems(ai, "ai"),
   };
 }
@@ -176,6 +184,7 @@ export function estimateDataToExcelTabs(data: EstimateData): EstimateTab[] {
     { key: "backend", name: "Backend" },
     { key: "frontend", name: "Frontend" },
     { key: "fixed", name: "Fixed Cost Items" },
+    { key: "design", name: "Design" },
     { key: "ai", name: "AI" },
   ];
 

@@ -208,6 +208,7 @@ function EstimatePreview({ meta }: { meta: Record<string, unknown> }) {
       {hoursByTab?.backend && <div>Backend: {hoursByTab.backend.low}-{hoursByTab.backend.high} hrs</div>}
       {hoursByTab?.frontend && <div>Frontend: {hoursByTab.frontend.low}-{hoursByTab.frontend.high} hrs</div>}
       {hoursByTab?.fixedCost && <div>Fixed Cost: {hoursByTab.fixedCost.low}-{hoursByTab.fixedCost.high} hrs</div>}
+      {hoursByTab?.design && <div>Design: {hoursByTab.design.low}-{hoursByTab.design.high} hrs</div>}
       {hoursByTab?.ai && <div>AI: {hoursByTab.ai.low}-{hoursByTab.ai.high} hrs</div>}
       <div className="font-medium">Total: {totalHours?.low ?? "?"}-{totalHours?.high ?? "?"} hrs ({(meta.lineItemCount as number) ?? 0} items)</div>
     </>
