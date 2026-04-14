@@ -482,6 +482,10 @@ export async function POST(
             } else if (fileMeta.name.toLowerCase().endsWith(".docx")) {
               const result = await extractTextFromDocx(fileBuffer);
               extractedText = result.text;
+            } else if (/\.xlsx?$/i.test(fileMeta.name) && pfRecord?.deliverableMetadata?.rawData) {
+              // XLSX files: generate markdown from worker-extracted rawData
+              const { xlsxEstimateToMarkdown } = await import("@/lib/xlsx-estimate-reader");
+              extractedText = xlsxEstimateToMarkdown(pfRecord.deliverableMetadata.rawData as Parameters<typeof xlsxEstimateToMarkdown>[0]);
             }
 
             if (extractedText) {

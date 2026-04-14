@@ -766,6 +766,13 @@ async function autoConfirmItem(
             } else if (fileMeta.name.toLowerCase().endsWith(".docx")) {
               const result = await extractTextFromDocx(fileBuffer);
               extractedText = result.text;
+            } else if (/\.xlsx?$/i.test(fileMeta.name)) {
+              // XLSX files: generate markdown from worker-extracted data
+              const pfRec = processedFilesArr.find((pf) => pf.fullPath === fileMeta.fullPath) as { deliverableMetadata?: { rawData?: unknown } } | undefined;
+              if (pfRec?.deliverableMetadata?.rawData) {
+                const { xlsxEstimateToMarkdown } = await import("@/lib/xlsx-estimate-reader");
+                extractedText = xlsxEstimateToMarkdown(pfRec.deliverableMetadata.rawData as Parameters<typeof xlsxEstimateToMarkdown>[0]);
+              }
             }
 
             if (extractedText) {
