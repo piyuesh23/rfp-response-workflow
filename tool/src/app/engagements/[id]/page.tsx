@@ -5,12 +5,16 @@ import { useParams, useRouter } from "next/navigation"
 import { PhaseTimeline } from "@/components/phase/PhaseTimeline"
 import type { PhaseCardData } from "@/components/phase/PhaseCard"
 import { EngagementStats, type EngagementStatsData } from "@/components/engagement/EngagementStats"
+import { CollapsibleSection } from "@/components/engagement/CollapsibleSection"
+import { outcomeLabels } from "@/lib/engagement-labels"
 import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
 import {
   ArrowRight, Loader2, CheckCircle2, Eye,
   GitFork, FileQuestion, FileSpreadsheet, SkipForward,
-  Circle, Download, FileDown, Lock, AlertCircle, RotateCcw,
+  Circle, Download, FileDown, Lock, AlertCircle, RotateCcw, X,
 } from "lucide-react"
+import { rfpSourceLabels, lossReasonLabels } from "@/lib/engagement-labels"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   getVisiblePhases, shouldShowDecisionFork, canStartPhase, getPhaseLabel,
@@ -43,9 +47,20 @@ interface EngagementData {
   financialProposalValue?: number | null
   outcome?: string | null
   lossReason?: string | null
+  lossReasonDetail?: string | null
   actualContractValue?: number | null
   competitorWhoWon?: string | null
+  winFactors?: string[]
+  outcomeFeedback?: string | null
   industry?: string | null
+  // Business metadata
+  rfpSource?: string | null
+  estimatedDealValue?: number | null
+  submissionDeadline?: string | null
+  presalesOwner?: string | null
+  salesOwner?: string | null
+  isCompetitiveBid?: boolean
+  presalesHoursSpent?: number | null
   phases: PhaseWithId[]
 }
 
@@ -138,9 +153,19 @@ export default function EngagementOverviewPage() {
             financialProposalValue: data.financialProposalValue ?? null,
             outcome: data.outcome ?? null,
             lossReason: data.lossReason ?? null,
+            lossReasonDetail: data.lossReasonDetail ?? null,
             actualContractValue: data.actualContractValue ?? null,
             competitorWhoWon: data.competitorWhoWon ?? null,
+            winFactors: data.winFactors ?? [],
+            outcomeFeedback: data.outcomeFeedback ?? null,
             industry: data.account?.industry ?? null,
+            rfpSource: data.rfpSource ?? null,
+            estimatedDealValue: data.estimatedDealValue ?? null,
+            submissionDeadline: data.submissionDeadline ?? null,
+            presalesOwner: data.presalesOwner ?? null,
+            salesOwner: data.salesOwner ?? null,
+            isCompetitiveBid: data.isCompetitiveBid ?? true,
+            presalesHoursSpent: data.presalesHoursSpent ?? null,
             phases: (data.phases ?? []).map(
               (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }> }) => ({
                 id: p.id,
@@ -170,6 +195,33 @@ export default function EngagementOverviewPage() {
   React.useEffect(() => {
     fetchEngagement()
   }, [fetchEngagement])
+
+  /** Patch engagement fields via the general PATCH endpoint */
+  const patchEngagement = React.useCallback(
+    async (fields: Record<string, unknown>) => {
+      await fetch(`/api/engagements/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      })
+      fetchEngagement()
+    },
+    [id, fetchEngagement]
+  )
+
+  /** Patch outcome-related fields via the dedicated outcome endpoint */
+  const patchOutcome = React.useCallback(
+    async (fields: Record<string, unknown>) => {
+      if (!engagement?.outcome) return
+      await fetch(`/api/engagements/${id}/outcome`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome: engagement.outcome, ...fields }),
+      })
+      fetchEngagement()
+    },
+    [id, engagement?.outcome, fetchEngagement]
+  )
 
   // SSE auto-refresh for running phases
   const runningPhase = engagement?.phases.find((p) => p.status === "RUNNING") ?? null
@@ -558,97 +610,348 @@ export default function EngagementOverviewPage() {
           </div>
         )}
 
-        {/* Financial Data */}
-        <div className="rounded-xl border bg-card p-4 ring-1 ring-foreground/10">
-          <div className="text-sm font-semibold mb-3">Financial</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Estimated Budget (TOR)</label>
-              <input
-                type="number"
-                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                placeholder="From TOR/RFP"
-                defaultValue={engagement?.estimatedBudget ?? ""}
-                onBlur={(e) => {
-                  const val = e.target.value ? parseFloat(e.target.value) : null;
-                  if (val !== engagement?.estimatedBudget) {
-                    fetch(`/api/engagements/${id}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ estimatedBudget: val }),
-                    }).then(() => fetchEngagement());
-                  }
-                }}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Financial Proposal Value</label>
-              <input
-                type="number"
-                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                placeholder="Our submitted bid"
-                defaultValue={engagement?.financialProposalValue ?? ""}
-                onBlur={(e) => {
-                  const val = e.target.value ? parseFloat(e.target.value) : null;
-                  if (val !== engagement?.financialProposalValue) {
-                    fetch(`/api/engagements/${id}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ financialProposalValue: val }),
-                    }).then(() => fetchEngagement());
-                  }
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        {/* Deal & Financials — single collapsible section covering deal, financial, team, outcome */}
+        {(() => {
+          const fmtMoney = (v: number | null | undefined) => {
+            if (!v) return null
+            return v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
+          }
+          const fmtDate = (v: string | null | undefined) => {
+            if (!v) return null
+            try {
+              return new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+            } catch { return null }
+          }
 
-        {/* Outcome */}
-        <div className="rounded-xl border bg-card p-4 ring-1 ring-foreground/10">
-          <div className="text-sm font-semibold mb-3">Outcome</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Result</label>
-              <select
-                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                defaultValue={engagement?.outcome ?? ""}
-                onChange={(e) => {
-                  fetch(`/api/engagements/${id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ outcome: e.target.value || null }),
-                  }).then(() => fetchEngagement());
-                }}
+          const summaryParts: React.ReactNode[] = []
+          if (engagement?.outcome) {
+            const tone =
+              engagement.outcome === "WON" || engagement.outcome === "PARTIAL_WIN"
+                ? "text-green-600 dark:text-green-400 font-medium"
+                : engagement.outcome === "LOST"
+                ? "text-red-600 dark:text-red-400 font-medium"
+                : "text-foreground font-medium"
+            summaryParts.push(
+              <span key="outcome" className={tone}>
+                {outcomeLabels[engagement.outcome] ?? engagement.outcome}
+              </span>
+            )
+          }
+          if (engagement?.rfpSource) {
+            summaryParts.push(rfpSourceLabels[engagement.rfpSource] ?? engagement.rfpSource)
+          }
+          const dealVal =
+            fmtMoney(engagement?.actualContractValue) ??
+            fmtMoney(engagement?.estimatedDealValue) ??
+            fmtMoney(engagement?.financialProposalValue)
+          if (dealVal) summaryParts.push(dealVal)
+          const dueDate = fmtDate(engagement?.submissionDeadline)
+          if (dueDate) summaryParts.push(`Due ${dueDate}`)
+
+          const summary =
+            summaryParts.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5">
+                {summaryParts.map((part, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && <span className="text-muted-foreground/50">·</span>}
+                    <span>{part}</span>
+                  </React.Fragment>
+                ))}
+              </span>
+            ) : (
+              "Not filled in"
+            )
+
+          return (
+            <div className="rounded-xl border bg-card px-4 ring-1 ring-foreground/10">
+              <CollapsibleSection
+                title="Deal & Financials"
+                summary={summary}
+                defaultOpen={false}
               >
-                <option value="">Not recorded</option>
-                <option value="WON">Won</option>
-                <option value="LOST">Lost</option>
-                <option value="NO_DECISION">No Decision</option>
-                <option value="WITHDRAWN">Withdrawn</option>
-                <option value="PARTIAL_WIN">Partial Win</option>
-                <option value="DEFERRED">Deferred</option>
-                <option value="NOT_SUBMITTED">Not Submitted</option>
-              </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Deal Value</label>
+                    <input
+                      type="number"
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      placeholder="Expected deal size"
+                      defaultValue={engagement?.estimatedDealValue ?? ""}
+                      key={`dealval-${engagement?.estimatedDealValue}`}
+                      onBlur={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : null;
+                        if (val !== engagement?.estimatedDealValue) patchEngagement({ estimatedDealValue: val });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">RFP Source</label>
+                    <select
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      value={engagement?.rfpSource ?? ""}
+                      onChange={(e) => patchEngagement({ rfpSource: e.target.value || null })}
+                    >
+                      <option value="">--</option>
+                      {Object.entries(rfpSourceLabels).map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Budget (TOR)</label>
+                    <input
+                      type="number"
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      placeholder="From TOR/RFP"
+                      defaultValue={engagement?.estimatedBudget ?? ""}
+                      key={`budget-${engagement?.estimatedBudget}`}
+                      onBlur={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : null;
+                        if (val !== engagement?.estimatedBudget) patchEngagement({ estimatedBudget: val });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Proposal Value</label>
+                    <input
+                      type="number"
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      placeholder="Our submitted bid"
+                      defaultValue={engagement?.financialProposalValue ?? ""}
+                      key={`fpv-${engagement?.financialProposalValue}`}
+                      onBlur={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : null;
+                        if (val !== engagement?.financialProposalValue) patchEngagement({ financialProposalValue: val });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Submission Deadline</label>
+                    <input
+                      type="date"
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      defaultValue={engagement?.submissionDeadline ? new Date(engagement.submissionDeadline).toISOString().split("T")[0] : ""}
+                      key={`deadline-${engagement?.submissionDeadline}`}
+                      onBlur={(e) => {
+                        const val = e.target.value || null;
+                        patchEngagement({ submissionDeadline: val });
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-end pb-1.5">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="rounded border-input"
+                        checked={engagement?.isCompetitiveBid ?? true}
+                        onChange={(e) => patchEngagement({ isCompetitiveBid: e.target.checked })}
+                      />
+                      Competitive Bid
+                    </label>
+                  </div>
+                </div>
+                <div className="border-t mt-3 pt-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">Team</div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Presales Owner</label>
+                      <input
+                        type="text"
+                        className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        placeholder="Name"
+                        defaultValue={engagement?.presalesOwner ?? ""}
+                        key={`presales-${engagement?.presalesOwner}`}
+                        onBlur={(e) => {
+                          if (e.target.value !== (engagement?.presalesOwner ?? ""))
+                            patchEngagement({ presalesOwner: e.target.value || null });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Sales Owner</label>
+                      <input
+                        type="text"
+                        className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        placeholder="Name"
+                        defaultValue={engagement?.salesOwner ?? ""}
+                        key={`sales-${engagement?.salesOwner}`}
+                        onBlur={(e) => {
+                          if (e.target.value !== (engagement?.salesOwner ?? ""))
+                            patchEngagement({ salesOwner: e.target.value || null });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Hours Spent</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        placeholder="0"
+                        defaultValue={engagement?.presalesHoursSpent ?? ""}
+                        key={`hours-${engagement?.presalesHoursSpent}`}
+                        onBlur={(e) => {
+                          const val = e.target.value ? parseFloat(e.target.value) : null;
+                          if (val !== engagement?.presalesHoursSpent) patchEngagement({ presalesHoursSpent: val });
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t mt-3 pt-3">
+                  <div className="text-xs font-medium text-muted-foreground mb-2">Outcome</div>
+                  <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Result</label>
+                    <select
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      value={engagement?.outcome ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value || null;
+                        if (val) {
+                          fetch(`/api/engagements/${id}/outcome`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ outcome: val }),
+                          }).then(() => fetchEngagement());
+                        } else {
+                          patchEngagement({ outcome: null });
+                        }
+                      }}
+                    >
+                      <option value="">Not recorded</option>
+                      <option value="WON">Won</option>
+                      <option value="LOST">Lost</option>
+                      <option value="NO_DECISION">No Decision</option>
+                      <option value="WITHDRAWN">Withdrawn</option>
+                      <option value="PARTIAL_WIN">Partial Win</option>
+                      <option value="DEFERRED">Deferred</option>
+                      <option value="NOT_SUBMITTED">Not Submitted</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Contract Value</label>
+                    <input
+                      type="number"
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      placeholder="Actual value"
+                      defaultValue={engagement?.actualContractValue ?? ""}
+                      key={`cv-${engagement?.actualContractValue}`}
+                      onBlur={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : null;
+                        if (val !== engagement?.actualContractValue) patchEngagement({ actualContractValue: val });
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {engagement?.outcome === "LOST" && (
+                  <div className="border-t mt-3 pt-3 space-y-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Loss Reason</label>
+                      <select
+                        className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        value={engagement?.lossReason ?? ""}
+                        onChange={(e) => patchOutcome({ lossReason: e.target.value || null })}
+                      >
+                        <option value="">--</option>
+                        {Object.entries(lossReasonLabels).map(([val, label]) => (
+                          <option key={val} value={val}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Details</label>
+                      <textarea
+                        rows={2}
+                        className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none"
+                        placeholder="What happened?"
+                        defaultValue={engagement?.lossReasonDetail ?? ""}
+                        key={`lrd-${engagement?.lossReasonDetail}`}
+                        onBlur={(e) => {
+                          if (e.target.value !== (engagement?.lossReasonDetail ?? ""))
+                            patchOutcome({ lossReasonDetail: e.target.value || null });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Competitor Who Won</label>
+                      <input
+                        type="text"
+                        className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        placeholder="Competitor name"
+                        defaultValue={engagement?.competitorWhoWon ?? ""}
+                        key={`comp-${engagement?.competitorWhoWon}`}
+                        onBlur={(e) => {
+                          if (e.target.value !== (engagement?.competitorWhoWon ?? ""))
+                            patchOutcome({ competitorWhoWon: e.target.value || null });
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {(engagement?.outcome === "WON" || engagement?.outcome === "PARTIAL_WIN") && (
+                  <div className="border-t mt-3 pt-3">
+                    <label className="text-xs text-muted-foreground">Win Factors</label>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5 mb-1.5">
+                      {(engagement?.winFactors ?? []).map((factor, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs gap-1 pr-1">
+                          {factor}
+                          <button
+                            type="button"
+                            className="ml-0.5 hover:text-destructive"
+                            onClick={() => {
+                              const updated = (engagement?.winFactors ?? []).filter((_, idx) => idx !== i);
+                              patchOutcome({ winFactors: updated });
+                            }}
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      placeholder="Type a factor and press Enter"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === ",") {
+                          e.preventDefault();
+                          const val = (e.target as HTMLInputElement).value.trim();
+                          if (val) {
+                            const updated = [...(engagement?.winFactors ?? []), val];
+                            patchOutcome({ winFactors: updated });
+                            (e.target as HTMLInputElement).value = "";
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {engagement?.outcome && (
+                  <div className="border-t mt-3 pt-3">
+                    <label className="text-xs text-muted-foreground">Feedback & Learnings</label>
+                    <textarea
+                      rows={2}
+                      className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none"
+                      placeholder="Key takeaways from this engagement"
+                      defaultValue={engagement?.outcomeFeedback ?? ""}
+                      key={`feedback-${engagement?.outcomeFeedback}`}
+                      onBlur={(e) => {
+                        if (e.target.value !== (engagement?.outcomeFeedback ?? ""))
+                          patchOutcome({ outcomeFeedback: e.target.value || null });
+                      }}
+                    />
+                  </div>
+                )}
+                </div>
+              </CollapsibleSection>
             </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Contract Value</label>
-              <input
-                type="number"
-                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                placeholder="Actual value"
-                defaultValue={engagement?.actualContractValue ?? ""}
-                onBlur={(e) => {
-                  const val = e.target.value ? parseFloat(e.target.value) : null;
-                  fetch(`/api/engagements/${id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ actualContractValue: val }),
-                  }).then(() => fetchEngagement());
-                }}
-              />
-            </div>
-          </div>
-        </div>
+          )
+        })()}
 
         <EngagementStats stats={stats} />
 
