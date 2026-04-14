@@ -1,16 +1,19 @@
 /**
  * Convert raw extracted text (from PDF/DOCX) into clean, structured markdown.
- * Uses Sonnet for higher-quality table/heading preservation across long documents.
- * Handles arbitrarily long documents by chunking at paragraph boundaries.
+ * Uses Haiku for fast, cost-efficient formatting. Sonnet was tried but hit SDK
+ * request timeouts on large outputs; Haiku completes chunks quickly and the
+ * chunking strategy already solves the real quality issue (truncation at the
+ * input boundary). Handles arbitrarily long documents by chunking at paragraph
+ * boundaries.
  */
 import Anthropic from "@anthropic-ai/sdk";
 
-const SONNET_MODEL = "claude-sonnet-4-20250514";
-const MAX_OUTPUT_TOKENS = 16000;
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+const MAX_OUTPUT_TOKENS = 8000;
 
-// Chunk size tuned so each chunk fits within the 16k output token budget
-// with some headroom for markdown expansion. ~60k chars in ≈ ~15k tokens out.
-const CHUNK_CHAR_SIZE = 60000;
+// Chunk size tuned so each chunk fits within Haiku's 8k output token budget.
+// ~25k chars in ≈ ~7k tokens out when expanded with markdown structure.
+const CHUNK_CHAR_SIZE = 25000;
 const MIN_TEXT_LENGTH = 100;
 
 /**
@@ -73,7 +76,7 @@ The document type is: ${documentType}
 The document label is: ${label}${chunkContext}`;
 
   const response = await anthropic.messages.create({
-    model: SONNET_MODEL,
+    model: HAIKU_MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
     system: systemPrompt,
     messages: [
