@@ -1,24 +1,61 @@
 /**
  * Convert raw extracted text (from PDF/DOCX) into clean, structured markdown.
- * Uses Haiku for cost-efficient formatting.
+ * Uses Sonnet for higher-quality table/heading preservation across long documents.
+ * Handles arbitrarily long documents by chunking at paragraph boundaries.
  */
 import Anthropic from "@anthropic-ai/sdk";
 
-const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+const SONNET_MODEL = "claude-sonnet-4-20250514";
+const MAX_OUTPUT_TOKENS = 16000;
+
+// Chunk size tuned so each chunk fits within the 16k output token budget
+// with some headroom for markdown expansion. ~60k chars in ≈ ~15k tokens out.
+const CHUNK_CHAR_SIZE = 60000;
+const MIN_TEXT_LENGTH = 100;
 
 /**
- * Convert raw extracted document text into well-structured markdown.
- * Preserves all content but adds proper headings, lists, tables, and formatting.
+ * Split long text into chunks that break at paragraph or line boundaries
+ * to avoid cutting tables or sentences mid-flow.
  */
-export async function convertToMarkdown(
-  rawText: string,
-  documentType: string,
-  label: string
-): Promise<string> {
-  if (!rawText || rawText.length < 100) return rawText;
+function chunkText(text: string, chunkSize: number): string[] {
+  if (text.length <= chunkSize) return [text];
 
-  const truncated = rawText.slice(0, 30000);
-  const anthropic = new Anthropic();
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + chunkSize, text.length);
+
+    // Back off to the nearest paragraph break (then line break) in the
+    // second half of the chunk, so boundaries don't bisect logical blocks.
+    if (end < text.length) {
+      const minEnd = start + Math.floor(chunkSize / 2);
+      const paragraphBreak = text.lastIndexOf("\n\n", end);
+      if (paragraphBreak > minEnd) {
+        end = paragraphBreak;
+      } else {
+        const lineBreak = text.lastIndexOf("\n", end);
+        if (lineBreak > minEnd) end = lineBreak;
+      }
+    }
+
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
+async function convertChunk(
+  text: string,
+  documentType: string,
+  label: string,
+  chunkIndex: number,
+  totalChunks: number,
+  anthropic: Anthropic
+): Promise<string> {
+  const chunkContext =
+    totalChunks > 1
+      ? `\n\nThis is chunk ${chunkIndex + 1} of ${totalChunks} from a larger document. Format only the content provided below. Do not add a summary, table of contents, or cross-chunk commentary.`
+      : "";
 
   const systemPrompt = `You are a document formatter. Convert the raw extracted text into clean, well-structured markdown.
 
@@ -33,27 +70,61 @@ Rules:
 - Keep the original document's section ordering
 
 The document type is: ${documentType}
-The document label is: ${label}`;
+The document label is: ${label}${chunkContext}`;
+
+  const response = await anthropic.messages.create({
+    model: SONNET_MODEL,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    system: systemPrompt,
+    messages: [
+      {
+        role: "user",
+        content: `Convert this raw extracted text to clean markdown:\n\n${text}`,
+      },
+    ],
+  });
+
+  const responseText =
+    response.content[0].type === "text" ? response.content[0].text : "";
+  return responseText || text;
+}
+
+/**
+ * Convert raw extracted document text into well-structured markdown.
+ * Preserves all content but adds proper headings, lists, tables, and formatting.
+ * Long documents are chunked and processed sequentially, then concatenated.
+ */
+export async function convertToMarkdown(
+  rawText: string,
+  documentType: string,
+  label: string
+): Promise<string> {
+  if (!rawText || rawText.length < MIN_TEXT_LENGTH) return rawText;
+
+  const chunks = chunkText(rawText, CHUNK_CHAR_SIZE);
+  const anthropic = new Anthropic();
 
   try {
-    const response = await anthropic.messages.create({
-      model: HAIKU_MODEL,
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Convert this raw extracted text to clean markdown:\n\n${truncated}`,
-        },
-      ],
-    });
+    if (chunks.length === 1) {
+      return await convertChunk(chunks[0], documentType, label, 0, 1, anthropic);
+    }
 
-    const responseText =
-      response.content[0].type === "text" ? response.content[0].text : "";
-    return responseText || rawText;
+    const results: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const converted = await convertChunk(
+        chunks[i],
+        documentType,
+        label,
+        i,
+        chunks.length,
+        anthropic
+      );
+      results.push(converted);
+    }
+    return results.join("\n\n");
   } catch (err) {
     console.warn(
-      `[markdown-converter] Conversion failed: ${err instanceof Error ? err.message : String(err)}`
+      `[markdown-converter] Conversion failed (${chunks.length} chunk(s), ${rawText.length} chars): ${err instanceof Error ? err.message : String(err)}`
     );
     return rawText;
   }

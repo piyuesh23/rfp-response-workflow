@@ -468,13 +468,14 @@ async function processOneFolder(
     // Sync record type with (possibly updated) fileMeta type
     record.type = fileMeta.type;
 
-    // For FINANCIAL or ESTIMATE files, run secondary inference — rate-limited
-    if (extractedOk && secondaryText.length >= 100 && !xlsxSkipAiClassify && (fileMeta.type === "FINANCIAL" || fileMeta.type === "ESTIMATE")) {
+    // For FINANCIAL, ESTIMATE, or PROPOSAL files, run secondary inference — rate-limited.
+    // PROPOSAL included because technical proposals often carry the final commercial figure inline.
+    if (extractedOk && secondaryText.length >= 100 && !xlsxSkipAiClassify && (fileMeta.type === "FINANCIAL" || fileMeta.type === "ESTIMATE" || fileMeta.type === "PROPOSAL")) {
       try {
         const secondaryInferred = await aiLimiter.execute(() =>
           inferFromSecondaryDocument(
             secondaryText,
-            fileMeta.type as "ESTIMATE" | "FINANCIAL"
+            fileMeta.type as "ESTIMATE" | "FINANCIAL" | "PROPOSAL"
           )
         );
         // Budget must come only from TOR/RFP docs (primary inference), never from our financial proposal
@@ -482,10 +483,13 @@ async function processOneFolder(
         record.inferredTimeline = secondaryInferred.deliveryTimeline;
         record.inferredFinalCost = secondaryInferred.finalCostSubmitted;
 
-        // Merge — only accept budget from ESTIMATE docs, not FINANCIAL (our bid)
+        // Merge — only accept budget from ESTIMATE docs, not FINANCIAL/PROPOSAL (our bid)
         if (fileMeta.type === "ESTIMATE" && secondaryInferred.estimatedBudget != null) mergedEstimatedBudget = secondaryInferred.estimatedBudget;
         if (secondaryInferred.deliveryTimeline != null) mergedDeliveryTimeline = secondaryInferred.deliveryTimeline;
-        if (secondaryInferred.finalCostSubmitted != null) mergedFinalCost = secondaryInferred.finalCostSubmitted;
+        // Final cost precedence: FINANCIAL always wins; otherwise first non-null wins (ESTIMATE or PROPOSAL).
+        if (secondaryInferred.finalCostSubmitted != null && (fileMeta.type === "FINANCIAL" || mergedFinalCost == null)) {
+          mergedFinalCost = secondaryInferred.finalCostSubmitted;
+        }
       } catch (inferErr) {
         console.warn(
           `[import-worker] Secondary inference failed for ${fileMeta.fullPath}: ${inferErr instanceof Error ? inferErr.message : String(inferErr)}`
