@@ -1107,7 +1107,7 @@ export default function ImportDetailPage() {
         />
       ) : job.items.length > 0 && (
         <div className="rounded-md border">
-          <Table>
+          <Table className="table-fixed w-full">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8">
@@ -1120,14 +1120,14 @@ export default function ImportDetailPage() {
                     />
                   )}
                 </TableHead>
-                <TableHead>Folder</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Tech Stack</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Files</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="w-[12%]">Folder</TableHead>
+                <TableHead className="w-[12%]">Client</TableHead>
+                <TableHead className="w-[14%]">Project</TableHead>
+                <TableHead className="w-[8%]">Tech Stack</TableHead>
+                <TableHead className="w-[8%]">Type</TableHead>
+                <TableHead className="w-[22%]">Files</TableHead>
+                <TableHead className="w-[10%]">Status</TableHead>
+                <TableHead className="w-[8%] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1159,8 +1159,8 @@ export default function ImportDetailPage() {
                   <TableCell className="text-xs">
                     {item.inferredEngagementType?.replace(/_/g, " ") ?? "—"}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[180px]">
-                    <div className="leading-relaxed">
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div className="leading-relaxed break-words">
                     {(() => {
                       const files = item.files as FileInfo[];
                       const counts: Record<string, number> = {};
