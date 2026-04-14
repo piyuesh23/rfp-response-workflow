@@ -423,9 +423,17 @@ async function processOneFolder(
     if (!xlsxSkipAiClassify && extractedOk && secondaryText.length >= 200) {
       try {
         const classification = await aiLimiter.execute(() => classifyDocument(secondaryText));
-        record.classifiedType = classification.documentType;
-        record.classificationConfidence = classification.confidence;
-        record.classificationReasoning = classification.reasoning;
+        // Only overwrite filename-based classification if AI actually succeeded
+        if (classification.confidence > 0 && classification.documentType !== "OTHER") {
+          record.classifiedType = classification.documentType;
+          record.classificationConfidence = classification.confidence;
+          record.classificationReasoning = classification.reasoning;
+        } else if (record.classifiedType === "OTHER") {
+          // Only accept AI OTHER if filename also said OTHER
+          record.classifiedType = classification.documentType;
+          record.classificationConfidence = classification.confidence;
+          record.classificationReasoning = classification.reasoning;
+        }
       } catch {
         // Keep filename-based classification as fallback
       }

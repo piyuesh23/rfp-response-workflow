@@ -302,13 +302,56 @@ export async function POST(
   }
 
   // Add "AI" tag if XLSX estimate has an AI tab with data
+  // Also extract assumptions from XLSX estimate rows
   if (xlsxEstimateFile) {
-    const rawDataForTags = xlsxEstimateFile.deliverableMetadata?.rawData as { ai?: unknown[] } | undefined;
+    const rawDataForTags = xlsxEstimateFile.deliverableMetadata?.rawData as {
+      ai?: Array<{ assumptions?: string }>;
+      backend?: Array<{ assumptions?: string; task?: string }>;
+      frontend?: Array<{ assumptions?: string; task?: string }>;
+      fixedCost?: Array<{ assumptions?: string; task?: string }>;
+      design?: Array<{ assumptions?: string; task?: string }>;
+    } | undefined;
+
     if (rawDataForTags?.ai && Array.isArray(rawDataForTags.ai) && rawDataForTags.ai.length > 0) {
       await prisma.engagement.update({
         where: { id: engagement.id },
         data: { tags: ["AI"] },
       });
+    }
+
+    // Compile assumptions from all XLSX tabs
+    try {
+      const estPhaseId = phaseMap.get(workflowPath === "HAS_RESPONSE" ? "3" : "1A") ?? engagement.phases[0]?.id ?? "";
+      const tabNames = ["backend", "frontend", "fixedCost", "design", "ai"] as const;
+      const xlsxAssumptions: Array<{ text: string; torReference: string | null; impactIfWrong: string }> = [];
+
+      for (const tab of tabNames) {
+        const rows = (rawDataForTags as Record<string, Array<{ task?: string; assumptions?: string }>> | undefined)?.[tab];
+        if (!rows || !Array.isArray(rows)) continue;
+        for (const row of rows) {
+          if (row.assumptions && row.assumptions.trim()) {
+            xlsxAssumptions.push({
+              text: row.assumptions.trim(),
+              torReference: null,
+              impactIfWrong: `Affects ${tab} task: ${row.task ?? "unknown"}`,
+            });
+          }
+        }
+      }
+
+      if (xlsxAssumptions.length > 0 && estPhaseId) {
+        await prisma.assumption.createMany({
+          data: xlsxAssumptions.map((a) => ({
+            engagementId: engagement.id,
+            sourcePhaseId: estPhaseId,
+            text: a.text,
+            torReference: a.torReference,
+            impactIfWrong: a.impactIfWrong,
+          })),
+        });
+      }
+    } catch (err) {
+      console.warn(`[import-confirm] XLSX assumptions extraction failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -332,8 +375,9 @@ export async function POST(
   }
 
   // 4D: Prefer submission folder files for financial metadata
+  // Check both AI classifiedType and static file type (AI may have failed)
   const submissionFinancial = processedFiles.find(
-    (pf) => pf.isSubmission && pf.classifiedType === "FINANCIAL"
+    (pf) => pf.isSubmission && (pf.classifiedType === "FINANCIAL" || pf.type === "FINANCIAL")
   );
   if (submissionFinancial?.deliverableMetadata) {
     const meta = submissionFinancial.deliverableMetadata as { totalCost?: number };

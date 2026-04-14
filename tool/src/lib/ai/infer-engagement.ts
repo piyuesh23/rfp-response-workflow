@@ -200,11 +200,20 @@ Respond ONLY with valid JSON:
  */
 export function classifyFileType(
   fileName: string
-): "TOR" | "ESTIMATE" | "PROPOSAL" | "FINANCIAL" | "OTHER" {
+): "TOR" | "ESTIMATE" | "PROPOSAL" | "FINANCIAL" | "QA_RESPONSE" | "ADDENDUM" | "QUESTIONS" | "ANNEXURE" | "PREREQUISITES" | "RESPONSE_FORMAT" | "OTHER" {
   const lower = fileName.toLowerCase();
-  if (/tor|terms.of.reference|rfp|rfq|sow|scope.of.work|requirement/i.test(lower)) return "TOR";
-  if (/estimat|effort|pricing|cost.breakdown|hours/i.test(lower)) return "ESTIMATE";
-  if (/proposal|technical.proposal|tech.proposal/i.test(lower)) return "PROPOSAL";
-  if (/financial|commercial|budget|quote|bid.price/i.test(lower)) return "FINANCIAL";
+  // Q&A response patterns — check before TOR to avoid "questions" false-matching
+  if (/q\s*&\s*a|q\s*and\s*a|questions?\s*(and|&)\s*answers?|clarification\s*response/i.test(lower)) return "QA_RESPONSE";
+  if (/questions?\s*(version|v\d)/i.test(lower)) return "QA_RESPONSE";
+  if (/addendum|corrigendum|amendment|pre.?bid.*minutes/i.test(lower)) return "ADDENDUM";
+  if (/clarification\s*request|queries\s*regarding|pre.?bid\s*quer/i.test(lower)) return "QUESTIONS";
+  // Financial/commercial — check before annex to avoid "annex.*financial" going to ANNEXURE
+  if (/financial|commercial|bid.price/i.test(lower)) return "FINANCIAL";
+  if (/estimat|effort|cost.breakdown|hours/i.test(lower)) return "ESTIMATE";
+  if (/proposal|technical.offer|tech.offer/i.test(lower)) return "PROPOSAL";
+  if (/tor\b|terms.of.reference|rfp|rfq|sow|scope.of.work|requirement/i.test(lower)) return "TOR";
+  if (/annex|appendix|attachment|schedule/i.test(lower)) return "ANNEXURE";
+  if (/pre.?requisit|eligib|qualification.criteria/i.test(lower)) return "PREREQUISITES";
+  if (/response.format|submission.template|evaluation.matrix|scoring.criteria/i.test(lower)) return "RESPONSE_FORMAT";
   return "OTHER";
 }
