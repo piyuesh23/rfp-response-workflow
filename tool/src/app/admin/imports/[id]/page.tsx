@@ -222,6 +222,8 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
   const [techStack, setTechStack] = React.useState(item.inferredTechStack ?? "DRUPAL");
   const [engagementType, setEngagementType] = React.useState(item.inferredEngagementType ?? "NEW_BUILD");
   const [accountId, setAccountId] = React.useState(item.matchedAccountId ?? "");
+  const [isNewAccount, setIsNewAccount] = React.useState(false);
+  const [newAccountName, setNewAccountName] = React.useState(item.inferredClient ?? "");
   const [budget, setBudget] = React.useState("");
   const [timeline, setTimeline] = React.useState("");
   const [finalCost, setFinalCost] = React.useState(
@@ -274,12 +276,35 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
   async function handleConfirm() {
     setSaving(true);
     try {
+      let effectiveAccountId = accountId || undefined;
+      let effectiveClientName = clientName;
+
+      // If the user chose "create new", provision the account first so the
+      // confirm endpoint receives a concrete accountId and cannot fall back
+      // to the pre-matched account.
+      if (isNewAccount && newAccountName.trim()) {
+        const trimmed = newAccountName.trim();
+        const res = await fetch("/api/accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            canonicalName: trimmed,
+            industry: item.inferredIndustry ?? "OTHER",
+          }),
+        });
+        if (res.ok) {
+          const acct = await res.json();
+          effectiveAccountId = acct.id;
+          effectiveClientName = trimmed;
+        }
+      }
+
       await onConfirm(item.id, {
-        clientName,
+        clientName: effectiveClientName,
         projectName,
         techStack,
         engagementType,
-        accountId: accountId || undefined,
+        accountId: effectiveAccountId,
         estimatedBudget: budget ? parseFloat(budget) : undefined,
         deliveryTimeline: timeline || undefined,
         finalCostSubmitted: finalCost ? parseFloat(finalCost) : undefined,
@@ -394,15 +419,52 @@ function EditDialog({ item, accounts, open, onClose, onConfirm }: EditDialogProp
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Account</label>
-            <Select value={accountId} onValueChange={(v) => { setAccountId(v ?? ""); }}>
-              <SelectTrigger className="h-8"><SelectValue placeholder="Select or create new..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Create new from client name</SelectItem>
-                {accounts.map((acc) => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.canonicalName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!isNewAccount ? (
+              <div className="flex gap-1">
+                <Select
+                  value={accountId || undefined}
+                  onValueChange={(v) => { if (v) setAccountId(v); }}
+                >
+                  <SelectTrigger className="h-8 flex-1">
+                    <SelectValue placeholder="Select existing account..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.canonicalName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => { setIsNewAccount(true); setAccountId(""); }}
+                  className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-xs font-medium hover:bg-accent hover:text-accent-foreground"
+                  title="Create a new account"
+                >
+                  + New
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-1">
+                <Input
+                  className="h-8 flex-1"
+                  placeholder="New account name"
+                  value={newAccountName}
+                  onChange={(e) => setNewAccountName(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNewAccount(false);
+                    setNewAccountName(item.inferredClient ?? "");
+                    setAccountId(item.matchedAccountId ?? "");
+                  }}
+                  className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Budget / Timeline / Final Cost */}
