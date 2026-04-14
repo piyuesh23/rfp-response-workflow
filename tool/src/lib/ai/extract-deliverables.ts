@@ -156,7 +156,9 @@ export async function extractTorDeliverables(
     estimatedBudget: null,
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales requirements analyst. Analyze this TOR/RFP document and extract structured metadata.
 
 Count requirements (functional, non-functional, technical, integration, content, SEO, accessibility, performance, security, DevOps requirements). Assess clarity of each: clear means fully specified with no ambiguity; needsClarification means partially specified; ambiguous means vague or contradictory; missingDetail means implied but not described.
@@ -215,7 +217,9 @@ export async function extractEstimateDeliverables(
     risks: [],
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales estimation analyst. Analyze this estimate document and extract structured metadata.
 
 Look for tables with Task/Hours/Conf columns, tab sections (Backend, Frontend, Fixed Cost, AI), assumption registers, and risk registers.
@@ -278,7 +282,9 @@ export async function extractProposalDeliverables(
     architectureStyle: null,
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales analyst reviewing a technical proposal document.
 
 Extract:
@@ -326,7 +332,9 @@ export async function extractFinancialDeliverables(
     validityPeriod: null,
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales analyst reviewing a financial proposal or commercial bid document.
 
 Extract:
@@ -371,7 +379,9 @@ export async function extractQaResponseDeliverables(
     keyDecisions: [],
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales analyst reviewing a Q&A or clarification response document.
 
 Extract:
@@ -415,7 +425,9 @@ export async function extractAnnexureDeliverables(
     keySpecifications: [],
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales analyst reviewing an annexure or appendix document attached to a TOR/RFP.
 
 Extract:
@@ -461,7 +473,9 @@ export async function extractPrerequisitesDeliverables(
     disqualificationRisks: [],
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales analyst reviewing a prerequisites or eligibility criteria document for a tender/RFP.
 
 Extract:
@@ -507,7 +521,9 @@ export async function extractResponseFormatDeliverables(
     evaluationMethodology: null,
   };
 
-  const truncated = text.slice(0, 12000);
+  // Read full document (Haiku 200k context handles any real-world RFP). 150k char
+  // cap is a safety upper bound; anything beyond is rare and would hit cost/latency limits.
+  const truncated = text.slice(0, 150000);
   const system = `You are a presales analyst reviewing a response format, submission template, or evaluation scoring document for a tender/RFP.
 
 Extract:

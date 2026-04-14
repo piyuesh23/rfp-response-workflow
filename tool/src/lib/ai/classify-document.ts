@@ -147,7 +147,7 @@ export async function detectCombinedProposal(text: string): Promise<{
   technicalSection?: { startOffset: number; endOffset: number };
   financialSection?: { startOffset: number; endOffset: number };
 }> {
-  const truncated = text.slice(0, 12000);
+  const truncated = text.slice(0, 150000);
   const anthropic = new Anthropic();
 
   try {
@@ -194,7 +194,7 @@ Or if combined:
 export async function classifyDocument(
   text: string
 ): Promise<DocumentClassification> {
-  const truncated = text.slice(0, 12000);
+  const truncated = text.slice(0, 150000);
   const anthropic = new Anthropic();
 
   // Build few-shot examples from past corrections (Workstream D)

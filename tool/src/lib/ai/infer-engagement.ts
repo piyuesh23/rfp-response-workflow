@@ -56,7 +56,8 @@ const VALID_INDUSTRIES = [
 export async function inferEngagementFromText(
   text: string
 ): Promise<InferredEngagement> {
-  const truncated = text.slice(0, 8000);
+  // Read full document — Haiku has 200k context, most RFPs fit well under the 150k char cap.
+  const truncated = text.slice(0, 150000);
 
   const anthropic = new Anthropic();
 
@@ -147,14 +148,10 @@ export async function inferFromSecondaryDocument(
   text: string,
   fileType: "ESTIMATE" | "PROPOSAL" | "FINANCIAL"
 ): Promise<SecondaryDocumentInference> {
-  // Grand totals and bottom-line figures live near the end of a proposal.
-  // Sample both the opening (budget/scope context) and the closing (final
-  // commercials) so long docs don't hide their pricing from extraction.
-  const MAX_INPUT_CHARS = 20000;
-  const truncated =
-    text.length <= MAX_INPUT_CHARS
-      ? text
-      : `${text.slice(0, MAX_INPUT_CHARS / 2)}\n\n[... middle of document omitted for length ...]\n\n${text.slice(-MAX_INPUT_CHARS / 2)}`;
+  // Read full document (up to 150k chars ≈ 37k tokens) so grand-total figures
+  // at the bottom of long proposals are visible to the extractor. Haiku's
+  // 200k context comfortably holds any real-world RFP response.
+  const truncated = text.slice(0, 150000);
   const anthropic = new Anthropic();
 
   const typeHint =
