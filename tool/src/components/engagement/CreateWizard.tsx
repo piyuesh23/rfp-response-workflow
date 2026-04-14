@@ -53,38 +53,7 @@ interface InferenceResult {
 
 // ─── Label maps ──────────────────────────────────────────────────────────────
 
-const techStackLabels: Record<TechStack, string> = {
-  DRUPAL: "Drupal",
-  DRUPAL_NEXTJS: "Drupal + Next.js",
-  WORDPRESS: "WordPress",
-  WORDPRESS_NEXTJS: "WordPress + Next.js",
-  NEXTJS: "Next.js",
-  REACT: "React",
-}
-
-const engagementTypeLabels: Record<EngagementType, string> = {
-  NEW_BUILD: "New Build",
-  MIGRATION: "Migration",
-  REDESIGN: "Redesign",
-  ENHANCEMENT: "Enhancement",
-  DISCOVERY: "Discovery",
-}
-
-const industryLabels: Record<Industry, string> = {
-  HEALTHCARE: "Healthcare",
-  FINTECH: "Fintech",
-  EDUCATION: "Education",
-  GOVERNMENT: "Government",
-  MEDIA: "Media & Publishing",
-  ECOMMERCE: "E-Commerce",
-  NONPROFIT: "Nonprofit",
-  MANUFACTURING: "Manufacturing",
-  PROFESSIONAL_SERVICES: "Professional Services",
-  TECHNOLOGY: "Technology",
-  ENERGY: "Energy",
-  LEGAL: "Legal",
-  OTHER: "Other",
-}
+import { techStackLabels, engagementTypeLabels, industryLabels } from "@/lib/engagement-labels";
 
 // ─── Step Indicator ──────────────────────────────────────────────────────────
 

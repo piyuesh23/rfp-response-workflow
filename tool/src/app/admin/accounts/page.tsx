@@ -72,43 +72,7 @@ type SortDir = "asc" | "desc";
 // Label maps
 // ---------------------------------------------------------------------------
 
-const industryLabels: Record<string, string> = {
-  HEALTHCARE: "Healthcare",
-  FINTECH: "Fintech",
-  EDUCATION: "Education",
-  GOVERNMENT: "Government",
-  MEDIA: "Media",
-  ECOMMERCE: "E-Commerce",
-  NONPROFIT: "Nonprofit",
-  MANUFACTURING: "Manufacturing",
-  PROFESSIONAL_SERVICES: "Professional Services",
-  TECHNOLOGY: "Technology",
-  ENERGY: "Energy",
-  LEGAL: "Legal",
-  OTHER: "Other",
-};
-
-const regionLabels: Record<string, string> = {
-  NA: "North America",
-  EMEA: "EMEA",
-  APAC: "Asia Pacific",
-  LATAM: "Latin America",
-};
-
-const tierLabels: Record<string, string> = {
-  ENTERPRISE: "Enterprise",
-  MID_MARKET: "Mid-Market",
-  SMB: "SMB",
-};
-
-const techStackLabels: Record<string, string> = {
-  DRUPAL: "Drupal",
-  DRUPAL_NEXTJS: "Drupal + Next.js",
-  WORDPRESS: "WordPress",
-  WORDPRESS_NEXTJS: "WordPress + Next.js",
-  NEXTJS: "Next.js",
-  REACT: "React",
-};
+import { industryLabels, regionLabels, tierLabels, techStackLabels } from "@/lib/engagement-labels";
 
 const industryColors: Record<string, string> = {
   HEALTHCARE: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
