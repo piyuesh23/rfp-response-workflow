@@ -14,6 +14,7 @@ import { readEstimateFromXlsx, xlsxEstimateToMarkdown } from "@/lib/xlsx-estimat
 import { inferEngagementFromText, inferFromSecondaryDocument, classifyFileType } from "@/lib/ai/infer-engagement";
 import { classifyDocument, isLikelyTemplate } from "@/lib/ai/classify-document";
 import { extractDeliverables } from "@/lib/ai/extract-deliverables";
+import { convertToMarkdown } from "@/lib/ai/markdown-converter";
 import { aiLimiter } from "@/lib/ai/rate-limiter";
 import { redisConnection, ImportJobData } from "@/lib/queue";
 import { ArtefactType } from "@/generated/prisma/client";
@@ -171,6 +172,8 @@ interface ProcessedFileRecord {
   deliverableMetadata?: Record<string, unknown> | null;
   isTemplate?: boolean;
   combinedMetadata?: { technical: Record<string, unknown> | null; financial: Record<string, unknown> | null } | null;
+  /** Polished markdown for PROPOSAL/TOR/FINANCIAL docs — produced in the worker so the confirm route stays fast. */
+  contentMd?: string | null;
 }
 
 /**
@@ -493,6 +496,27 @@ async function processOneFolder(
       } catch (inferErr) {
         console.warn(
           `[import-worker] Secondary inference failed for ${fileMeta.fullPath}: ${inferErr instanceof Error ? inferErr.message : String(inferErr)}`
+        );
+      }
+    }
+
+    // Polish raw extracted text into clean markdown for downstream display.
+    // Runs in the worker (background) so the interactive confirm endpoint
+    // isn't blocked by chunked Sonnet calls for long RFP docs.
+    if (
+      extractedOk &&
+      secondaryText.length >= 200 &&
+      (record.classifiedType === "PROPOSAL" ||
+        record.classifiedType === "TOR" ||
+        record.classifiedType === "FINANCIAL")
+    ) {
+      try {
+        record.contentMd = await aiLimiter.execute(() =>
+          convertToMarkdown(secondaryText, record.classifiedType!, fileMeta.name)
+        );
+      } catch (mdErr) {
+        console.warn(
+          `[import-worker] Markdown conversion failed for ${fileMeta.fullPath}: ${mdErr instanceof Error ? mdErr.message : String(mdErr)}`
         );
       }
     }

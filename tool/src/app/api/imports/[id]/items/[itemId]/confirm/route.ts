@@ -552,11 +552,13 @@ export async function POST(
 
               const artefactLabel = artefactConfig.label || `Imported: ${fileMeta.name}`;
 
-              // Store raw extracted text. Markdown polishing happens in the import
-              // worker (background) so the confirm route stays fast — running
-              // Sonnet conversion here pushed confirm past serverless timeouts
-              // for imports with multiple large PROPOSAL/TOR docs.
-              const contentMd = extractedText;
+              // Prefer the markdown polished by the import worker (pre-computed
+              // during PENDING_REVIEW processing). Fall back to raw extracted
+              // text if the worker didn't run conversion (e.g. older imports
+              // or worker error).
+              const contentMd =
+                (pfRecord as { contentMd?: string | null } | undefined)?.contentMd ??
+                extractedText;
 
               await prisma.phaseArtefact.create({
                 data: {
