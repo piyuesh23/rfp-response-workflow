@@ -643,6 +643,7 @@ function BatchOutcomePanel({ importJobId, items, onSaved }: {
     return initial;
   });
   const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
   const [applyAllOutcome, setApplyAllOutcome] = React.useState("");
 
   function updateOutcome(engId: string, field: string, value: string) {
@@ -683,10 +684,21 @@ function BatchOutcomePanel({ importJobId, items, onSaved }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outcomes: payload }),
       });
-      if (res.ok) onSaved();
+      if (res.ok) { setSaved(true); onSaved(); }
     } finally {
       setSaving(false);
     }
+  }
+
+  if (saved) {
+    return (
+      <div className="mt-6 border rounded-lg p-4 bg-muted/30">
+        <div className="flex items-center gap-2 text-sm text-green-700">
+          <span>Outcomes saved successfully.</span>
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setSaved(false)}>Edit</Button>
+        </div>
+      </div>
+    );
   }
 
   return (
