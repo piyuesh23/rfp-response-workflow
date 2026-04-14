@@ -59,6 +59,12 @@ function getCellString(sheet: ExcelJS.Worksheet, row: number, col: number): stri
   const cell = sheet.getCell(row, col);
   const val = cell.value;
   if (val == null) return "";
+  // Handle formula cells: { formula: '=...', result: 'text' }
+  if (typeof val === "object" && "result" in (val as object)) {
+    const result = (val as { result: unknown }).result;
+    if (result == null) return "";
+    return String(result);
+  }
   if (typeof val === "object" && "text" in (val as object)) {
     return String((val as { text: unknown }).text ?? "");
   }
@@ -74,6 +80,13 @@ function getCellNumber(sheet: ExcelJS.Worksheet, row: number, col: number): numb
   const cell = sheet.getCell(row, col);
   const val = cell.value;
   if (val == null) return 0;
+  // Handle formula cells: { formula: '=SUM(...)', result: 42 }
+  if (typeof val === "object" && "result" in (val as object)) {
+    const result = (val as { result: unknown }).result;
+    if (result == null) return 0;
+    const n = Number(result);
+    return isNaN(n) ? 0 : n;
+  }
   const n = Number(val);
   return isNaN(n) ? 0 : n;
 }
