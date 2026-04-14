@@ -5,7 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/db";
 
-const HAIKU_MODEL = "claude-haiku-4-20250514";
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 export async function generateStageSummary(
   engagementId: string,
