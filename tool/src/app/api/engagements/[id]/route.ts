@@ -77,6 +77,7 @@ export async function PATCH(
     lossReason,
     actualContractValue,
     competitorWhoWon,
+    presalesHoursSpent,
   } = body as {
     clientName?: string;
     projectName?: string;
@@ -95,6 +96,7 @@ export async function PATCH(
     lossReason?: string | null;
     actualContractValue?: number | null;
     competitorWhoWon?: string | null;
+    presalesHoursSpent?: number | null;
   };
 
   const updated = await prisma.engagement.update({
@@ -117,6 +119,7 @@ export async function PATCH(
       ...(lossReason !== undefined && { lossReason }),
       ...(actualContractValue !== undefined && { actualContractValue }),
       ...(competitorWhoWon !== undefined && { competitorWhoWon }),
+      ...(presalesHoursSpent !== undefined && { presalesHoursSpent }),
     } as Prisma.EngagementUncheckedUpdateInput,
   });
 
