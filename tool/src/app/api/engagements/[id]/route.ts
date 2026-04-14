@@ -69,6 +69,8 @@ export async function PATCH(
     salesOwner,
     isCompetitiveBid,
     accountId,
+    estimatedBudget,
+    financialProposalValue,
   } = body as {
     clientName?: string;
     projectName?: string;
@@ -81,6 +83,8 @@ export async function PATCH(
     salesOwner?: string;
     isCompetitiveBid?: boolean;
     accountId?: string;
+    estimatedBudget?: number | null;
+    financialProposalValue?: number | null;
   };
 
   const updated = await prisma.engagement.update({
@@ -97,6 +101,8 @@ export async function PATCH(
       ...(salesOwner !== undefined && { salesOwner }),
       ...(isCompetitiveBid !== undefined && { isCompetitiveBid }),
       ...(accountId !== undefined && { accountId }),
+      ...(estimatedBudget !== undefined && { estimatedBudget }),
+      ...(financialProposalValue !== undefined && { financialProposalValue }),
     },
   });
 

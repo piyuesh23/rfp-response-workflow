@@ -434,8 +434,11 @@ async function processOneFolder(
           record.classificationConfidence = classification.confidence;
           record.classificationReasoning = classification.reasoning;
         }
-      } catch {
+      } catch (classifyErr) {
         // Keep filename-based classification as fallback
+        console.warn(
+          `[import-worker] AI classification failed for ${fileMeta.name}: ${classifyErr instanceof Error ? classifyErr.message : String(classifyErr)}`
+        );
       }
 
       // Template detection for non-XLSX files classified as ESTIMATE

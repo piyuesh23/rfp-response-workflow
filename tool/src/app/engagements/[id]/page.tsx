@@ -39,6 +39,8 @@ interface EngagementData {
   workflowPath: WorkflowPath
   templateFileUrl?: string | null
   templateStatus?: TemplateStatus | null
+  estimatedBudget?: number | null
+  financialProposalValue?: number | null
   phases: PhaseWithId[]
 }
 
@@ -127,6 +129,8 @@ export default function EngagementOverviewPage() {
             workflowPath: data.workflowPath ?? null,
             templateFileUrl: data.templateFileUrl ?? null,
             templateStatus: data.templateStatus ?? null,
+            estimatedBudget: data.estimatedBudget ?? null,
+            financialProposalValue: data.financialProposalValue ?? null,
             phases: (data.phases ?? []).map(
               (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }> }) => ({
                 id: p.id,
@@ -536,6 +540,52 @@ export default function EngagementOverviewPage() {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Summary
         </h2>
+
+        {/* Financial Data */}
+        <div className="rounded-xl border bg-card p-4 ring-1 ring-foreground/10">
+          <div className="text-sm font-semibold mb-3">Financial</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Estimated Budget (TOR)</label>
+              <input
+                type="number"
+                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                placeholder="From TOR/RFP"
+                defaultValue={engagement?.estimatedBudget ?? ""}
+                onBlur={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : null;
+                  if (val !== engagement?.estimatedBudget) {
+                    fetch(`/api/engagements/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ estimatedBudget: val }),
+                    }).then(() => fetchEngagement());
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Financial Proposal Value</label>
+              <input
+                type="number"
+                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                placeholder="Our submitted bid"
+                defaultValue={engagement?.financialProposalValue ?? ""}
+                onBlur={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : null;
+                  if (val !== engagement?.financialProposalValue) {
+                    fetch(`/api/engagements/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ financialProposalValue: val }),
+                    }).then(() => fetchEngagement());
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
         <EngagementStats stats={stats} />
 
         {/* Presales Sheet Status */}
