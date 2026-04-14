@@ -240,12 +240,15 @@ export async function classifyDocument(
       confidence: parsed.confidence ?? 0,
       reasoning: parsed.reasoning ?? "",
     };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[classify-document] AI classification error: ${err instanceof Error ? err.message : String(err)}`
+    );
     return {
       documentType: "OTHER",
       engagementPhase: "0",
       confidence: 0,
-      reasoning: "Classification failed",
+      reasoning: `Classification failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
