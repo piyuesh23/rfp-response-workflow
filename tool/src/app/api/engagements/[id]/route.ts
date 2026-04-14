@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import type { EngagementStatus, RfpSource } from "@/generated/prisma/enums";
+import type { EngagementStatus, RfpSource, EngagementOutcome } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
 
 export async function GET(
   _request: NextRequest,
@@ -17,6 +18,7 @@ export async function GET(
   const engagement = await prisma.engagement.findUnique({
     where: { id },
     include: {
+      account: { select: { id: true, canonicalName: true, industry: true } },
       phases: {
         orderBy: { phaseNumber: "asc" },
         include: {
@@ -71,6 +73,10 @@ export async function PATCH(
     accountId,
     estimatedBudget,
     financialProposalValue,
+    outcome,
+    lossReason,
+    actualContractValue,
+    competitorWhoWon,
   } = body as {
     clientName?: string;
     projectName?: string;
@@ -85,6 +91,10 @@ export async function PATCH(
     accountId?: string;
     estimatedBudget?: number | null;
     financialProposalValue?: number | null;
+    outcome?: EngagementOutcome | null;
+    lossReason?: string | null;
+    actualContractValue?: number | null;
+    competitorWhoWon?: string | null;
   };
 
   const updated = await prisma.engagement.update({
@@ -103,7 +113,11 @@ export async function PATCH(
       ...(accountId !== undefined && { accountId }),
       ...(estimatedBudget !== undefined && { estimatedBudget }),
       ...(financialProposalValue !== undefined && { financialProposalValue }),
-    },
+      ...(outcome !== undefined && { outcome }),
+      ...(lossReason !== undefined && { lossReason }),
+      ...(actualContractValue !== undefined && { actualContractValue }),
+      ...(competitorWhoWon !== undefined && { competitorWhoWon }),
+    } as Prisma.EngagementUncheckedUpdateInput,
   });
 
   return NextResponse.json(updated);

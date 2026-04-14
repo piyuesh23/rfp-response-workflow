@@ -1159,7 +1159,8 @@ export default function ImportDetailPage() {
                   <TableCell className="text-xs">
                     {item.inferredEngagementType?.replace(/_/g, " ") ?? "—"}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="text-xs text-muted-foreground max-w-[180px]">
+                    <div className="leading-relaxed">
                     {(() => {
                       const files = item.files as FileInfo[];
                       const counts: Record<string, number> = {};
@@ -1170,6 +1171,7 @@ export default function ImportDetailPage() {
                     {item.processedFiles && item.processedFiles.some((pf) => pf.isSubmission) && (
                       <span className="ml-1 text-amber-600 text-[10px]">+ submission</span>
                     )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <span

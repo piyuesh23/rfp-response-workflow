@@ -41,6 +41,11 @@ interface EngagementData {
   templateStatus?: TemplateStatus | null
   estimatedBudget?: number | null
   financialProposalValue?: number | null
+  outcome?: string | null
+  lossReason?: string | null
+  actualContractValue?: number | null
+  competitorWhoWon?: string | null
+  industry?: string | null
   phases: PhaseWithId[]
 }
 
@@ -131,6 +136,11 @@ export default function EngagementOverviewPage() {
             templateStatus: data.templateStatus ?? null,
             estimatedBudget: data.estimatedBudget ?? null,
             financialProposalValue: data.financialProposalValue ?? null,
+            outcome: data.outcome ?? null,
+            lossReason: data.lossReason ?? null,
+            actualContractValue: data.actualContractValue ?? null,
+            competitorWhoWon: data.competitorWhoWon ?? null,
+            industry: data.account?.industry ?? null,
             phases: (data.phases ?? []).map(
               (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }> }) => ({
                 id: p.id,
@@ -541,6 +551,13 @@ export default function EngagementOverviewPage() {
           Summary
         </h2>
 
+        {/* Industry badge */}
+        {engagement?.industry && engagement.industry !== "OTHER" && (
+          <div className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-3 py-1 text-xs font-medium">
+            {engagement.industry.replace(/_/g, " ")}
+          </div>
+        )}
+
         {/* Financial Data */}
         <div className="rounded-xl border bg-card p-4 ring-1 ring-foreground/10">
           <div className="text-sm font-semibold mb-3">Financial</div>
@@ -580,6 +597,53 @@ export default function EngagementOverviewPage() {
                       body: JSON.stringify({ financialProposalValue: val }),
                     }).then(() => fetchEngagement());
                   }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Outcome */}
+        <div className="rounded-xl border bg-card p-4 ring-1 ring-foreground/10">
+          <div className="text-sm font-semibold mb-3">Outcome</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Result</label>
+              <select
+                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                defaultValue={engagement?.outcome ?? ""}
+                onChange={(e) => {
+                  fetch(`/api/engagements/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ outcome: e.target.value || null }),
+                  }).then(() => fetchEngagement());
+                }}
+              >
+                <option value="">Not recorded</option>
+                <option value="WON">Won</option>
+                <option value="LOST">Lost</option>
+                <option value="NO_DECISION">No Decision</option>
+                <option value="WITHDRAWN">Withdrawn</option>
+                <option value="PARTIAL_WIN">Partial Win</option>
+                <option value="DEFERRED">Deferred</option>
+                <option value="NOT_SUBMITTED">Not Submitted</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Contract Value</label>
+              <input
+                type="number"
+                className="w-full mt-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                placeholder="Actual value"
+                defaultValue={engagement?.actualContractValue ?? ""}
+                onBlur={(e) => {
+                  const val = e.target.value ? parseFloat(e.target.value) : null;
+                  fetch(`/api/engagements/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ actualContractValue: val }),
+                  }).then(() => fetchEngagement());
                 }}
               />
             </div>
