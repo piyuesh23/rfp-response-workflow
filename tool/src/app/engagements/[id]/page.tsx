@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { PhaseTimeline } from "@/components/phase/PhaseTimeline"
 import type { PhaseCardData } from "@/components/phase/PhaseCard"
 import { EngagementStats, type EngagementStatsData } from "@/components/engagement/EngagementStats"
+import { AccuracyScoreCard } from "@/components/engagement/AccuracyScoreCard"
 import { CollapsibleSection } from "@/components/engagement/CollapsibleSection"
 import { outcomeLabels } from "@/lib/engagement-labels"
 import { RunPhaseButton } from "@/components/phase/RunPhaseButton"
@@ -956,6 +957,8 @@ export default function EngagementOverviewPage() {
             </div>
           )
         })()}
+
+        <AccuracyScoreCard engagementId={id} />
 
         <EngagementStats stats={stats} />
 
