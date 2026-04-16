@@ -28,18 +28,18 @@ enum UserRole {
 }
 
 model Account {
-  id             String        @id @default(cuid())
-  canonicalName  String        @unique
-  aliases        String[]      @default([])
-  industry       Industry      @default(OTHER)
+  id             String       @id @default(cuid())
+  canonicalName  String       @unique
+  aliases        String[]     @default([])
+  industry       Industry     @default(OTHER)
   region         Region?
   accountTier    AccountTier?
   primaryContact String?
   contactEmail   String?
   crmExternalId  String?
   notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
   engagements    Engagement[]
 }
 
@@ -73,57 +73,60 @@ enum AccountTier {
 }
 
 model Engagement {
-  id              String             @id @default(cuid())
-  clientName      String
-  projectName     String?
-  techStack       TechStack
-  engagementType  EngagementType     @default(NEW_BUILD)
-  status          EngagementStatus   @default(DRAFT)
-  workflowPath    WorkflowPath?
-  templateFileUrl String?
-  templateStatus  Json?              // { questionsRfp?: boolean, salesDetail?: boolean, backend?: boolean, frontend?: boolean, fixedCost?: boolean, ai?: boolean }
+  id                     String                   @id @default(cuid())
+  clientName             String
+  projectName            String?
+  techStack              TechStack
+  engagementType         EngagementType           @default(NEW_BUILD)
+  status                 EngagementStatus         @default(DRAFT)
+  workflowPath           WorkflowPath?
+  templateFileUrl        String?
+  templateStatus         Json? // { questionsRfp?: boolean, salesDetail?: boolean, backend?: boolean, frontend?: boolean, fixedCost?: boolean, ai?: boolean }
   // Account link
-  account         Account?           @relation(fields: [accountId], references: [id])
-  accountId       String?
+  account                Account?                 @relation(fields: [accountId], references: [id])
+  accountId              String?
   // Business metadata
-  rfpSource          RfpSource?
-  estimatedDealValue Float?
-  dealCurrency       String?          @default("USD")
-  submissionDeadline DateTime?
-  submittedAt        DateTime?
-  presalesOwner      String?
-  salesOwner         String?
-  isCompetitiveBid   Boolean?         @default(true)
-  numberOfCompetitors Int?
-  presalesHoursSpent Float?
-  tags               String[]         @default([])
+  rfpSource              RfpSource?
+  estimatedDealValue     Float?
+  dealCurrency           String?                  @default("USD")
+  submissionDeadline     DateTime?
+  submittedAt            DateTime?
+  presalesOwner          String?
+  salesOwner             String?
+  isCompetitiveBid       Boolean?                 @default(true)
+  numberOfCompetitors    Int?
+  presalesHoursSpent     Float?
+  tags                   String[]                 @default([])
   // Import provenance
-  importSource          String?    // "ZIP_IMPORT" | null
-  importFilePath        String?    // original folder name from ZIP
-  importedAt            DateTime?
-  financialProposalValue Float?    // actual amount from financial proposal
-  estimatedBudget       Float?     // tentative budget mentioned in TOR
-  deliveryTimeline      String?    // e.g. "6 months", "Q3 2026"
-  rfpIssuedAt           DateTime?  // when the RFP was issued
+  importSource           String? // "ZIP_IMPORT" | null
+  importFilePath         String? // original folder name from ZIP
+  importedAt             DateTime?
+  financialProposalValue Float? // actual amount from financial proposal
+  estimatedBudget        Float? // tentative budget mentioned in TOR
+  deliveryTimeline       String? // e.g. "6 months", "Q3 2026"
+  rfpIssuedAt            DateTime? // when the RFP was issued
   // Outcome tracking (recorded via admin back-office)
-  outcome            EngagementOutcome?
-  lossReason         LossReason?
-  lossReasonDetail   String?
-  winFactors         String[]         @default([])
-  competitorWhoWon   String?
-  actualContractValue Float?
-  outcomeFeedback    String?
-  outcomeRecordedAt  DateTime?
-  outcomeRecordedBy  String?
+  outcome                EngagementOutcome?
+  lossReason             LossReason?
+  lossReasonDetail       String?
+  winFactors             String[]                 @default([])
+  competitorWhoWon       String?
+  actualContractValue    Float?
+  outcomeFeedback        String?
+  outcomeRecordedAt      DateTime?
+  outcomeRecordedBy      String?
   // Relations
-  createdBy       User               @relation(fields: [createdById], references: [id])
-  createdById     String
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  phases          Phase[]
-  assumptions     Assumption[]
-  risks           RiskRegisterEntry[]
-  stageSummaries  EngagementStageSummary[]
+  createdBy              User                     @relation(fields: [createdById], references: [id])
+  createdById            String
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  phases                 Phase[]
+  assumptions            Assumption[]
+  risks                  RiskRegisterEntry[]
+  stageSummaries         EngagementStageSummary[]
+  torRequirements        TorRequirement[]
+  lineItems              LineItem[]
+  validationReports      ValidationReport[]
 
   @@index([accountId])
 }
@@ -190,11 +193,11 @@ enum EngagementStatus {
 }
 
 model Phase {
-  id             String        @id @default(cuid())
-  engagement     Engagement    @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  id             String          @id @default(cuid())
+  engagement     Engagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   engagementId   String
   phaseNumber    String
-  status         PhaseStatus   @default(PENDING)
+  status         PhaseStatus     @default(PENDING)
   startedAt      DateTime?
   completedAt    DateTime?
   agentSessionId String?
@@ -243,17 +246,19 @@ enum ArtefactType {
 }
 
 model Assumption {
-  id            String           @id @default(cuid())
-  engagement    Engagement       @relation(fields: [engagementId], references: [id], onDelete: Cascade)
-  engagementId  String
-  sourcePhaseId String
-  text          String
-  torReference  String?
-  impactIfWrong String
-  status        AssumptionStatus @default(ACTIVE)
-  confirmedById String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id                 String           @id @default(cuid())
+  engagement         Engagement       @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId       String
+  sourcePhaseId      String
+  text               String
+  torReference       String?
+  impactIfWrong      String
+  status             AssumptionStatus @default(ACTIVE)
+  confirmedById      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  torRequirementRefs TorRequirement[] @relation("AssumptionToTorRequirement")
+  lineItemRefs       LineItem[]       @relation("AssumptionToLineItem")
 }
 
 enum AssumptionStatus {
@@ -311,7 +316,7 @@ model PhaseExecution {
   estimatedCostUsd Float?
   apiCallCount     Int       @default(0)
   turnCount        Int       @default(0)
-  status           String    // "COMPLETED", "FAILED", "TIMEOUT"
+  status           String // "COMPLETED", "FAILED", "TIMEOUT"
   createdAt        DateTime  @default(now())
 
   @@index([engagementId])
@@ -319,26 +324,26 @@ model PhaseExecution {
 }
 
 model ImportJob {
-  id             String       @id @default(cuid())
-  userId         String
-  source         String       // "ZIP_IMPORT"
-  sourcePath     String       // original ZIP filename
-  status         ImportStatus @default(PENDING)
-  totalFiles     Int          @default(0)
-  processedFiles Int          @default(0)
-  confirmedFiles Int          @default(0)
-  skippedFiles   Int          @default(0)
-  zipHash        String?      // SHA-256 hash of ZIP for dedup
+  id                   String       @id @default(cuid())
+  userId               String
+  source               String // "ZIP_IMPORT"
+  sourcePath           String // original ZIP filename
+  status               ImportStatus @default(PENDING)
+  totalFiles           Int          @default(0)
+  processedFiles       Int          @default(0)
+  confirmedFiles       Int          @default(0)
+  skippedFiles         Int          @default(0)
+  zipHash              String? // SHA-256 hash of ZIP for dedup
   autoConfirmThreshold Float? // e.g. 0.8 — auto-confirm items above this confidence
-  batchId        String?      // links multiple ZIPs uploaded together
-  errorMessage   String?
-  estimatedCostUsd  Float?
-  actualCostUsd     Float?
-  inputTokensUsed   Int      @default(0)
-  outputTokensUsed  Int      @default(0)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  items          ImportItem[]
+  batchId              String? // links multiple ZIPs uploaded together
+  errorMessage         String?
+  estimatedCostUsd     Float?
+  actualCostUsd        Float?
+  inputTokensUsed      Int          @default(0)
+  outputTokensUsed     Int          @default(0)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  items                ImportItem[]
 
   @@index([batchId])
 }
@@ -347,8 +352,8 @@ model ImportItem {
   id                         String           @id @default(cuid())
   importJob                  ImportJob        @relation(fields: [importJobId], references: [id], onDelete: Cascade)
   importJobId                String
-  folderName                 String           // subfolder name from ZIP (= engagement grouping)
-  files                      Json             // [{ name, type: "TOR"|"ESTIMATE"|"PROPOSAL"|"FINANCIAL"|"OTHER", sizeBytes, isPrimary }]
+  folderName                 String // subfolder name from ZIP (= engagement grouping)
+  files                      Json // [{ name, type: "TOR"|"ESTIMATE"|"PROPOSAL"|"FINANCIAL"|"OTHER", sizeBytes, isPrimary }]
   primaryFileName            String?
   // AI-inferred metadata (editable by admin before confirm)
   inferredClient             String?
@@ -360,13 +365,13 @@ model ImportItem {
   inferredIssueDate          DateTime?
   inferredDealValue          Float?
   inferredFinancialValue     Float?
-  confidence                 Json?            // { clientName: 0.9, ... }
-  extractedTextPreview       String?          // first 500 chars for admin review
-  processedFiles             Json?            // [{ name, type, extractedText: boolean, artefactCreated: boolean, isSubmission: boolean }]
+  confidence                 Json? // { clientName: 0.9, ... }
+  extractedTextPreview       String? // first 500 chars for admin review
+  processedFiles             Json? // [{ name, type, extractedText: boolean, artefactCreated: boolean, isSubmission: boolean }]
   // Resolution
-  matchedAccountId           String?          // auto-matched or admin-selected
+  matchedAccountId           String? // auto-matched or admin-selected
   status                     ImportItemStatus @default(PENDING_REVIEW)
-  engagementId               String?          // set after confirm creates the Engagement
+  engagementId               String? // set after confirm creates the Engagement
   reviewedAt                 DateTime?
   reviewedBy                 String?
   errorMessage               String?
@@ -395,10 +400,10 @@ model EngagementStageSummary {
   id            String     @id @default(cuid())
   engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   engagementId  String
-  phaseNumber   String     // "0", "1", "1A", "2", "5"
-  summary       String     // AI-generated summary
+  phaseNumber   String // "0", "1", "1A", "2", "5"
+  summary       String // AI-generated summary
   documentCount Int        @default(0)
-  keyFindings   Json?      // { requirements: [...], risks: [...], decisions: [...] }
+  keyFindings   Json? // { requirements: [...], risks: [...], decisions: [...] }
   generatedAt   DateTime   @default(now())
 
   @@unique([engagementId, phaseNumber])
@@ -419,16 +424,16 @@ model ClassificationCorrection {
 }
 
 model PromptConfig {
-  id          String          @id @default(cuid())
-  key         String          @unique  // e.g., "system-base", "phase-0", "phase-1a-estimate", "carl-rules"
-  label       String                   // Human-readable name
-  category    PromptCategory
-  content     String                   // The prompt/benchmark/template text
-  isDefault   Boolean         @default(true) // true if unchanged from code default
-  updatedBy   String?
-  updatedAt   DateTime        @updatedAt
-  createdAt   DateTime        @default(now())
-  versions    PromptVersion[]
+  id        String          @id @default(cuid())
+  key       String          @unique // e.g., "system-base", "phase-0", "phase-1a-estimate", "carl-rules"
+  label     String // Human-readable name
+  category  PromptCategory
+  content   String // The prompt/benchmark/template text
+  isDefault Boolean         @default(true) // true if unchanged from code default
+  updatedBy String?
+  updatedAt DateTime        @updatedAt
+  createdAt DateTime        @default(now())
+  versions  PromptVersion[]
 }
 
 enum PromptCategory {
@@ -443,9 +448,9 @@ model PromptVersion {
   id             String       @id @default(cuid())
   promptConfig   PromptConfig @relation(fields: [promptConfigId], references: [id], onDelete: Cascade)
   promptConfigId String
-  content        String       // Snapshot of content at this version
-  changedBy      String       // User ID
-  changeNote     String?      // Optional description of change
+  content        String // Snapshot of content at this version
+  changedBy      String // User ID
+  changeNote     String? // Optional description of change
   createdAt      DateTime     @default(now())
 
   @@index([promptConfigId])
@@ -454,7 +459,7 @@ model PromptVersion {
 model PromptOverride {
   id          String   @id @default(cuid())
   phaseNumber String
-  promptType  String   // "SYSTEM" or "USER"
+  promptType  String // "SYSTEM" or "USER"
   content     String
   version     Int      @default(1)
   isActive    Boolean  @default(true)
@@ -464,4 +469,93 @@ model PromptOverride {
   updatedAt   DateTime @updatedAt
 
   @@index([phaseNumber, promptType, isActive])
+}
+
+// ─── Accuracy / alignment models (M1 foundation) ────────────────────────────
+
+/// Structured record of every requirement extracted from the TOR during Phase 1.
+/// Downstream validators query these to compute coverage, gap, and orphan metrics.
+model TorRequirement {
+  id                  String     @id @default(cuid())
+  engagement          Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId        String
+  clauseRef           String // as written in TOR, e.g. "3.2.1" or "Section 4.1"
+  normalizedClauseRef String // lowercased, whitespace-stripped for fuzzy matching
+  title               String
+  description         String
+  domain              String // content_arch | integration | migration | frontend | devops | seo | a11y | perf | security | other
+  clarityRating       String // CLEAR | NEEDS_CLARIFICATION | AMBIGUOUS | MISSING_DETAIL
+  sourcePhaseId       String?
+  createdAt           DateTime   @default(now())
+
+  lineItems   LineItem[]   @relation("LineItemToTorRequirement")
+  assumptions Assumption[] @relation("AssumptionToTorRequirement")
+
+  @@index([engagementId])
+  @@index([engagementId, normalizedClauseRef])
+}
+
+/// Structured record per estimate line item. Written alongside the XLSX by
+/// Phase 1A / Phase 3 / XLSX import, so downstream validators don't have to
+/// regex-parse markdown.
+model LineItem {
+  id                  String     @id @default(cuid())
+  engagement          Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId        String
+  tab                 String // BACKEND | FRONTEND | FIXED_COST | DESIGN | AI
+  task                String
+  description         String
+  hours               Float
+  conf                Int // 1-6
+  lowHrs              Float // = hours
+  highHrs             Float // = hours * (1 + conf buffer %); see CARL rule 14
+  benchmarkRef        String?
+  integrationTier     String? // T1 | T2 | T3 when the line item represents an integration
+  orphanJustification String? // populated only when no TorRequirement is linked
+  sourcePhaseId       String?
+  createdAt           DateTime   @default(now())
+
+  torRefs        TorRequirement[] @relation("LineItemToTorRequirement")
+  assumptionRefs Assumption[]     @relation("AssumptionToLineItem")
+
+  @@index([engagementId, tab])
+}
+
+/// One row per validator run — aggregated accuracy signal surfaced in the UI.
+model ValidationReport {
+  id                    String     @id @default(cuid())
+  engagement            Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId          String
+  phaseNumber           String
+  ranAt                 DateTime   @default(now())
+  overallStatus         String // PASS | WARN | FAIL
+  accuracyScore         Float // 0..1
+  gapCount              Int        @default(0)
+  orphanCount           Int        @default(0)
+  confFormulaViolations Int        @default(0)
+  noBenchmarkCount      Int        @default(0)
+  details               Json // keyed per-validator output
+
+  @@index([engagementId, phaseNumber])
+  @@index([engagementId, ranAt])
+}
+
+/// Observability record for every Anthropic API call issued from the backend.
+/// Used by the schema-retry wrapper (M6) and the /admin/ai-health page.
+model AiCallLog {
+  id                String   @id @default(cuid())
+  engagementId      String?
+  phase             String?
+  model             String
+  promptHash        String?
+  inputTokens       Int      @default(0)
+  outputTokens      Int      @default(0)
+  durationMs        Int      @default(0)
+  retryCount        Int      @default(0)
+  validationOutcome String // PASS | FAIL | RETRIED_OK
+  errorMessage      String?
+  createdAt         DateTime @default(now())
+
+  @@index([engagementId])
+  @@index([createdAt])
 }
