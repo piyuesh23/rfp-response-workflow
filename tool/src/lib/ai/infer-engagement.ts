@@ -3,9 +3,18 @@
  * Extracted from /api/engagements/infer/route.ts for reuse by import worker.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+
+import { aiJsonCall } from "@/lib/ai/ai-with-retry";
 
 const SONNET_MODEL = "claude-sonnet-4-20250514";
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+
+const SecondaryDocumentInferenceSchema = z.object({
+  estimatedBudget: z.number().nullable(),
+  deliveryTimeline: z.string().nullable(),
+  finalCostSubmitted: z.number().nullable(),
+});
 
 export interface InferredEngagement {
   clientName: string | null;
@@ -152,7 +161,6 @@ export async function inferFromSecondaryDocument(
   // at the bottom of long proposals are visible to the extractor. Haiku's
   // 200k context comfortably holds any real-world RFP response.
   const truncated = text.slice(0, 150000);
-  const anthropic = new Anthropic();
 
   const typeHint =
     fileType === "FINANCIAL"
@@ -175,27 +183,21 @@ Respond ONLY with valid JSON:
 }`;
 
   try {
-    const response = await anthropic.messages.create({
+    return await aiJsonCall({
       model: HAIKU_MODEL,
-      max_tokens: 200,
       system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Extract cost and timeline data from this document:\n\n${truncated}`,
-        },
-      ],
+      user: `Extract cost and timeline data from this document:\n\n${truncated}`,
+      schema: SecondaryDocumentInferenceSchema,
+      maxTokens: 200,
+      engagementId: undefined,
+      phase: "IMPORT_INFERENCE",
     });
-
-    const responseText =
-      response.content[0].type === "text" ? response.content[0].text : "";
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return { estimatedBudget: null, deliveryTimeline: null, finalCostSubmitted: null };
-    }
-    return JSON.parse(jsonMatch[0]) as SecondaryDocumentInference;
   } catch {
-    return { estimatedBudget: null, deliveryTimeline: null, finalCostSubmitted: null };
+    return {
+      estimatedBudget: null,
+      deliveryTimeline: null,
+      finalCostSubmitted: null,
+    };
   }
 }
 
