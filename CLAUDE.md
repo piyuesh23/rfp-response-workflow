@@ -63,7 +63,8 @@ This is a **pre-sales estimation project**, not a codebase. The goal is to analy
 - Identify ambiguities, missing details, implicit assumptions, and technical risks
 - Cross-reference research-identified hidden scope items against TOR requirements
 - Generate structured clarifying questions grouped by requirement area (informed by site audit findings)
-- Output: `initial_questions/questions.md` and `claude-artefacts/tor-assessment.md`
+- Emit a mandatory v0 `claude-artefacts/solution-architecture.md` (high-level stack/components/integration map, every claim citing a TOR section). Phase 1A/3 revise this draft; Phase 5 (proposal) hard-fails if it is missing.
+- Output: `initial_questions/questions.md`, `claude-artefacts/tor-assessment.md`, and `claude-artefacts/solution-architecture.md` (v0)
 
 ### Phase 1A: Optimistic Estimation (No-Response Path)
 **Trigger:** Customer Q&A responses not received / submission deadline approaching
