@@ -14,7 +14,66 @@ import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
+import { indexArtefact, indexStructuredRow } from "@/lib/rag/store";
+import { aiLimiter } from "@/lib/ai/rate-limiter";
 import * as fs from "fs/promises";
+
+// --------------------------------------------------------------------------
+// RAG indexing helpers (non-fatal; a failed index must NEVER block the phase).
+// --------------------------------------------------------------------------
+const RAG_MIN_CONTENT_LEN = 50;
+
+async function safeIndexArtefact(params: {
+  engagementId: string;
+  sourceId: string;
+  content: string | null | undefined;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  const content = params.content ?? "";
+  if (content.trim().length < RAG_MIN_CONTENT_LEN) return;
+  try {
+    await aiLimiter.execute(() =>
+      indexArtefact({
+        engagementId: params.engagementId,
+        sourceType: "ARTEFACT",
+        sourceId: params.sourceId,
+        content,
+        metadata: params.metadata,
+      })
+    );
+  } catch (err) {
+    console.warn(
+      `[rag-index] Failed to index artefact ${params.sourceId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+}
+
+async function safeIndexStructuredRow(params: {
+  engagementId: string | null;
+  sourceType: string;
+  sourceId: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  if (!params.summary || params.summary.trim().length < RAG_MIN_CONTENT_LEN) return;
+  try {
+    await indexStructuredRow({
+      engagementId: params.engagementId ?? undefined,
+      sourceType: params.sourceType,
+      sourceId: params.sourceId,
+      summary: params.summary,
+      metadata: params.metadata,
+    });
+  } catch (err) {
+    console.warn(
+      `[rag-index] Failed to index ${params.sourceType} ${params.sourceId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+}
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "claude-opus-4-20250514": { input: 15, output: 75 },
@@ -235,7 +294,7 @@ const worker = new Worker<PhaseJobData>(
         // Extract structured metadata from the actual content (not summary)
         const metadata = extractMetadataForPhase(phaseStr, artefactContent);
 
-        await prisma.phaseArtefact.create({
+        const createdArtefact = await prisma.phaseArtefact.create({
           data: {
             phaseId,
             artefactType,
@@ -243,6 +302,17 @@ const worker = new Worker<PhaseJobData>(
             label: revisionFeedback ? "AI revision" : "AI generated",
             contentMd: artefactContent,
             ...(metadata ? { metadata: JSON.parse(JSON.stringify(metadata)) } : {}),
+          },
+        });
+
+        await safeIndexArtefact({
+          engagementId,
+          sourceId: createdArtefact.id,
+          content: artefactContent,
+          metadata: {
+            phaseNumber: phaseStr,
+            artefactType,
+            label: createdArtefact.label ?? null,
           },
         });
       }
@@ -263,6 +333,36 @@ const worker = new Worker<PhaseJobData>(
               data: risks.map((r) => ({ ...r, engagementId })),
             });
             console.log(`[phase-runner] Phase ${phaseNumber} — created ${risks.length} risk register entries`);
+
+            // RAG indexing for risk rows (non-fatal).
+            try {
+              const insertedRisks = await prisma.riskRegisterEntry.findMany({
+                where: { engagementId },
+                select: {
+                  id: true,
+                  task: true,
+                  tab: true,
+                  conf: true,
+                  risk: true,
+                  openQuestion: true,
+                  recommendedAction: true,
+                  hoursAtRisk: true,
+                },
+              });
+              for (const r of insertedRisks) {
+                await safeIndexStructuredRow({
+                  engagementId,
+                  sourceType: "RISK",
+                  sourceId: r.id,
+                  summary: `${r.task} (${r.tab}, Conf ${r.conf}): ${r.risk}. Open Q: ${r.openQuestion}. Action: ${r.recommendedAction}`,
+                  metadata: { tab: r.tab, conf: r.conf, hoursAtRisk: r.hoursAtRisk },
+                });
+              }
+            } catch (ragErr) {
+              console.warn(
+                `[rag-index] Risk batch index failed: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+              );
+            }
           }
 
           const assumptions = extractAssumptions(artefactContent);
@@ -279,6 +379,33 @@ const worker = new Worker<PhaseJobData>(
               })),
             });
             console.log(`[phase-runner] Phase ${phaseNumber} — created ${assumptions.length} assumption entries`);
+
+            // RAG indexing for assumption rows (non-fatal).
+            try {
+              const insertedAssumptions = await prisma.assumption.findMany({
+                where: { engagementId },
+                select: {
+                  id: true,
+                  text: true,
+                  torReference: true,
+                  impactIfWrong: true,
+                  status: true,
+                },
+              });
+              for (const a of insertedAssumptions) {
+                await safeIndexStructuredRow({
+                  engagementId,
+                  sourceType: "ASSUMPTION",
+                  sourceId: a.id,
+                  summary: `${a.text} | Impact: ${a.impactIfWrong}`,
+                  metadata: { torReference: a.torReference, status: a.status },
+                });
+              }
+            } catch (ragErr) {
+              console.warn(
+                `[rag-index] Assumption batch index failed: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+              );
+            }
           }
         } catch (err) {
           console.warn(`[phase-runner] Phase ${phaseNumber} — failed to extract risks/assumptions: ${err instanceof Error ? err.message : String(err)}`);
@@ -328,6 +455,41 @@ const worker = new Worker<PhaseJobData>(
                 console.log(
                   `[phase-runner] Phase 1 — inserted ${rows.length} TorRequirement rows for engagement ${engagementId}.`
                 );
+
+                // RAG indexing for TorRequirement rows (non-fatal).
+                try {
+                  const insertedReqs = await prisma.torRequirement.findMany({
+                    where: {
+                      engagementId,
+                      normalizedClauseRef: { in: rows.map((r) => r.normalizedClauseRef) },
+                    },
+                    select: {
+                      id: true,
+                      clauseRef: true,
+                      title: true,
+                      description: true,
+                      domain: true,
+                      clarityRating: true,
+                    },
+                  });
+                  for (const r of insertedReqs) {
+                    await safeIndexStructuredRow({
+                      engagementId,
+                      sourceType: "REQUIREMENT",
+                      sourceId: r.id,
+                      summary: `${r.clauseRef}: ${r.title} — ${r.description} (${r.domain}, ${r.clarityRating})`,
+                      metadata: {
+                        clauseRef: r.clauseRef,
+                        domain: r.domain,
+                        clarityRating: r.clarityRating,
+                      },
+                    });
+                  }
+                } catch (ragErr) {
+                  console.warn(
+                    `[rag-index] TorRequirement batch index failed: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+                  );
+                }
               }
             }
           }
@@ -415,6 +577,42 @@ const worker = new Worker<PhaseJobData>(
             console.log(
               `[phase-runner] Phase ${phaseStr} — inserted ${inserted} LineItem rows (${linked} TOR links, ${unresolved} unresolved clauseRefs).`
             );
+
+            // RAG indexing for LineItem rows (non-fatal).
+            try {
+              const insertedLineItems = await prisma.lineItem.findMany({
+                where: { engagementId },
+                select: {
+                  id: true,
+                  tab: true,
+                  task: true,
+                  description: true,
+                  hours: true,
+                  conf: true,
+                  integrationTier: true,
+                  torRefs: { select: { clauseRef: true } },
+                },
+              });
+              for (const li of insertedLineItems) {
+                const refs = li.torRefs.map((t) => t.clauseRef).join(",");
+                await safeIndexStructuredRow({
+                  engagementId,
+                  sourceType: "LINE_ITEM",
+                  sourceId: li.id,
+                  summary: `${li.tab}/${li.task}: ${li.description} (${li.hours}h, Conf ${li.conf}, TOR refs: ${refs})`,
+                  metadata: {
+                    tab: li.tab,
+                    hours: li.hours,
+                    conf: li.conf,
+                    integrationTier: li.integrationTier,
+                  },
+                });
+              }
+            } catch (ragErr) {
+              console.warn(
+                `[rag-index] LineItem batch index failed: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+              );
+            }
           }
         } catch (err) {
           console.warn(
@@ -523,7 +721,7 @@ const worker = new Worker<PhaseJobData>(
               select: { version: true },
             });
             const nextSolutionVersion = (latestSolution?.version ?? 0) + 1;
-            await prisma.phaseArtefact.create({
+            const solutionArtefact = await prisma.phaseArtefact.create({
               data: {
                 phaseId,
                 artefactType: ArtefactType.RESEARCH,
@@ -533,6 +731,17 @@ const worker = new Worker<PhaseJobData>(
               },
             });
             console.log(`[phase-runner] Phase ${phaseNumber} — persisted solution-architecture.md as artefact (v${nextSolutionVersion})`);
+
+            await safeIndexArtefact({
+              engagementId,
+              sourceId: solutionArtefact.id,
+              content: solutionMd,
+              metadata: {
+                phaseNumber: phaseStr,
+                artefactType: ArtefactType.RESEARCH,
+                label: "solution-architecture.md",
+              },
+            });
           }
         } catch {
           // Solution doc may not exist (e.g., discovery engagements at Phase 1A) — non-fatal here.
@@ -547,12 +756,23 @@ const worker = new Worker<PhaseJobData>(
           const questionsPath = `/data/engagements/${engagementId}/initial_questions/questions.md`;
           const questionsMd = await fs.readFile(questionsPath, "utf-8");
           if (questionsMd.trim()) {
-            await prisma.phaseArtefact.create({
+            const questionsArtefact = await prisma.phaseArtefact.create({
               data: {
                 phaseId,
                 artefactType: ArtefactType.QUESTIONS,
                 version: 1,
                 contentMd: questionsMd,
+              },
+            });
+
+            await safeIndexArtefact({
+              engagementId,
+              sourceId: questionsArtefact.id,
+              content: questionsMd,
+              metadata: {
+                phaseNumber: "1",
+                artefactType: ArtefactType.QUESTIONS,
+                label: "questions.md",
               },
             });
           }
