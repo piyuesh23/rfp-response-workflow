@@ -1,9 +1,110 @@
 import { PhaseConfig } from "@/lib/ai/agent";
 import { getBaseSystemPrompt } from "@/lib/ai/prompts/system-base";
+import type { EngagementType } from "@/generated/prisma/enums";
 
-function getPhase5ProposalPrompt(engagementType?: string): string {
+interface Section43Block {
+  title: string;
+  directive: string;
+}
+
+export function getSection43Block(engagementType?: EngagementType | string): Section43Block {
+  switch (engagementType) {
+    case "MIGRATION":
+      return {
+        title: "4.3 Data Migration Strategy",
+        directive: `Describe the end-to-end data migration approach for this engagement. Include a Mermaid gantt chart showing migration phases (extract, transform, load, reconciliation, cutover). Describe the migration approach in 3-4 numbered steps covering source system inventory, mapping, iterative dry-runs, and final cutover. Cover URL preservation with 301 redirect strategy and SEO considerations (canonical tags, sitemap regeneration, search console resubmission).
+
+\`\`\`mermaid
+gantt
+    title Data Migration Timeline
+    dateFormat YYYY-MM-DD
+    section Preparation
+        Source Audit           :a1, 2026-01-01, 10d
+        Mapping Spec           :a2, after a1, 7d
+    section Execution
+        Dry-Run Migration      :b1, after a2, 14d
+        Reconciliation         :b2, after b1, 7d
+    section Cutover
+        Final Migration        :c1, after b2, 5d
+        Redirect Validation    :c2, after c1, 3d
+\`\`\``,
+      };
+    case "REDESIGN":
+      return {
+        title: "4.3 Content and URL Migration Plan",
+        directive: `Describe the phased content migration and redesign transition approach. Include a Mermaid gantt chart showing content migration phases alongside template refactor milestones. Cover: (1) content inventory and prioritization, (2) URL mapping strategy with a Source URL -> Target URL table example, (3) SEO redirect plan (301 rules, redirect map deployment, canonical tag updates, XML sitemap regeneration), and (4) template refactor approach (parallel build vs. in-place refactor tradeoff, feature parity validation).
+
+\`\`\`mermaid
+gantt
+    title Content & URL Migration
+    dateFormat YYYY-MM-DD
+    section Content
+        Inventory & Audit      :a1, 2026-01-01, 10d
+        Priority Migration     :a2, after a1, 21d
+    section URL Strategy
+        URL Mapping            :b1, 2026-01-08, 14d
+        Redirect Rules         :b2, after b1, 7d
+    section Templates
+        Template Refactor      :c1, 2026-01-15, 28d
+        Parity QA              :c2, after c1, 10d
+\`\`\``,
+      };
+    case "ENHANCEMENT":
+      return {
+        title: "4.3 Incremental Rollout",
+        directive: `Describe the incremental rollout approach for enhancing the existing platform. Include a Mermaid flowchart showing the feature-flag-driven release pipeline. Cover: (1) feature-flagging strategy (platform/tooling, flag lifecycle, kill-switch pattern), (2) beta cohort selection (internal users, opt-in segment, percentage rollout), (3) backwards compatibility guarantees (API versioning, DB schema additive changes, dual-write windows), and (4) phased release gates (canary -> 10% -> 50% -> 100%) with rollback criteria.
+
+\`\`\`mermaid
+flowchart LR
+    A["Feature Branch"] --> B["Flag: OFF in Prod"]
+    B --> C["Internal Beta"]
+    C --> D["Opt-In Cohort"]
+    D --> E["10% Rollout"]
+    E --> F["50% Rollout"]
+    F --> G["100% GA"]
+    E -.->|"rollback"| B
+    F -.->|"rollback"| B
+\`\`\``,
+      };
+    case "DISCOVERY":
+      return {
+        title: "4.3 Recommendations Roadmap",
+        directive: `Describe the prioritized recommendations roadmap produced by this discovery engagement. Include a Mermaid flowchart (or swim-lane) mapping recommendation themes to phased implementation waves. Cover: (1) prioritized recommendations grouped by theme (Quick Wins, Strategic Investments, Foundational Remediations), (2) phased implementation plan (Phase 1 / Phase 2 / Phase 3) derived from the assessment findings with indicative effort bands, (3) success metrics for each phase (leading and lagging indicators, measurement cadence), and (4) dependencies and sequencing rationale.
+
+\`\`\`mermaid
+flowchart TD
+    A["Assessment Findings"] --> B["Phase 1: Quick Wins (0-3 months)"]
+    A --> C["Phase 2: Strategic Investments (3-9 months)"]
+    A --> D["Phase 3: Foundational Remediations (9-18 months)"]
+    B --> E["KPI: Time-to-Value"]
+    C --> F["KPI: Capability Uplift"]
+    D --> G["KPI: Platform Resilience"]
+\`\`\``,
+      };
+    case "NEW_BUILD":
+    default:
+      return {
+        title: "4.3 Rollout & Adoption",
+        directive: `Describe the launch and adoption plan for this new build. Include a Mermaid flowchart (or swim-lane) of the phased launch path from soft-launch to general availability. Cover: (1) phased launch plan (internal pilot -> stakeholder preview -> soft launch -> public GA) with entry/exit criteria per gate, (2) stakeholder training approach (role-based tracks, content formats, train-the-trainer, reference materials), (3) change management (comms plan, champions network, feedback loops, support model during hypercare), and (4) success metrics during onboarding (adoption rate, time-to-first-value, task completion, support ticket volume).
+
+\`\`\`mermaid
+flowchart LR
+    A["Internal Pilot"] --> B["Stakeholder Preview"]
+    B --> C["Soft Launch"]
+    C --> D["General Availability"]
+    A -.->|"Training Wave 1"| T1["Admins"]
+    B -.->|"Training Wave 2"| T2["Power Users"]
+    C -.->|"Training Wave 3"| T3["End Users"]
+    D --> M["Adoption Metrics & Hypercare"]
+\`\`\``,
+      };
+  }
+}
+
+function getPhase5ProposalPrompt(engagementType?: EngagementType | string): string {
   const isDiscovery = engagementType === "DISCOVERY";
   const proposalType = isDiscovery ? "Discovery Proposal" : "Technical Proposal";
+  const section43 = getSection43Block(engagementType);
 
   return `Generate Phase 5: Client-Facing ${proposalType} Document.${isDiscovery ? `
 
@@ -150,8 +251,8 @@ flowchart LR
     end
 \`\`\`
 
-#### 4.3 Migration Strategy (if applicable)
-If this is a migration or redesign engagement, include a Mermaid gantt chart showing migration phases. Describe the migration approach in 3-4 numbered steps. Cover URL preservation and SEO considerations.
+#### ${section43.title}
+${section43.directive}
 
 #### 4.4 Frontend / User Experience
 Describe the theme architecture, component library (as a table mapping components to requirements), and mobile-first approach. Include a Mermaid diagram showing the component composition model if relevant.
@@ -231,7 +332,7 @@ Write the complete proposal to claude-artefacts/technical-proposal.md. The docum
 export function getPhase5Config(
   engagementId: string,
   techStack: string,
-  engagementType?: string
+  engagementType?: EngagementType | string
 ): PhaseConfig {
   return {
     engagementId,
