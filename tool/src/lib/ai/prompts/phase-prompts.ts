@@ -53,6 +53,21 @@ Read the TOR document(s) in tor/ and any Phase 0 research in research/.
 7. Write outputs:
    - claude-artefacts/tor-assessment.md (following tor-assessment-template.md)
    - initial_questions/questions.md (following questions-template.md)
+   - **claude-artefacts/solution-architecture.md (MANDATORY v0 draft — see below)**
+
+## Mandatory v0 Solution Architecture (BOTH paths)
+
+You MUST emit a v0 \`claude-artefacts/solution-architecture.md\` at Phase 1, regardless of whether customer Q&A responses are available. This is the pre-approved technical anchor that Phase 1A and Phase 3 revise, and that Phase 5 depends on.
+
+The v0 should be high-level only (Phase 1A/3 fill in the detail):
+
+- **Header**: mark explicitly \`**Version: v0 — will be revised in Phase 1A / Phase 3**\` on the first line.
+- **Proposed Stack Choices**: list platform, frontend framework, hosting, CDN, CI/CD, search, and any other stack layers implied by the TOR technology requirements. One line of rationale per choice.
+- **Major Components**: enumerate the system components (CMS, front-end app, API layer, search index, media store, auth provider, etc.) the estimate will later break down.
+- **Integration Map**: one row per integration surfaced in the TOR — external system, direction, proposed approach (REST/GraphQL/webhook/SDK), and a tentative tier guess (T1/T2/T3 or "TBD").
+- **Open Architecture Questions**: the unresolved architecture decisions that Phase 1A/3 will close.
+
+Every claim in this document MUST cite a TOR section/clause (e.g. "Per TOR §3.2.1 …"). Unsupported claims are not permitted in v0. Keep the document concise — target roughly 1-2 pages. Do not invent detail the TOR does not support; mark gaps as open questions instead.
 
 **CRITICAL: Use these EXACT markdown headings in tor-assessment.md. Parsers depend on this format:**
 

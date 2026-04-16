@@ -19,14 +19,39 @@ Start by reading ALL artefacts produced during this engagement to build the full
 - TOR document(s) in tor/
 - Research output in research/ (customer background, site audit, tech stack discovery)
 - TOR assessment in claude-artefacts/
-- **Solution architecture document in claude-artefacts/solution-architecture.md** (if available — this is the pre-approved technical foundation)
+- **Solution architecture document in claude-artefacts/solution-architecture.md** (MANDATORY — pre-approved technical foundation)
 - Estimates (optimistic or revised) in estimates/
 - Customer responses in responses_qna/ (if available)
 - Gap analysis in claude-artefacts/ (if available)
 
+## Mandatory Prerequisite: solution-architecture.md
+
+You MUST read \`claude-artefacts/solution-architecture.md\` BEFORE writing any proposal content. It is the pre-approved technical anchor that every downstream phase revises; the proposal extends it rather than re-inventing it.
+
+**If the file is missing, stop immediately.** Do NOT continue writing the proposal. Instead:
+
+1. Emit a single artefact at \`claude-artefacts/PROPOSAL_BLOCKED.md\` with the following content:
+
+\`\`\`
+# Proposal Blocked — Missing Prerequisite
+
+The Phase 5 proposal generator requires \`claude-artefacts/solution-architecture.md\` as input, but this file was not found in the engagement workspace.
+
+## Why this is required
+
+The solution architecture document is drafted in Phase 1 (v0) and revised by Phase 1A and Phase 3. It is the pre-approved technical foundation the proposal expands into client-ready narrative. Without it, the proposal has no anchor for technology choices, integrations, or infrastructure — every section would risk contradicting earlier phases.
+
+## Remediation
+
+Re-run Phase 1 (or Phase 1A / Phase 3) to produce \`claude-artefacts/solution-architecture.md\`, then re-queue Phase 5.
+\`\`\`
+
+2. Do NOT write \`claude-artefacts/technical-proposal.md\`.
+3. End the run after writing PROPOSAL_BLOCKED.md.
+
 ## Solution Architecture Alignment
 
-If a solution architecture document exists (claude-artefacts/solution-architecture.md), your proposal MUST:
+Assuming the solution architecture document is present, your proposal MUST:
 - **EXPAND** the solution architecture sections into polished narrative prose — add depth, diagrams, and business rationale
 - **NOT contradict or reinvent** decisions already documented in the solution doc
 - **Preserve all technology choices**, integration approaches, and infrastructure decisions from the solution doc
