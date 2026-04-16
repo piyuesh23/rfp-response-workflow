@@ -127,6 +127,7 @@ model Engagement {
   torRequirements        TorRequirement[]
   lineItems              LineItem[]
   validationReports      ValidationReport[]
+  embeddingChunks        EmbeddingChunk[]
 
   @@index([accountId])
 }
@@ -558,4 +559,46 @@ model AiCallLog {
 
   @@index([engagementId])
   @@index([createdAt])
+}
+
+// ─── Scoped RAG chatbot models ──────────────────────────────────────────────
+
+/// Vector-indexed chunks of engagement / global content (artefacts, requirements,
+/// line items, assumptions, risks, benchmarks, accounts, engagement metadata).
+/// engagementId is null for admin/global chunks (benchmarks, cross-engagement
+/// aggregates). The chat retrieval filter hard-scopes by engagementId server-side.
+model EmbeddingChunk {
+  id           String                      @id @default(cuid())
+  engagement   Engagement?                 @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId String?
+  sourceType   String // ARTEFACT | REQUIREMENT | LINE_ITEM | ASSUMPTION | RISK | BENCHMARK | ACCOUNT | ENGAGEMENT_META
+  sourceId     String // id of the source row
+  chunkIndex   Int                         @default(0) // for multi-chunk artefacts
+  content      String                      @db.Text
+  embedding    Unsupported("vector(1536)") // OpenAI text-embedding-3-small dim
+  tokens       Int                         @default(0)
+  metadata     Json? // source-specific extras (clauseRef, taskName, etc.)
+  createdAt    DateTime                    @default(now())
+
+  @@index([engagementId])
+  @@index([sourceType])
+  @@index([engagementId, sourceType])
+}
+
+/// Audit trail for every chat turn. Retrieved chunk IDs are recorded so we can
+/// later verify that answers only came from in-scope context.
+model ChatAuditLog {
+  id            String   @id @default(cuid())
+  userId        String
+  scope         String // ENGAGEMENT | ADMIN
+  engagementId  String?
+  question      String   @db.Text
+  chunkIds      String[] @default([])
+  answerPreview String   @db.Text
+  tokensIn      Int      @default(0)
+  tokensOut     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([engagementId, createdAt])
 }

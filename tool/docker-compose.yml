@@ -64,13 +64,14 @@ services:
       - minio
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: presales
       POSTGRES_PASSWORD: presales
       POSTGRES_DB: presales
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U presales"]
       interval: 5s
