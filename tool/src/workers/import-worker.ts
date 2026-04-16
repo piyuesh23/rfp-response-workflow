@@ -18,6 +18,10 @@ import { convertToMarkdown } from "@/lib/ai/markdown-converter";
 import { aiLimiter } from "@/lib/ai/rate-limiter";
 import { redisConnection, ImportJobData } from "@/lib/queue";
 import { ArtefactType } from "@/generated/prisma/client";
+import {
+  getAutoConfirmMinAccuracyScore,
+  getOverallAccuracyForEngagement,
+} from "@/lib/accuracy";
 
 const FOLDER_CONCURRENCY = 5;
 
@@ -1000,12 +1004,38 @@ const worker = new Worker<ImportJobData>(
         });
         const systemUserId = jobRecord?.userId ?? "";
 
+        const accuracyFloor = getAutoConfirmMinAccuracyScore();
         let autoConfirmedCount = 0;
         for (const item of pendingItems) {
           const avgConf = averageConfidence(item.confidence);
           if (avgConf != null && avgConf >= autoConfirmThreshold) {
+            let createdEngagementId: string | null = null;
             try {
-              await autoConfirmItem(item, systemUserId);
+              createdEngagementId = await autoConfirmItem(item, systemUserId);
+
+              // Accuracy gate: if any ValidationReport rows exist for the
+              // newly-created engagement and the weighted score is below
+              // AUTO_CONFIRM_MIN_ACCURACY_SCORE, revert the auto-confirm and
+              // force manual review. No reports = no gating signal, proceed.
+              const accuracy = await getOverallAccuracyForEngagement(createdEngagementId);
+              if (accuracy != null && accuracy.score < accuracyFloor) {
+                await prisma.engagement.delete({ where: { id: createdEngagementId } });
+                await prisma.importItem.update({
+                  where: { id: item.id },
+                  data: {
+                    status: "PENDING_REVIEW",
+                    engagementId: null,
+                    reviewedAt: null,
+                    reviewedBy: null,
+                    errorMessage: "Below accuracy threshold — manual review required",
+                  },
+                });
+                console.log(
+                  `[import-worker] Auto-confirm gated for item ${item.id}: accuracy ${accuracy.score.toFixed(3)} < ${accuracyFloor}`
+                );
+                continue;
+              }
+
               autoConfirmedCount++;
             } catch (confirmErr) {
               console.warn(
