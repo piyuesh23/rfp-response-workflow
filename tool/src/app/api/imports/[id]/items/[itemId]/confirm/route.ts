@@ -296,6 +296,75 @@ export async function POST(
           templateStatus: JSON.parse(JSON.stringify(tabStatus)),
         },
       });
+
+      // Persist LineItem rows mirroring the XLSX traversal above.
+      // Imported estimates lack TOR traceability, so every row carries a
+      // standard orphanJustification instead of a TorRequirement link. This
+      // keeps accuracy reporting coherent without blocking imports.
+      try {
+        const tabEnumMap: Record<string, string> = {
+          Backend: "BACKEND",
+          Frontend: "FRONTEND",
+          "Fixed Cost Items": "FIXED_COST",
+          Design: "DESIGN",
+          AI: "AI",
+        };
+        const estPhaseIdForItems =
+          phaseMap.get(workflowPath === "NO_RESPONSE" ? "1A" : "3") ??
+          engagement.phases[0]?.id ??
+          null;
+        const tierRegex = /\b(T1|T2|T3)\b/i;
+        const orphanJustification =
+          "Imported from external XLSX; TOR requirement mapping not captured at import time.";
+
+        const lineItemPayload: Array<{
+          engagementId: string;
+          tab: string;
+          task: string;
+          description: string;
+          hours: number;
+          conf: number;
+          lowHrs: number;
+          highHrs: number;
+          benchmarkRef: null;
+          integrationTier: string | null;
+          orphanJustification: string;
+          sourcePhaseId: string | null;
+        }> = [];
+
+        for (const tab of tabConfigs) {
+          const tabEnum = tabEnumMap[tab.name];
+          if (!tabEnum || !tab.data || tab.data.length === 0) continue;
+          for (const row of tab.data) {
+            const tierMatch = row.description?.match(tierRegex);
+            lineItemPayload.push({
+              engagementId: engagement.id,
+              tab: tabEnum,
+              task: row.task ?? "",
+              description: row.description ?? "",
+              hours: Number(row.hours) || 0,
+              conf: Number(row.conf) || 0,
+              lowHrs: Number(row.lowHrs) || 0,
+              highHrs: Number(row.highHrs) || 0,
+              benchmarkRef: null,
+              integrationTier: tierMatch ? tierMatch[1].toUpperCase() : null,
+              orphanJustification,
+              sourcePhaseId: estPhaseIdForItems,
+            });
+          }
+        }
+
+        if (lineItemPayload.length > 0) {
+          await prisma.lineItem.createMany({
+            data: lineItemPayload,
+            skipDuplicates: true,
+          });
+        }
+      } catch (err) {
+        console.warn(
+          `[import-confirm] LineItem persistence failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     } catch (err) {
       console.warn(`[import-confirm] Failed to populate estimate template: ${err instanceof Error ? err.message : String(err)}`);
     }
