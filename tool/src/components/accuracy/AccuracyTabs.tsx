@@ -11,9 +11,23 @@ export interface AccuracyTabDef {
   content: React.ReactNode;
 }
 
-export function AccuracyTabs({ tabs }: { tabs: AccuracyTabDef[] }) {
+export function AccuracyTabs({
+  tabs,
+  value,
+  onValueChange,
+}: {
+  tabs: AccuracyTabDef[];
+  value?: string;
+  onValueChange?: (value: string) => void;
+}) {
+  const isControlled = value !== undefined && onValueChange !== undefined;
   return (
-    <Tabs defaultValue={tabs[0]?.value ?? "gaps"} className="w-full gap-4">
+    <Tabs
+      {...(isControlled
+        ? { value, onValueChange }
+        : { defaultValue: tabs[0]?.value ?? "gaps" })}
+      className="w-full gap-4"
+    >
       <TabsList className="flex flex-wrap h-auto w-full justify-start gap-1 bg-transparent p-0" variant="line">
         {tabs.map((t) => (
           <TabsTrigger

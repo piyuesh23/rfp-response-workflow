@@ -1,14 +1,6 @@
 /**
- * Accuracy drill-down page — Milestone 5.c.
- *
- * Server component. Sources per-section data via direct Prisma queries
- * (rather than the /api/.../accuracy endpoint) so the page can join live
- * DB state against the latest ValidationReport.details JSON for sections
- * that can't be derived from structured rows alone (e.g. proposal-objective
- * issues).
- *
- * Auth: engagement owner or ADMIN — mirrors
- * `src/app/api/engagements/[id]/route.ts`.
+ * Accuracy drill-down page. Server component; joins live DB rows with the
+ * latest ValidationReport.details JSON. Auth: owner or ADMIN.
  */
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -25,7 +17,7 @@ import { CONF_BUFFER } from "@/lib/ai/validators/conf-formula";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { AccuracyTabs } from "@/components/accuracy/AccuracyTabs";
+import { AccuracyDrilldown } from "@/components/accuracy/AccuracyDrilldown";
 import { GapTable, type GapRow } from "@/components/accuracy/GapTable";
 import {
   OrphanTable,
@@ -52,11 +44,7 @@ const IMPACT_RX = /Impact\s*if\s*wrong[:\s]/i;
 const VALID_TIERS = new Set(["T1", "T2", "T3"]);
 
 function normalizeTask(task: string): string {
-  return task
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
+  return task.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
 }
 
 function overlapScore(a: string, b: string): number {
@@ -68,20 +56,13 @@ function overlapScore(a: string, b: string): number {
   return overlap / Math.min(at.size, bt.size);
 }
 
-function tierForScore(score: number): {
-  barClass: string;
-  textClass: string;
-} {
-  if (score >= 0.9)
-    return { barClass: "bg-green-500", textClass: "text-green-600 dark:text-green-500" };
-  if (score >= 0.75)
-    return { barClass: "bg-amber-500", textClass: "text-amber-600 dark:text-amber-500" };
+function tierForScore(score: number): { barClass: string; textClass: string } {
+  if (score >= 0.9) return { barClass: "bg-green-500", textClass: "text-green-600 dark:text-green-500" };
+  if (score >= 0.75) return { barClass: "bg-amber-500", textClass: "text-amber-600 dark:text-amber-500" };
   return { barClass: "bg-red-500", textClass: "text-red-600 dark:text-red-500" };
 }
 
-function statusBadgeVariant(
-  status: "PASS" | "WARN" | "FAIL"
-): "default" | "secondary" | "destructive" {
+function statusBadgeVariant(status: "PASS" | "WARN" | "FAIL"): "default" | "secondary" | "destructive" {
   if (status === "PASS") return "default";
   if (status === "WARN") return "secondary";
   return "destructive";
@@ -312,107 +293,72 @@ export default async function AccuracyPage({
   // Surface proposal-tier miss from the Phase 5 ValidationReport.details
   // (we don't re-parse the proposal markdown here).
   const phase5 = reports["5"];
-  type ProposalMissEntry = {
-    requirementId: string;
-    title: string;
-    estimateTier: string;
-  };
-  type UnmappedEntry = string;
   type MissingReqEntry = { id: string; clauseRef: string; title: string };
-  type IntegrationTierDetails = {
-    proposalMisses?: ProposalMissEntry[];
+  type ProposalMissEntry = { requirementId: string; title: string; estimateTier: string };
+  // Phase 5 validator payloads may nest real fields under `.details`; merge both.
+  type PO = { unmappedObjectives?: string[]; missingRequirements?: MissingReqEntry[] };
+  type IT = { proposalMisses?: ProposalMissEntry[] };
+  const phase5Raw = (phase5?.details ?? {}) as {
+    integrationTier?: IT & { details?: IT };
+    proposalObjective?: PO & { details?: PO };
   };
-  type ProposalObjectiveDetails = {
-    note?: string;
-    unmappedObjectives?: UnmappedEntry[];
-    missingRequirements?: MissingReqEntry[];
-  };
-  const phase5Details = (phase5?.details ?? {}) as {
-    integrationTier?: IntegrationTierDetails;
-    proposalObjective?: ProposalObjectiveDetails;
-  };
-  const proposalMisses: ProposalMissEntry[] =
-    phase5Details.integrationTier?.proposalMisses ?? [];
+  const integrationTierResult: IT = { ...(phase5Raw.integrationTier ?? {}), ...(phase5Raw.integrationTier?.details ?? {}) };
+  const proposalObjectiveResult: PO = { ...(phase5Raw.proposalObjective ?? {}), ...(phase5Raw.proposalObjective?.details ?? {}) };
+  const proposalMisses: ProposalMissEntry[] = integrationTierResult.proposalMisses ?? [];
   for (const miss of proposalMisses) {
     integrationTierIssues.push({
       kind: "PROPOSAL_MISS",
       requirementId: miss.requirementId,
       clauseRef:
-        integrationReqs.find((r) => r.id === miss.requirementId)?.clauseRef ??
-        "—",
+        integrationReqs.find((r) => r.id === miss.requirementId)?.clauseRef ?? "—",
       title: miss.title,
       estimateTier: miss.estimateTier,
     });
   }
 
   // Proposal objective issues (from Phase 5 details)
-  const proposalObjectiveIssues: ProposalObjectiveIssueRow[] = [];
-  const proposalObjectiveDetails: ProposalObjectiveDetails =
-    phase5Details.proposalObjective ?? {};
-  const unmappedObjectives: UnmappedEntry[] =
-    proposalObjectiveDetails.unmappedObjectives ?? [];
-  const missingRequirements: MissingReqEntry[] =
-    proposalObjectiveDetails.missingRequirements ?? [];
-  unmappedObjectives.forEach((preview, idx) => {
-    proposalObjectiveIssues.push({
-      kind: "UNMAPPED_OBJECTIVE",
+  const unmappedObjectives = proposalObjectiveResult.unmappedObjectives ?? [];
+  const missingRequirements = proposalObjectiveResult.missingRequirements ?? [];
+  const proposalObjectiveIssues: ProposalObjectiveIssueRow[] = [
+    ...unmappedObjectives.map((preview, idx) => ({
+      kind: "UNMAPPED_OBJECTIVE" as const,
       key: `unmapped-${idx}`,
       preview,
-    });
-  });
-  for (const missing of missingRequirements) {
-    proposalObjectiveIssues.push({
-      kind: "MISSING_REQUIREMENT",
-      key: `missing-${missing.id}`,
-      preview: missing.title,
-      clauseRef: missing.clauseRef,
-    });
-  }
+    })),
+    ...missingRequirements.map((m) => ({
+      kind: "MISSING_REQUIREMENT" as const,
+      key: `missing-${m.id}`,
+      preview: m.title,
+      clauseRef: m.clauseRef,
+    })),
+  ];
   const proposalObjectiveNote = phase5
     ? undefined
     : "Phase 5 has not been run yet — proposal objective analysis is unavailable.";
 
   // ── Build tabs ─────────────────────────────────────────────────────────────
+  // Tab labels are short; summary tile labels carry explicit phase ownership
+  // (e.g. "Estimate Gaps (1A)") so users know which validator produced each
+  // number.
+  const tileLabelByValue: Record<string, string> = {
+    gaps: "Estimate Gaps (1A)",
+    orphans: "Estimate Orphans (1A)",
+    conf: "Conf Violations (1A)",
+    assumptions: "Assumption Defects (1A)",
+    risks: "Risk Register (1A)",
+    integrations: "Integration Tiers (1A + 5)",
+    proposal: "Proposal Coverage (5)",
+  };
   const tabs = [
-    {
-      value: "gaps",
-      label: "Gaps",
-      count: gaps.length,
-      content: <GapTable gaps={gaps} />,
-    },
-    {
-      value: "orphans",
-      label: "Orphans",
-      count: orphans.length,
-      content: <OrphanTable orphans={orphans} />,
-    },
-    {
-      value: "conf",
-      label: "Conf Violations",
-      count: confViolations.length,
-      content: <ConfViolationTable violations={confViolations} />,
-    },
-    {
-      value: "assumptions",
-      label: "Assumption Defects",
-      count: assumptionDefects.length,
-      content: <AssumptionDefectTable defects={assumptionDefects} />,
-    },
-    {
-      value: "risks",
-      label: "Risk Register",
-      count: riskIssues.length,
-      content: <RiskIssueTable issues={riskIssues} />,
-    },
-    {
-      value: "integrations",
-      label: "Integration Tiers",
-      count: integrationTierIssues.length,
-      content: <IntegrationTierIssueTable issues={integrationTierIssues} />,
-    },
+    { value: "gaps", label: "Estimate Gaps", count: gaps.length, content: <GapTable gaps={gaps} /> },
+    { value: "orphans", label: "Estimate Orphans", count: orphans.length, content: <OrphanTable orphans={orphans} /> },
+    { value: "conf", label: "Conf Formula", count: confViolations.length, content: <ConfViolationTable violations={confViolations} /> },
+    { value: "assumptions", label: "Assumptions", count: assumptionDefects.length, content: <AssumptionDefectTable defects={assumptionDefects} /> },
+    { value: "risks", label: "Risk Register", count: riskIssues.length, content: <RiskIssueTable issues={riskIssues} /> },
+    { value: "integrations", label: "Integration Tiers", count: integrationTierIssues.length, content: <IntegrationTierIssueTable issues={integrationTierIssues} /> },
     {
       value: "proposal",
-      label: "Proposal Objectives",
+      label: "Proposal Coverage",
       count: proposalObjectiveIssues.length,
       content: (
         <ProposalObjectiveIssueTable
@@ -422,6 +368,18 @@ export default async function AccuracyPage({
       ),
     },
   ];
+
+  // Phase 5 summary block data — only shown when a Phase 5 ValidationReport
+  // exists. Numbers come straight from the details JSON we already parsed
+  // above; no extra query needed.
+  const phase5Summary = phase5
+    ? {
+        status: scoreToStatus(phase5.accuracyScore),
+        missingRequirements: missingRequirements.length,
+        missingTiers: proposalMisses.length,
+        unmappedObjectives: unmappedObjectives.length,
+      }
+    : null;
 
   const overallTier = overall ? tierForScore(overall.score) : null;
 
@@ -484,33 +442,16 @@ export default async function AccuracyPage({
             <div className="flex flex-wrap gap-4 pt-1 text-xs text-muted-foreground">
               {TRACKED_PHASES.map((phase) => {
                 const report = reports[phase];
-                if (!report) {
-                  return (
-                    <span key={phase} className="opacity-60">
-                      Phase {phase}: —
-                    </span>
-                  );
-                }
+                if (!report) return <span key={phase} className="opacity-60">Phase {phase}: —</span>;
+                const status = scoreToStatus(report.accuracyScore);
                 const ptier = tierForScore(report.accuracyScore);
                 return (
                   <span key={phase} className="flex items-center gap-1">
                     Phase {phase}:
-                    <span
-                      className={cn(
-                        "font-mono font-semibold tabular-nums",
-                        ptier.textClass
-                      )}
-                    >
+                    <span className={cn("font-mono font-semibold tabular-nums", ptier.textClass)}>
                       {Math.round(report.accuracyScore * 100)}%
                     </span>
-                    <Badge
-                      variant={statusBadgeVariant(
-                        scoreToStatus(report.accuracyScore)
-                      )}
-                      className="text-[10px]"
-                    >
-                      {scoreToStatus(report.accuracyScore)}
-                    </Badge>
+                    <Badge variant={statusBadgeVariant(status)} className="text-[10px]">{status}</Badge>
                   </span>
                 );
               })}
@@ -527,7 +468,8 @@ export default async function AccuracyPage({
 
       <Separator />
 
-      {/* Summary counters */}
+      {/* Summary counters — tile labels carry explicit phase ownership so the
+          user can see at a glance which validator owns each number. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {tabs.map((t) => (
           <div
@@ -535,7 +477,7 @@ export default async function AccuracyPage({
             className="flex flex-col gap-1 rounded-lg border bg-card p-3 ring-1 ring-foreground/10"
           >
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              {t.label}
+              {tileLabelByValue[t.value] ?? t.label}
             </span>
             <span
               className={cn(
@@ -551,8 +493,7 @@ export default async function AccuracyPage({
         ))}
       </div>
 
-      {/* Tabs with detail tables */}
-      <AccuracyTabs tabs={tabs} />
+      <AccuracyDrilldown tabs={tabs} phase5={phase5Summary} />
     </div>
   );
 }
