@@ -2,7 +2,49 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { copyMasterTemplate } from "@/lib/template-populator";
+import { indexStructuredRow } from "@/lib/rag/store";
 import type { TechStack, EngagementType } from "@/generated/prisma/enums";
+
+// Non-fatal ENGAGEMENT_META indexing helper. Indexed with engagementId=null so
+// admin-scope chat can answer cross-engagement queries (e.g. "which engagements
+// are WON"). A failed index must NEVER fail the parent mutation.
+async function indexEngagementMeta(engagement: {
+  id: string;
+  clientName: string;
+  projectName: string | null;
+  techStack: string;
+  engagementType: string;
+  status: string;
+  estimatedDealValue: number | null;
+  rfpSource: string | null;
+  outcome: string | null;
+  accountId: string | null;
+}): Promise<void> {
+  const deal = engagement.estimatedDealValue != null ? `$${engagement.estimatedDealValue}` : "—";
+  const rfp = engagement.rfpSource ?? "—";
+  const outcome = engagement.outcome ?? "pending";
+  const summary = `${engagement.clientName} / ${engagement.projectName ?? "—"} (${engagement.techStack}, ${engagement.engagementType}, ${engagement.status}). Deal: ${deal}. RFP source: ${rfp}. Outcome: ${outcome}.`;
+  if (summary.trim().length < 50) return;
+  try {
+    await indexStructuredRow({
+      // engagementId omitted → stored as NULL so admin chat can retrieve globally.
+      sourceType: "ENGAGEMENT_META",
+      sourceId: engagement.id,
+      summary,
+      metadata: {
+        clientName: engagement.clientName,
+        outcome: engagement.outcome,
+        accountId: engagement.accountId,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[rag-index] Failed to index ENGAGEMENT_META ${engagement.id}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+}
 
 export async function GET() {
   const session = await auth();
@@ -105,6 +147,20 @@ export async function POST(request: NextRequest) {
   } catch {
     // Template copy failure is non-fatal - engagement is still usable
   }
+
+  // RAG indexing for ENGAGEMENT_META (non-fatal).
+  await indexEngagementMeta({
+    id: engagement.id,
+    clientName: engagement.clientName,
+    projectName: engagement.projectName,
+    techStack: engagement.techStack,
+    engagementType: engagement.engagementType,
+    status: engagement.status,
+    estimatedDealValue: engagement.estimatedDealValue ?? null,
+    rfpSource: engagement.rfpSource ?? null,
+    outcome: engagement.outcome ?? null,
+    accountId: engagement.accountId ?? null,
+  });
 
   return NextResponse.json(engagement, { status: 201 });
 }

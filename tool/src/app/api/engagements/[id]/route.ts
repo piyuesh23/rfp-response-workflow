@@ -1,8 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { indexStructuredRow } from "@/lib/rag/store";
 import type { EngagementStatus, RfpSource, EngagementOutcome } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
+
+// Non-fatal ENGAGEMENT_META indexing helper. engagementId=null so admin chat
+// can search globally. A failed index must NEVER fail the parent mutation.
+async function indexEngagementMeta(engagement: {
+  id: string;
+  clientName: string;
+  projectName: string | null;
+  techStack: string;
+  engagementType: string;
+  status: string;
+  estimatedDealValue: number | null;
+  rfpSource: string | null;
+  outcome: string | null;
+  accountId: string | null;
+}): Promise<void> {
+  const deal = engagement.estimatedDealValue != null ? `$${engagement.estimatedDealValue}` : "—";
+  const rfp = engagement.rfpSource ?? "—";
+  const outcome = engagement.outcome ?? "pending";
+  const summary = `${engagement.clientName} / ${engagement.projectName ?? "—"} (${engagement.techStack}, ${engagement.engagementType}, ${engagement.status}). Deal: ${deal}. RFP source: ${rfp}. Outcome: ${outcome}.`;
+  if (summary.trim().length < 50) return;
+  try {
+    await indexStructuredRow({
+      // engagementId omitted → stored as NULL so admin chat can retrieve globally.
+      sourceType: "ENGAGEMENT_META",
+      sourceId: engagement.id,
+      summary,
+      metadata: {
+        clientName: engagement.clientName,
+        outcome: engagement.outcome,
+        accountId: engagement.accountId,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[rag-index] Failed to index ENGAGEMENT_META ${engagement.id}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+}
 
 export async function GET(
   _request: NextRequest,
@@ -121,6 +162,20 @@ export async function PATCH(
       ...(competitorWhoWon !== undefined && { competitorWhoWon }),
       ...(presalesHoursSpent !== undefined && { presalesHoursSpent }),
     } as Prisma.EngagementUncheckedUpdateInput,
+  });
+
+  // RAG indexing for ENGAGEMENT_META (non-fatal).
+  await indexEngagementMeta({
+    id: updated.id,
+    clientName: updated.clientName,
+    projectName: updated.projectName,
+    techStack: updated.techStack,
+    engagementType: updated.engagementType,
+    status: updated.status,
+    estimatedDealValue: updated.estimatedDealValue ?? null,
+    rfpSource: updated.rfpSource ?? null,
+    outcome: updated.outcome ?? null,
+    accountId: updated.accountId ?? null,
   });
 
   return NextResponse.json(updated);
