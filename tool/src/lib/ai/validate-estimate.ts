@@ -25,11 +25,17 @@ export interface ValidationReport {
   warnCount: number;
   failCount: number;
   noBenchmarkCount: number;
+  unmatchedRefs: string[];
   items: ValidationItem[];
 }
 
 export interface StructuralValidationItem {
-  category: "ALWAYS_INCLUDE" | "ASSUMPTION_SOURCE" | "RISK_REGISTER" | "TAB_ORGANIZATION";
+  category:
+    | "ALWAYS_INCLUDE"
+    | "ASSUMPTION_SOURCE"
+    | "RISK_REGISTER"
+    | "TAB_ORGANIZATION"
+    | "BENCHMARK_COVERAGE";
   status: "PASS" | "WARN" | "FAIL";
   message: string;
   details?: string[];
@@ -208,6 +214,7 @@ export async function validateEstimate(
     warnCount: 0,
     failCount: 0,
     noBenchmarkCount: 0,
+    unmatchedRefs: [],
     items: [],
   };
 
@@ -216,6 +223,7 @@ export async function validateEstimate(
 
     if (ref === "n/a" || ref === "" || ref === "-") {
       report.noBenchmarkCount++;
+      report.unmatchedRefs.push(item.task);
       report.items.push({
         task: item.task,
         tab: item.tab,
@@ -234,6 +242,7 @@ export async function validateEstimate(
 
     if (!benchmark) {
       report.noBenchmarkCount++;
+      report.unmatchedRefs.push(`${item.benchmarkRef} (${item.task})`);
       report.items.push({
         task: item.task,
         tab: item.tab,
@@ -550,6 +559,37 @@ function validateTabOrganization(lineItems: ParsedLineItem[]): StructuralValidat
 }
 
 /**
+ * Check that the share of line items lacking a matched benchmark stays below 10%.
+ * Silent NO_BENCHMARK items otherwise let large estimates pass with no fidelity.
+ */
+function validateBenchmarkCoverage(report: ValidationReport): StructuralValidationItem {
+  const total = report.items.length;
+  if (total === 0) {
+    return {
+      category: "BENCHMARK_COVERAGE",
+      status: "PASS",
+      message: "No line items to validate",
+    };
+  }
+
+  const ratio = report.noBenchmarkCount / total;
+  if (ratio <= 0.1) {
+    return {
+      category: "BENCHMARK_COVERAGE",
+      status: "PASS",
+      message: `${report.noBenchmarkCount}/${total} line items without a matched benchmark (${(ratio * 100).toFixed(0)}%)`,
+    };
+  }
+
+  return {
+    category: "BENCHMARK_COVERAGE",
+    status: "WARN",
+    message: `${report.noBenchmarkCount}/${total} line items (${(ratio * 100).toFixed(0)}%) lack a matched benchmark — exceeds 10% threshold`,
+    details: report.unmatchedRefs.slice(0, 10),
+  };
+}
+
+/**
  * Run full validation: benchmark deviations + structural checks.
  */
 export async function validateEstimateFull(
@@ -564,6 +604,7 @@ export async function validateEstimateFull(
     validateAssumptionSources(lineItems),
     validateRiskRegisterCoverage(contentMd, lineItems),
     validateTabOrganization(lineItems),
+    validateBenchmarkCoverage(benchmark),
   ];
 
   // Determine overall status
