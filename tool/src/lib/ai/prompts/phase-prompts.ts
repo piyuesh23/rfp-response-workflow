@@ -70,7 +70,44 @@ Also include a summary section:
 ## Clarity Assessment Summary
 \`\`\`
 
-As a table: | Clarity Rating | Count | Percentage |`;
+As a table: | Clarity Rating | Count | Percentage |
+
+## MACHINE-READABLE SIDECAR (MANDATORY)
+
+At the VERY END of \`claude-artefacts/tor-assessment.md\` (after all markdown sections),
+append a raw HTML comment containing a JSON sidecar so downstream writers can
+ingest the requirements into the database. This must be the last content in the
+file. Do NOT wrap it in a markdown code fence.
+
+\`\`\`
+<!-- PHASE1-REQUIREMENTS-JSON
+{
+  "requirements": [
+    {
+      "clauseRef": "3.2.1",
+      "title": "Short requirement title",
+      "description": "Paraphrase of the TOR clause in 1-2 sentences.",
+      "domain": "integration",
+      "clarityRating": "CLEAR"
+    }
+  ]
+}
+-->
+\`\`\`
+
+Sidecar rules:
+- Emit exactly ONE row per distinct TOR requirement. Row count should equal the
+  number of rows in the Requirements Assessment table.
+- \`clauseRef\`: the TOR section/bullet reference as it appears in the TOR (e.g.
+  "3.2.1", "Section 4.1", "Annexure B-2"). Use the same value the assessment
+  table uses in the Requirement ID column.
+- \`domain\`: MUST be one of exactly these lowercase tokens —
+  \`content_arch | integration | migration | frontend | devops | seo | a11y | perf | security | other\`.
+- \`clarityRating\`: MUST be one of exactly —
+  \`CLEAR | NEEDS_CLARIFICATION | AMBIGUOUS | MISSING_DETAIL\` (match the assessment).
+- The JSON must be strictly valid (no trailing commas, no comments inside the JSON).
+- The HTML comment opener \`<!-- PHASE1-REQUIREMENTS-JSON\` and closing \`-->\`
+  must appear verbatim; writers regex-extract the body between them.`;
 }
 
 export function getPhase1AEstimatePrompt(techStack?: string, engagementType?: string): string {
@@ -214,7 +251,69 @@ Generate a Risk Register for all Conf <= 4 items with: Task, Tab, Conf, Risk/Dep
 
 Write outputs:
 - estimates/optimistic-estimate.md (following optimistic-estimate-template.md)
-- estimates/[client]-estimate-state.md (with <!-- OPTIMISTIC-ESTIMATE-STATE --> marker)`;
+- estimates/[client]-estimate-state.md (with <!-- OPTIMISTIC-ESTIMATE-STATE --> marker)
+
+## MACHINE-READABLE SIDECAR (MANDATORY)
+
+At the VERY END of \`estimates/optimistic-estimate.md\` (after Risk Register and
+all markdown sections), append a raw HTML comment with a JSON sidecar so the
+writer step can ingest line items into the database. Do NOT wrap in a code fence.
+
+\`\`\`
+<!-- ESTIMATE-LINEITEMS-JSON
+{
+  "lineItems": [
+    {
+      "tab": "BACKEND",
+      "task": "Content API + syndication service",
+      "description": "Covers TOR §3.2.1 multi-site content syndication.",
+      "hours": 40,
+      "conf": 5,
+      "lowHrs": 40,
+      "highHrs": 50,
+      "benchmarkRef": "backend.api.medium",
+      "integrationTier": null,
+      "torClauseRefs": ["3.2.1"],
+      "orphanJustification": null
+    },
+    {
+      "tab": "FIXED_COST",
+      "task": "Deployment pipeline setup",
+      "description": "DevOps onboarding, CI/CD wiring.",
+      "hours": 16,
+      "conf": 6,
+      "lowHrs": 16,
+      "highHrs": 16,
+      "benchmarkRef": null,
+      "integrationTier": null,
+      "torClauseRefs": [],
+      "orphanJustification": "Standard cross-cutting DevOps item not tied to a specific TOR clause."
+    }
+  ]
+}
+-->
+\`\`\`
+
+Sidecar rules:
+- Emit exactly ONE row per line item in ALL tabs (Backend, Frontend, Fixed Cost, AI).
+  Total rows must equal the sum of rows across all tab tables.
+- \`tab\`: exactly one of — \`BACKEND | FRONTEND | FIXED_COST | DESIGN | AI\`.
+- \`hours\`, \`lowHrs\`, \`highHrs\`: numeric, matching the markdown table.
+  \`lowHrs\` = \`hours\`; \`highHrs\` = \`hours × (1 + conf buffer)\` rounded.
+- \`conf\`: integer 1-6, matching the markdown.
+- \`benchmarkRef\`: the BenchmarkKey used in the Description column, or \`null\`
+  when no benchmark applies.
+- \`integrationTier\`: \`"T1"\`, \`"T2"\`, \`"T3"\`, or \`null\`. Required (non-null)
+  for every integration line item.
+- \`torClauseRefs\`: array of TOR clause reference strings (NOT DB IDs) that this
+  line item fulfils. Use the SAME clauseRef values Phase 1 emitted in its sidecar
+  (e.g. \`"3.2.1"\`). The writer resolves these to \`TorRequirement.id\` by
+  normalized-clause lookup.
+- \`orphanJustification\`: \`null\` when \`torClauseRefs\` is non-empty. When
+  \`torClauseRefs\` is empty the justification MUST be a specific non-empty string
+  (e.g. "Cross-cutting DevOps task"). Never leave both empty.
+- JSON must be strictly valid (no trailing commas). HTML comment markers must
+  appear verbatim.`;
 }
 
 export function getPhase1AProposalPrompt(engagementType?: string): string {
@@ -287,7 +386,48 @@ Perform three validation passes:
 - Do assumptions reference TOR sections or Q&A responses (not internal artefacts)?
 - Is the Conf buffer formula applied correctly for all Low/High Hrs?
 
-Write output to claude-artefacts/estimate-review.md following the estimate-review-template.md structure.`;
+Write output to claude-artefacts/estimate-review.md following the estimate-review-template.md structure.
+
+## Revised Estimate Sidecar (MANDATORY when revising line items)
+
+If this review results in a revised estimate written to
+\`estimates/revised-estimate.md\` (or updates \`estimates/optimistic-estimate.md\`),
+append a raw HTML comment at the VERY END of the estimate file containing the
+full revised line-item list as JSON. Do NOT wrap in a code fence.
+
+\`\`\`
+<!-- ESTIMATE-LINEITEMS-JSON
+{
+  "lineItems": [
+    {
+      "tab": "BACKEND",
+      "task": "Content API + syndication service",
+      "description": "Covers TOR §3.2.1.",
+      "hours": 48,
+      "conf": 5,
+      "lowHrs": 48,
+      "highHrs": 60,
+      "benchmarkRef": "backend.api.medium",
+      "integrationTier": null,
+      "torClauseRefs": ["3.2.1"],
+      "orphanJustification": null
+    }
+  ]
+}
+-->
+\`\`\`
+
+Sidecar rules (same as Phase 1A):
+- One row per revised line item across ALL tabs.
+- \`tab\`: \`BACKEND | FRONTEND | FIXED_COST | DESIGN | AI\`.
+- \`torClauseRefs\`: TOR clauseRef strings (not DB IDs). The writer resolves them
+  to \`TorRequirement.id\`. Use the same clauseRefs Phase 1 emitted.
+- \`integrationTier\`: \`"T1" | "T2" | "T3" | null\`.
+- \`orphanJustification\`: required non-empty string when \`torClauseRefs\` is empty,
+  else \`null\`.
+- JSON must be strictly valid. HTML comment markers verbatim.
+
+If the review does NOT modify estimate line items, skip the sidecar.`;
 }
 
 export function getPhase4Prompt(): string {
