@@ -707,16 +707,32 @@ async function runStructuredValidators(
     const riskMissing =
       (riskRegister.details.missingCount as number | undefined) ?? 0;
 
+    const requirementCount =
+      (coverage.details.requirementCount as number | undefined) ?? 0;
+    const assumptionTotal =
+      (assumption.details.totalCount as number | undefined) ??
+      Math.max(assumptionDefects, 1);
+    const riskExpected =
+      (riskRegister.details.expectedCount as number | undefined) ??
+      Math.max(riskMissing, 1);
+
+    // Scale each penalty against its natural denominator so the score
+    // reflects a coverage rate, not a raw count. Weights sum to 1.0.
+    const gapRate = requirementCount > 0 ? gapCount / requirementCount : 0;
+    const orphanRate = totalLineItems > 0 ? orphanCount / totalLineItems : 0;
     const confViolationRate =
       totalLineItems > 0 ? confFormulaViolations / totalLineItems : 0;
+    const assumptionDefectRate =
+      assumptionTotal > 0 ? assumptionDefects / assumptionTotal : 0;
+    const riskMissRate = riskExpected > 0 ? riskMissing / riskExpected : 0;
 
     const rawScore =
       1.0 -
-      gapCount * 0.04 -
-      orphanCount * 0.02 -
-      confViolationRate * 0.5 -
-      assumptionDefects * 0.02 -
-      riskMissing * 0.02;
+      gapRate * 0.45 -
+      orphanRate * 0.2 -
+      confViolationRate * 0.15 -
+      assumptionDefectRate * 0.1 -
+      riskMissRate * 0.1;
     const accuracyScore = Math.max(0, Math.min(1, rawScore));
 
     const allStatuses = [
