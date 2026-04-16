@@ -293,13 +293,116 @@ Write output to claude-artefacts/estimate-review.md following the estimate-revie
 export function getPhase4Prompt(): string {
   return `Conduct Phase 4: Gap Analysis & Revised Estimates.
 
-Based on the Phase 3 estimate review, produce:
+Phase 4 is the final safety net before proposal generation. You MUST NOT reshuffle
+Phase 3's output. You MUST independently re-derive coverage from the source TOR.
 
-1. A gap analysis mapping every TOR requirement to its estimate line item (or flagging it as MISSING).
-2. Revised estimates where gaps or misalignments were identified.
-3. A risk summary for all flagged items.
+## Mandatory Inputs (read in order, do NOT skip)
 
-Write outputs:
-- claude-artefacts/gap-analysis.md (following gap-analysis-template.md)
-- claude-artefacts/revised-estimates.md`;
+1. **Re-read the full TOR document** from the engagement's \`tor/\` folder.
+   - Use Glob to enumerate every file in \`tor/\` (PDF, DOCX, MD, TXT).
+   - Read each file end-to-end. Do not rely on Phase 1's summary of the TOR.
+   - Extract every distinct requirement clause with its identifier (section
+     number, bullet reference, or page/line anchor if unnumbered).
+2. Read the current estimate: \`estimates/optimistic-estimate.md\` (or the latest
+   versioned estimate file in \`estimates/\`).
+3. Read \`claude-artefacts/estimate-review.md\` (Phase 3 output) for context — but
+   do not treat it as authoritative.
+4. Read \`claude-artefacts/response-analysis.md\` if present (Phase 2 output).
+5. Read the proposal draft at \`claude-artefacts/technical-proposal.md\` if it
+   exists.
+
+## Required Output Structure (gap-analysis.md)
+
+Write to \`claude-artefacts/gap-analysis.md\` following \`templates/gap-analysis-template.md\`.
+The document MUST contain, in this order:
+
+### Section 1: Coverage Table
+
+A single markdown table with exactly these columns, one row per distinct TOR clause:
+
+| TOR Clause | Requirement | Estimate Line Items | Coverage Status | Remediation |
+
+- **TOR Clause**: Section/bullet reference as it appears in the source TOR.
+- **Requirement**: 1-2 sentence paraphrase of the clause.
+- **Estimate Line Items**: Comma-separated list of line item names from the
+  estimate that cover this clause. Use \`—\` if none.
+- **Coverage Status**: Exactly one of \`COVERED\`, \`PARTIAL\`, \`MISSING\`,
+  \`DEFERRED\`.
+  - \`COVERED\`: Fully addressed by one or more line items.
+  - \`PARTIAL\`: Addressed but scope is narrower than the clause or confidence
+    is low.
+  - \`MISSING\`: No line item maps to this clause.
+  - \`DEFERRED\`: Intentionally out of scope (change-request boundary). Must
+    cite the assumption that defers it.
+- **Remediation**: REQUIRED for every \`PARTIAL\` or \`MISSING\` row. Must be a
+  specific action: "Add line item X to Backend tab (est Y hrs)", "Revise line
+  item Z to include W", or "Defer via assumption: <text>". Never leave blank
+  on non-COVERED rows. For COVERED rows write \`None\`.
+
+### Section 2: Assumption Carry-Forward Verification
+
+For each assumption in the estimate, confirm:
+- It is carried forward verbatim (or tightened, not loosened) into the
+  proposal draft at \`claude-artefacts/technical-proposal.md\`.
+- It references a TOR section or Q&A response (never an internal artefact).
+- Flag any assumption that appears in the estimate but is missing from the
+  proposal, and any assumption that appears in the proposal but is not
+  grounded in the estimate.
+
+### Section 3: Risk Register Completeness
+
+Enumerate every estimate line item with \`Conf <= 4\`. Confirm each appears
+in the Risk Register with an open question and a de-risk action. Flag any
+Conf<=4 item missing from the register as a Phase 4 blocker.
+
+### Section 4: JSON Sidecar
+
+At the very end of the markdown file, append a machine-readable sidecar for
+future DB ingestion. Use exactly this fenced HTML comment format:
+
+\`\`\`
+<!-- PHASE4-COVERAGE-JSON
+{
+  "torCoverage": {
+    "rows": [
+      {
+        "torClause": "3.2.1",
+        "requirement": "Multi-site content syndication",
+        "estimateLineItems": ["Syndication service", "Content API"],
+        "coverageStatus": "COVERED",
+        "remediation": "None"
+      }
+    ],
+    "assumptionCarryForward": {
+      "verified": ["<assumption id or text>"],
+      "missingFromProposal": [],
+      "ungroundedInProposal": []
+    },
+    "riskRegister": {
+      "lowConfLineItems": ["<line item>"],
+      "missingFromRegister": []
+    }
+  }
+}
+-->
+\`\`\`
+
+The JSON must be valid and mirror Section 1 exactly (same row count, same
+coverageStatus values). Do not wrap the JSON block in markdown code fences —
+it must be a raw HTML comment so downstream writers can regex-extract it.
+
+## Revised Estimates Output
+
+Write \`claude-artefacts/revised-estimates.md\` containing only the deltas:
+new line items, revised hour ranges, and updated Conf scores derived from the
+remediation column. Do not rewrite the full estimate.
+
+## Non-Negotiables
+
+- Do NOT skip re-reading the TOR, even under context pressure.
+- Do NOT emit the coverage table without a remediation action for every
+  PARTIAL/MISSING row.
+- Do NOT change output file paths or filenames.
+- Every row's Estimate Line Items list must use names that actually exist in
+  the current estimate file (or be explicitly marked as new additions).`;
 }
