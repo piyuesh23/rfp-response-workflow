@@ -6,6 +6,9 @@
  */
 
 import { prisma } from "@/lib/db";
+import { runIntegrationTierValidation } from "./validators/integration-tier";
+import { runProposalObjectiveValidation } from "./validators/proposal-objective";
+import type { ValidatorResult } from "./validators/types";
 
 export interface ProposalValidationItem {
   category: "ASSUMPTION_COVERAGE" | "RISK_COVERAGE" | "INTEGRATION_COVERAGE" | "ARCHITECTURE_REFERENCE";
@@ -18,6 +21,18 @@ export interface ProposalValidationItem {
 export interface ProposalValidationReport {
   items: ProposalValidationItem[];
   overallStatus: "PASS" | "WARN" | "FAIL";
+  structured?: StructuredProposalSummary;
+}
+
+/**
+ * Structured validators run against DB-backed TorRequirement rows to check
+ * proposal-to-TOR alignment. Populated when engagementId resolves requirements.
+ */
+export interface StructuredProposalSummary {
+  integrationTier: ValidatorResult;
+  proposalObjective: ValidatorResult;
+  accuracyScore: number;
+  validationReportId?: string;
 }
 
 /**
@@ -304,10 +319,100 @@ export async function validateProposal(
     });
   }
 
-  // Overall status
-  const hasFail = items.some((i) => i.status === "FAIL");
-  const hasWarn = items.some((i) => i.status === "WARN");
+  // Run DB-backed structured validators (integration tier + proposal→TOR).
+  const structured = await runStructuredProposalValidators(
+    engagementId,
+    proposalMd
+  );
+
+  // Overall status incorporates structured validator outcomes.
+  const structuredFail =
+    structured?.integrationTier.status === "FAIL" ||
+    structured?.proposalObjective.status === "FAIL";
+  const structuredWarn =
+    structured?.integrationTier.status === "WARN" ||
+    structured?.proposalObjective.status === "WARN";
+
+  const hasFail = items.some((i) => i.status === "FAIL") || structuredFail;
+  const hasWarn = items.some((i) => i.status === "WARN") || structuredWarn;
   const overallStatus: "PASS" | "WARN" | "FAIL" = hasFail ? "FAIL" : hasWarn ? "WARN" : "PASS";
 
-  return { items, overallStatus };
+  return { items, overallStatus, structured };
+}
+
+/**
+ * Runs the DB-backed validators for the proposal phase and writes a
+ * ValidationReport row for phase 5.  Failure is non-fatal to the parent
+ * report — warnings are logged but the base report still returns.
+ */
+async function runStructuredProposalValidators(
+  engagementId: string,
+  proposalMd: string
+): Promise<StructuredProposalSummary | undefined> {
+  try {
+    const [integrationTier, proposalObjective] = await Promise.all([
+      runIntegrationTierValidation(engagementId, proposalMd),
+      runProposalObjectiveValidation(engagementId, proposalMd),
+    ]);
+
+    const missingRequirementCount =
+      (proposalObjective.details.missingRequirementCount as number | undefined) ?? 0;
+    const unmappedObjectiveCount =
+      (proposalObjective.details.unmappedObjectiveCount as number | undefined) ?? 0;
+    const tierMissing =
+      (integrationTier.details.missingTierCount as number | undefined) ?? 0;
+    const proposalTierMiss =
+      (integrationTier.details.proposalMissCount as number | undefined) ?? 0;
+
+    const rawScore =
+      1.0 -
+      missingRequirementCount * 0.05 -
+      unmappedObjectiveCount * 0.02 -
+      tierMissing * 0.05 -
+      proposalTierMiss * 0.02;
+    const accuracyScore = Math.max(0, Math.min(1, rawScore));
+
+    const statuses = [integrationTier.status, proposalObjective.status];
+    const overallStatus = statuses.includes("FAIL")
+      ? "FAIL"
+      : statuses.includes("WARN")
+        ? "WARN"
+        : "PASS";
+
+    let validationReportId: string | undefined;
+    try {
+      const row = await prisma.validationReport.create({
+        data: {
+          engagementId,
+          phaseNumber: "5",
+          overallStatus,
+          accuracyScore,
+          gapCount: missingRequirementCount,
+          orphanCount: unmappedObjectiveCount,
+          confFormulaViolations: 0,
+          noBenchmarkCount: 0,
+          details: JSON.parse(
+            JSON.stringify({ integrationTier, proposalObjective })
+          ),
+        },
+      });
+      validationReportId = row.id;
+    } catch (err) {
+      console.warn(
+        `[validate-proposal] ValidationReport insert failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    return {
+      integrationTier,
+      proposalObjective,
+      accuracyScore,
+      validationReportId,
+    };
+  } catch (err) {
+    console.warn(
+      `[validate-proposal] structured validators failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return undefined;
+  }
 }

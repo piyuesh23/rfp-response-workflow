@@ -46,7 +46,12 @@ export async function GET(
   const isProposalPhase = phase.phaseNumber === "5";
 
   if (isEstimatePhase) {
-    const report = await validateEstimateFull(artefact.contentMd, phase.engagement.techStack);
+    const report = await validateEstimateFull(
+      artefact.contentMd,
+      phase.engagement.techStack,
+      phase.engagement.id,
+      phase.phaseNumber
+    );
     return NextResponse.json({ type: "estimate", report });
   }
 

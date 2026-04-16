@@ -432,7 +432,12 @@ const worker = new Worker<PhaseJobData>(
       // For estimate phases: run full validation (benchmark + structural) and store report
       if (["1A", "3"].includes(phaseStr) && artefactContent) {
         try {
-          const fullReport = await validateEstimateFull(artefactContent, techStack);
+          const fullReport = await validateEstimateFull(
+            artefactContent,
+            techStack,
+            engagementId,
+            phaseStr
+          );
           // Update the artefact metadata with validation results
           const latestArtefact = await prisma.phaseArtefact.findFirst({
             where: { phaseId },

@@ -7,6 +7,12 @@
  */
 
 import { prisma } from "@/lib/db";
+import { runCoverageValidation } from "./validators/coverage";
+import { runConfFormulaValidation } from "./validators/conf-formula";
+import { runAssumptionValidation } from "./validators/assumption";
+import { runRiskRegisterValidation } from "./validators/risk-register";
+import { runIntegrationTierValidation } from "./validators/integration-tier";
+import type { ValidatorResult } from "./validators/types";
 
 export interface ValidationItem {
   task: string;
@@ -45,6 +51,25 @@ export interface FullValidationReport {
   benchmark: ValidationReport;
   structural: StructuralValidationItem[];
   overallStatus: "PASS" | "WARN" | "FAIL";
+  structured?: StructuredValidatorSummary;
+}
+
+/**
+ * Summary of the DB-driven validators run against the structured
+ * `TorRequirement` / `LineItem` / `Assumption` / `RiskRegisterEntry` rows.
+ * Only populated when `validateEstimateFull` is called with an engagementId.
+ */
+export interface StructuredValidatorSummary {
+  coverage: ValidatorResult;
+  confFormula: ValidatorResult;
+  assumption: ValidatorResult;
+  riskRegister: ValidatorResult;
+  integrationTier: ValidatorResult;
+  accuracyScore: number;
+  gapCount: number;
+  orphanCount: number;
+  confFormulaViolations: number;
+  validationReportId?: string;
 }
 
 interface ParsedLineItem {
@@ -591,10 +616,17 @@ function validateBenchmarkCoverage(report: ValidationReport): StructuralValidati
 
 /**
  * Run full validation: benchmark deviations + structural checks.
+ *
+ * When `engagementId` and `phaseNumber` are supplied, additionally runs the
+ * structured validators (coverage, conf-formula, assumption, risk register,
+ * integration tier) against the DB-backed `TorRequirement` / `LineItem`
+ * rows and writes a `ValidationReport` row summarising the run.
  */
 export async function validateEstimateFull(
   contentMd: string,
-  techStack: string
+  techStack: string,
+  engagementId?: string,
+  phaseNumber?: string
 ): Promise<FullValidationReport> {
   const benchmark = await validateEstimate(contentMd);
   const lineItems = parseLineItems(contentMd);
@@ -607,13 +639,32 @@ export async function validateEstimateFull(
     validateBenchmarkCoverage(benchmark),
   ];
 
-  // Determine overall status
+  let structured: StructuredValidatorSummary | undefined;
+  if (engagementId) {
+    structured = await runStructuredValidators(
+      engagementId,
+      benchmark,
+      phaseNumber ?? "1A"
+    );
+  }
+
   const hasFail =
     benchmark.failCount > 0 ||
-    structural.some((s) => s.status === "FAIL");
+    structural.some((s) => s.status === "FAIL") ||
+    structured?.coverage.status === "FAIL" ||
+    structured?.confFormula.status === "FAIL" ||
+    structured?.assumption.status === "FAIL" ||
+    structured?.riskRegister.status === "FAIL" ||
+    structured?.integrationTier.status === "FAIL";
+
   const hasWarn =
     benchmark.warnCount > 0 ||
-    structural.some((s) => s.status === "WARN");
+    structural.some((s) => s.status === "WARN") ||
+    structured?.coverage.status === "WARN" ||
+    structured?.confFormula.status === "WARN" ||
+    structured?.assumption.status === "WARN" ||
+    structured?.riskRegister.status === "WARN" ||
+    structured?.integrationTier.status === "WARN";
 
   const overallStatus: "PASS" | "WARN" | "FAIL" = hasFail
     ? "FAIL"
@@ -621,5 +672,112 @@ export async function validateEstimateFull(
       ? "WARN"
       : "PASS";
 
-  return { benchmark, structural, overallStatus };
+  return { benchmark, structural, overallStatus, structured };
+}
+
+/**
+ * Runs the structured validators and writes a ValidationReport row.
+ * Swallows all errors — a validator blow-up must not block the surrounding
+ * benchmark+structural report.
+ */
+async function runStructuredValidators(
+  engagementId: string,
+  benchmark: ValidationReport,
+  phaseNumber: string
+): Promise<StructuredValidatorSummary | undefined> {
+  try {
+    const [coverage, confFormula, assumption, riskRegister, integrationTier] =
+      await Promise.all([
+        runCoverageValidation(engagementId),
+        runConfFormulaValidation(engagementId),
+        runAssumptionValidation(engagementId),
+        runRiskRegisterValidation(engagementId),
+        runIntegrationTierValidation(engagementId),
+      ]);
+
+    const gapCount = (coverage.details.gapCount as number | undefined) ?? 0;
+    const orphanCount =
+      (coverage.details.orphanCount as number | undefined) ?? 0;
+    const confFormulaViolations =
+      (confFormula.details.violationCount as number | undefined) ?? 0;
+    const totalLineItems =
+      (confFormula.details.totalLineItems as number | undefined) ?? 0;
+    const assumptionDefects =
+      (assumption.details.defectCount as number | undefined) ?? 0;
+    const riskMissing =
+      (riskRegister.details.missingCount as number | undefined) ?? 0;
+
+    const confViolationRate =
+      totalLineItems > 0 ? confFormulaViolations / totalLineItems : 0;
+
+    const rawScore =
+      1.0 -
+      gapCount * 0.04 -
+      orphanCount * 0.02 -
+      confViolationRate * 0.5 -
+      assumptionDefects * 0.02 -
+      riskMissing * 0.02;
+    const accuracyScore = Math.max(0, Math.min(1, rawScore));
+
+    const allStatuses = [
+      coverage.status,
+      confFormula.status,
+      assumption.status,
+      riskRegister.status,
+      integrationTier.status,
+    ];
+    const overallStatus = allStatuses.includes("FAIL")
+      ? "FAIL"
+      : allStatuses.includes("WARN")
+        ? "WARN"
+        : "PASS";
+
+    let validationReportId: string | undefined;
+    try {
+      const row = await prisma.validationReport.create({
+        data: {
+          engagementId,
+          phaseNumber,
+          overallStatus,
+          accuracyScore,
+          gapCount,
+          orphanCount,
+          confFormulaViolations,
+          noBenchmarkCount: benchmark.noBenchmarkCount,
+          details: JSON.parse(
+            JSON.stringify({
+              coverage,
+              confFormula,
+              assumption,
+              riskRegister,
+              integrationTier,
+            })
+          ),
+        },
+      });
+      validationReportId = row.id;
+    } catch (err) {
+      console.warn(
+        `[validate-estimate] ValidationReport insert failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    return {
+      coverage,
+      confFormula,
+      assumption,
+      riskRegister,
+      integrationTier,
+      accuracyScore,
+      gapCount,
+      orphanCount,
+      confFormulaViolations,
+      validationReportId,
+    };
+  } catch (err) {
+    console.warn(
+      `[validate-estimate] structured validators failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return undefined;
+  }
 }
