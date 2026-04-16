@@ -55,6 +55,95 @@ const worker = new Worker<PhaseJobData>(
         select: { engagementType: true, clientName: true },
       });
 
+      // Phase 5 hard-fail gate: proposal generation requires a pre-approved
+      // solution-architecture.md (drafted at Phase 1 v0, revised by Phase 1A/3).
+      // If it is missing we do NOT call the agent — we mark the phase FAILED and
+      // write a PROPOSAL_BLOCKED.md artefact explaining the prerequisite.
+      if (String(phaseNumber) === "5") {
+        const solutionOnDisk = await fs
+          .readFile(
+            `/data/engagements/${engagementId}/claude-artefacts/solution-architecture.md`,
+            "utf-8"
+          )
+          .then((c) => (c.trim().length > 100 ? c : null))
+          .catch(() => null);
+
+        let solutionInDb: { id: string } | null = null;
+        if (!solutionOnDisk) {
+          solutionInDb = await prisma.phaseArtefact.findFirst({
+            where: {
+              phase: { engagementId },
+              OR: [
+                { label: { contains: "solution-architecture", mode: "insensitive" } },
+                { contentMd: { contains: "solution-architecture.md", mode: "insensitive" } },
+              ],
+            },
+            select: { id: true },
+          });
+        }
+
+        if (!solutionOnDisk && !solutionInDb) {
+          const errorMessage =
+            "Missing solution-architecture.md — required by Phase 5";
+          console.error(
+            `[phase-runner] Phase 5 blocked for engagement ${engagementId}: ${errorMessage}`
+          );
+
+          const blockedContent = [
+            "# Proposal Blocked — Missing Prerequisite",
+            "",
+            "The Phase 5 proposal generator requires `claude-artefacts/solution-architecture.md` as input, but this file was not found in the engagement workspace or database.",
+            "",
+            "## Why this is required",
+            "",
+            "The solution architecture document is drafted in Phase 1 (v0) and revised by Phase 1A and Phase 3. It is the pre-approved technical foundation the proposal expands into client-ready narrative.",
+            "",
+            "## Remediation",
+            "",
+            "Re-run Phase 1 (or Phase 1A / Phase 3) to produce `claude-artefacts/solution-architecture.md`, then re-queue Phase 5.",
+            "",
+            `_Error:_ ${errorMessage}`,
+            "",
+          ].join("\n");
+
+          await prisma.phaseArtefact.create({
+            data: {
+              phaseId,
+              artefactType: ArtefactType.PROPOSAL,
+              version: 1,
+              label: "PROPOSAL_BLOCKED.md",
+              contentMd: blockedContent,
+              metadata: JSON.parse(
+                JSON.stringify({ blocked: true, reason: errorMessage })
+              ),
+            },
+          });
+
+          await prisma.phase.update({
+            where: { id: phaseId },
+            data: {
+              status: PhaseStatus.FAILED,
+              completedAt: new Date(),
+            },
+          });
+
+          try {
+            await sendNotification({
+              type: "phase_failed",
+              engagementId,
+              clientName: engagementData?.clientName ?? engagementId,
+              phaseNumber,
+              phaseLabel: "Phase 5",
+              message: errorMessage,
+            });
+          } catch {
+            // Notification failure must not break the worker
+          }
+
+          return;
+        }
+      }
+
       let config = getPhaseConfig(
         String(phaseNumber),
         techStack,
@@ -105,7 +194,7 @@ const worker = new Worker<PhaseJobData>(
       // Map phases to their primary output file paths (in priority order)
       const PHASE_OUTPUT_FILES: Record<string, string[]> = {
         "0": ["research/customer-research.md"],
-        "1": ["claude-artefacts/tor-assessment.md"],
+        "1": ["claude-artefacts/tor-assessment.md", "claude-artefacts/solution-architecture.md"],
         "1A": ["estimates/optimistic-estimate.md", "claude-artefacts/solution-architecture.md"],
         "2": ["claude-artefacts/response-analysis.md"],
         "3": ["estimates/revised-estimate.md", "estimates/optimistic-estimate.md"],
@@ -416,24 +505,33 @@ const worker = new Worker<PhaseJobData>(
         }
       }
 
-      // For Phase 1A: also persist solution-architecture.md as a separate artefact
-      if (phaseStr === "1A") {
+      // For Phase 1 / 1A / 3: also persist solution-architecture.md as a separate artefact.
+      // Phase 1 emits a v0 draft (HAS_RESPONSE + NO_RESPONSE paths), Phase 1A/3 revise it.
+      if (phaseStr === "1" || phaseStr === "1A" || phaseStr === "3") {
         try {
           const solutionPath = `${workDir}/claude-artefacts/solution-architecture.md`;
           const solutionMd = await fs.readFile(solutionPath, "utf-8");
           if (solutionMd.trim().length > 100) {
+            const latestSolution = await prisma.phaseArtefact.findFirst({
+              where: { phaseId, artefactType: ArtefactType.RESEARCH },
+              orderBy: { version: "desc" },
+              select: { version: true },
+            });
+            const nextSolutionVersion = (latestSolution?.version ?? 0) + 1;
             await prisma.phaseArtefact.create({
               data: {
                 phaseId,
                 artefactType: ArtefactType.RESEARCH,
-                version: 1,
+                version: nextSolutionVersion,
+                label: "solution-architecture.md",
                 contentMd: solutionMd,
               },
             });
-            console.log(`[phase-runner] Phase ${phaseNumber} — persisted solution-architecture.md as artefact`);
+            console.log(`[phase-runner] Phase ${phaseNumber} — persisted solution-architecture.md as artefact (v${nextSolutionVersion})`);
           }
         } catch {
-          // Solution doc may not exist (e.g., discovery engagements) — non-fatal
+          // Solution doc may not exist (e.g., discovery engagements at Phase 1A) — non-fatal here.
+          // The hard-fail gate for Phase 5 lives below.
         }
       }
 
