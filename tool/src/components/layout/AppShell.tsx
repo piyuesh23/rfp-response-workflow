@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sheet"
 import { SidebarContent } from "@/components/layout/Sidebar"
 import { Header, type BreadcrumbItem } from "@/components/layout/Header"
+import { ChatDrawer } from "@/components/chat/ChatDrawer"
 import { useCurrentUser } from "@/hooks/useCurrentUser"
 
 interface AppShellProps {
@@ -57,6 +58,9 @@ export function AppShell({ children, breadcrumbs, actions }: AppShellProps) {
           {children}
         </main>
       </div>
+
+      {/* Scoped RAG chat drawer — self-hides on routes without scope */}
+      <ChatDrawer />
     </div>
   )
 }
