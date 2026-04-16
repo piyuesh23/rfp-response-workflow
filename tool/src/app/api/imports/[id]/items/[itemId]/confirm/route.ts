@@ -13,7 +13,38 @@ import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
 import { copyMasterTemplate } from "@/lib/template-populator";
 import { extractAssumptions, extractRiskRegister } from "@/lib/ai/metadata-extractor";
+import { indexStructuredRow } from "@/lib/rag/store";
 import ExcelJS from "exceljs";
+
+// --------------------------------------------------------------------------
+// RAG indexing helper — non-fatal; never allow indexing errors to fail import.
+// --------------------------------------------------------------------------
+const RAG_MIN_CONTENT_LEN = 50;
+
+async function safeIndexStructuredRow(params: {
+  engagementId: string | null;
+  sourceType: string;
+  sourceId: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  if (!params.summary || params.summary.trim().length < RAG_MIN_CONTENT_LEN) return;
+  try {
+    await indexStructuredRow({
+      engagementId: params.engagementId ?? undefined,
+      sourceType: params.sourceType,
+      sourceId: params.sourceId,
+      summary: params.summary,
+      metadata: params.metadata,
+    });
+  } catch (err) {
+    console.warn(
+      `[rag-index] Failed to index ${params.sourceType} ${params.sourceId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -359,6 +390,42 @@ export async function POST(
             data: lineItemPayload,
             skipDuplicates: true,
           });
+
+          // RAG indexing for LineItem rows (non-fatal).
+          try {
+            const insertedLineItems = await prisma.lineItem.findMany({
+              where: { engagementId: engagement.id },
+              select: {
+                id: true,
+                tab: true,
+                task: true,
+                description: true,
+                hours: true,
+                conf: true,
+                integrationTier: true,
+                torRefs: { select: { clauseRef: true } },
+              },
+            });
+            for (const li of insertedLineItems) {
+              const refs = li.torRefs.map((t) => t.clauseRef).join(",");
+              await safeIndexStructuredRow({
+                engagementId: engagement.id,
+                sourceType: "LINE_ITEM",
+                sourceId: li.id,
+                summary: `${li.tab}/${li.task}: ${li.description} (${li.hours}h, Conf ${li.conf}, TOR refs: ${refs})`,
+                metadata: {
+                  tab: li.tab,
+                  hours: li.hours,
+                  conf: li.conf,
+                  integrationTier: li.integrationTier,
+                },
+              });
+            }
+          } catch (ragErr) {
+            console.warn(
+              `[rag-index] LineItem batch index failed: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+            );
+          }
         }
       } catch (err) {
         console.warn(
@@ -418,6 +485,33 @@ export async function POST(
             impactIfWrong: a.impactIfWrong,
           })),
         });
+
+        // RAG indexing for Assumption rows (non-fatal).
+        try {
+          const insertedAssumptions = await prisma.assumption.findMany({
+            where: { engagementId: engagement.id },
+            select: {
+              id: true,
+              text: true,
+              torReference: true,
+              impactIfWrong: true,
+              status: true,
+            },
+          });
+          for (const a of insertedAssumptions) {
+            await safeIndexStructuredRow({
+              engagementId: engagement.id,
+              sourceType: "ASSUMPTION",
+              sourceId: a.id,
+              summary: `${a.text} | Impact: ${a.impactIfWrong}`,
+              metadata: { torReference: a.torReference, status: a.status },
+            });
+          }
+        } catch (ragErr) {
+          console.warn(
+            `[rag-index] Assumption batch index failed: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+          );
+        }
       }
     } catch (err) {
       console.warn(`[import-confirm] XLSX assumptions extraction failed: ${err instanceof Error ? err.message : String(err)}`);
