@@ -5,6 +5,11 @@ import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
 import { extractMetadataForPhase, extractRiskRegister, extractAssumptions } from "@/lib/ai/metadata-extractor";
 import { validateEstimateFull } from "@/lib/ai/validate-estimate";
 import { validateProposal } from "@/lib/ai/validate-proposal";
+import {
+  extractPhase1Sidecar,
+  extractEstimateSidecar,
+  normalizeClauseRef,
+} from "@/lib/ai/sidecar-extractors";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
@@ -188,6 +193,144 @@ const worker = new Worker<PhaseJobData>(
           }
         } catch (err) {
           console.warn(`[phase-runner] Phase ${phaseNumber} — failed to extract risks/assumptions: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // Phase 1: ingest the TOR requirements sidecar into TorRequirement rows.
+      if (phaseStr === "1" && artefactContent) {
+        try {
+          const existingCount = await prisma.torRequirement.count({
+            where: { engagementId },
+          });
+          if (existingCount > 0) {
+            console.log(
+              `[phase-runner] Phase 1 — TorRequirement rows already exist (${existingCount}); skipping sidecar insert (idempotent).`
+            );
+          } else {
+            const sidecar = extractPhase1Sidecar(artefactContent);
+            if (!sidecar) {
+              console.warn(
+                `[phase-runner] Phase 1 — no valid PHASE1-REQUIREMENTS-JSON sidecar found; skipping TorRequirement insert.`
+              );
+            } else if (sidecar.requirements.length === 0) {
+              console.warn(
+                `[phase-runner] Phase 1 — sidecar parsed but contained 0 requirements.`
+              );
+            } else {
+              const seen = new Set<string>();
+              const rows = sidecar.requirements
+                .map((r) => ({
+                  engagementId,
+                  clauseRef: r.clauseRef,
+                  normalizedClauseRef: normalizeClauseRef(r.clauseRef),
+                  title: r.title,
+                  description: r.description ?? "",
+                  domain: r.domain,
+                  clarityRating: r.clarityRating,
+                  sourcePhaseId: phaseId,
+                }))
+                .filter((row) => {
+                  if (seen.has(row.normalizedClauseRef)) return false;
+                  seen.add(row.normalizedClauseRef);
+                  return true;
+                });
+              if (rows.length > 0) {
+                await prisma.torRequirement.createMany({ data: rows });
+                console.log(
+                  `[phase-runner] Phase 1 — inserted ${rows.length} TorRequirement rows for engagement ${engagementId}.`
+                );
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Phase 1 — TorRequirement sidecar ingest failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+
+      // Phase 1A / Phase 3: ingest the estimate line-item sidecar and link to TorRequirements.
+      if ((phaseStr === "1A" || phaseStr === "3") && artefactContent) {
+        try {
+          const sidecar = extractEstimateSidecar(artefactContent);
+          if (!sidecar) {
+            console.warn(
+              `[phase-runner] Phase ${phaseStr} — no valid ESTIMATE-LINEITEMS-JSON sidecar; skipping LineItem insert.`
+            );
+          } else if (sidecar.lineItems.length === 0) {
+            console.warn(
+              `[phase-runner] Phase ${phaseStr} — sidecar parsed but contained 0 line items.`
+            );
+          } else {
+            // Build a lookup of existing TorRequirement rows for this engagement keyed by normalizedClauseRef.
+            const existingRequirements = await prisma.torRequirement.findMany({
+              where: { engagementId },
+              select: { id: true, normalizedClauseRef: true },
+            });
+            const reqByNormalized = new Map<string, string>();
+            for (const r of existingRequirements) {
+              reqByNormalized.set(r.normalizedClauseRef, r.id);
+            }
+
+            // Replace existing line items for this engagement to keep insert idempotent per phase run.
+            await prisma.lineItem.deleteMany({ where: { engagementId } });
+
+            let inserted = 0;
+            let linked = 0;
+            let unresolved = 0;
+            for (const li of sidecar.lineItems) {
+              const torIds: string[] = [];
+              const missing: string[] = [];
+              for (const ref of li.torClauseRefs) {
+                const norm = normalizeClauseRef(ref);
+                const id = reqByNormalized.get(norm);
+                if (id) torIds.push(id);
+                else missing.push(ref);
+              }
+              if (missing.length > 0) {
+                unresolved += missing.length;
+                console.warn(
+                  `[phase-runner] Phase ${phaseStr} — LineItem "${li.task}" references unknown clauseRefs: ${missing.join(", ")}`
+                );
+              }
+
+              const orphanJustification =
+                torIds.length === 0
+                  ? li.orphanJustification && li.orphanJustification.trim().length > 0
+                    ? li.orphanJustification
+                    : "No TOR clause reference provided."
+                  : null;
+
+              await prisma.lineItem.create({
+                data: {
+                  engagementId,
+                  tab: li.tab,
+                  task: li.task,
+                  description: li.description ?? "",
+                  hours: li.hours,
+                  conf: li.conf,
+                  lowHrs: li.lowHrs,
+                  highHrs: li.highHrs,
+                  benchmarkRef: li.benchmarkRef ?? null,
+                  integrationTier: li.integrationTier ?? null,
+                  orphanJustification,
+                  sourcePhaseId: phaseId,
+                  ...(torIds.length > 0
+                    ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
+                    : {}),
+                },
+              });
+              inserted += 1;
+              linked += torIds.length;
+            }
+            console.log(
+              `[phase-runner] Phase ${phaseStr} — inserted ${inserted} LineItem rows (${linked} TOR links, ${unresolved} unresolved clauseRefs).`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Phase ${phaseStr} — LineItem sidecar ingest failed: ${err instanceof Error ? err.message : String(err)}`
+          );
         }
       }
 
