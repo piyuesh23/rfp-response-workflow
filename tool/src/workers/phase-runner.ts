@@ -16,7 +16,10 @@ import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
 import { indexArtefact, indexStructuredRow } from "@/lib/rag/store";
 import { aiLimiter } from "@/lib/ai/rate-limiter";
+import { extractTextFromPdf } from "@/lib/pdf-extractor";
+import { extractTextFromDocx } from "@/lib/docx-extractor";
 import * as fs from "fs/promises";
+import * as path from "path";
 
 // --------------------------------------------------------------------------
 // RAG indexing helpers (non-fatal; a failed index must NEVER block the phase).
@@ -72,6 +75,84 @@ async function safeIndexStructuredRow(params: {
         err instanceof Error ? err.message : String(err)
       }`
     );
+  }
+}
+
+/** Max chunks per TOR file — prevents very long documents from flooding the index. */
+const TOR_MAX_CHUNKS = 40;
+/** Max chars to send to indexArtefact for a single TOR file (≈ TOR_MAX_CHUNKS × 500). */
+const TOR_MAX_CHARS = TOR_MAX_CHUNKS * 500;
+
+/** TOR-related doc types that should be indexed as TOR_SOURCE. */
+const TOR_SOURCE_TYPES = new Set(["TOR", "ADDENDUM", "ANNEXURE", "PREREQUISITES", "RESPONSE_FORMAT"]);
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Index all TOR/addendum files from the engagement's tor/ directory.
+ * Non-fatal — errors are logged but never thrown.
+ */
+async function indexTorSourceFiles(engagementId: string, workDir: string): Promise<void> {
+  const torDir = path.join(workDir, "tor");
+  let files: string[];
+  try {
+    files = await fs.readdir(torDir);
+  } catch {
+    // No tor/ directory — nothing to index.
+    return;
+  }
+
+  for (const filename of files) {
+    const lower = filename.toLowerCase();
+    if (!lower.endsWith(".pdf") && !lower.endsWith(".docx")) continue;
+
+    try {
+      const filePath = path.join(torDir, filename);
+      const buffer = await fs.readFile(filePath);
+      let text = "";
+      let pageCount: number | undefined;
+
+      if (lower.endsWith(".pdf")) {
+        const result = await extractTextFromPdf(buffer);
+        text = result.text;
+        pageCount = result.pageCount;
+      } else if (lower.endsWith(".docx")) {
+        const result = await extractTextFromDocx(buffer);
+        text = result.text;
+      }
+
+      if (text.trim().length < RAG_MIN_CONTENT_LEN) continue;
+
+      // Cap content length to limit chunk count.
+      const cappedContent = text.length > TOR_MAX_CHARS ? text.slice(0, TOR_MAX_CHARS) : text;
+      const sourceId = `tor-${slugify(filename)}`;
+
+      await aiLimiter.execute(() =>
+        indexArtefact({
+          engagementId,
+          sourceType: "TOR_SOURCE",
+          sourceId,
+          content: cappedContent,
+          metadata: {
+            filename,
+            mimeType: lower.endsWith(".pdf") ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ...(pageCount != null ? { pageCount } : {}),
+          },
+        })
+      );
+      console.log(`[rag-index] Indexed TOR_SOURCE: ${filename} (${cappedContent.length} chars)`);
+    } catch (err) {
+      console.warn(
+        `[rag-index] Failed to index TOR source ${filename}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 }
 
@@ -242,6 +323,22 @@ const worker = new Worker<PhaseJobData>(
         tool: "Phase Runner",
         message: "AI agent completed. Processing artefacts...",
       });
+
+      // Index raw TOR/addendum source documents for RAG chatbot retrieval.
+      // Runs after Phase 1 (when syncTorFiles has populated workDir/tor/).
+      // Idempotent: indexArtefact deletes prior chunks before inserting.
+      if (String(phaseNumber) === "1") {
+        const torWorkDir = `/data/engagements/${engagementId}`;
+        try {
+          await indexTorSourceFiles(engagementId, torWorkDir);
+        } catch (err) {
+          console.warn(
+            `[rag-index] TOR source indexing failed for engagement ${engagementId}: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        }
+      }
 
       // Persist artefact if the phase produced content
       // The agentic loop's finalContent is Claude's summary text.

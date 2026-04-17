@@ -13,7 +13,7 @@ import { extractTextFromPdf } from "@/lib/pdf-extractor";
 import { extractTextFromDocx } from "@/lib/docx-extractor";
 import { copyMasterTemplate } from "@/lib/template-populator";
 import { extractAssumptions, extractRiskRegister } from "@/lib/ai/metadata-extractor";
-import { indexStructuredRow } from "@/lib/rag/store";
+import { indexArtefact, indexStructuredRow } from "@/lib/rag/store";
 import ExcelJS from "exceljs";
 
 // --------------------------------------------------------------------------
@@ -736,6 +736,27 @@ export async function POST(
                     : undefined,
                 },
               });
+
+              // Index raw TOR-related source documents for RAG chatbot retrieval.
+              const TOR_IMPORT_TYPES = new Set(["TOR", "ADDENDUM", "ANNEXURE", "PREREQUISITES", "RESPONSE_FORMAT"]);
+              if (TOR_IMPORT_TYPES.has(effectiveType) && extractedText.trim().length >= RAG_MIN_CONTENT_LEN) {
+                try {
+                  const torSourceId = `tor-import-${fileMeta.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+                  const maxChars = 40 * 500; // Cap at ~40 chunks
+                  const cappedText = extractedText.length > maxChars ? extractedText.slice(0, maxChars) : extractedText;
+                  await indexArtefact({
+                    engagementId: engagement.id,
+                    sourceType: "TOR_SOURCE",
+                    sourceId: torSourceId,
+                    content: cappedText,
+                    metadata: { filename: fileMeta.name, importSource: "ZIP" },
+                  });
+                } catch (ragErr) {
+                  console.warn(
+                    `[rag-index] Failed to index TOR_SOURCE for ${fileMeta.name}: ${ragErr instanceof Error ? ragErr.message : String(ragErr)}`
+                  );
+                }
+              }
             }
           } catch (artefactErr) {
             console.warn(
