@@ -21,6 +21,9 @@
  */
 import { prisma } from "@/lib/db";
 import { indexArtefact, indexStructuredRow, deleteChunksFor } from "@/lib/rag/store";
+import { listObjects, downloadFile } from "@/lib/storage";
+import { extractTextFromPdf } from "@/lib/pdf-extractor";
+import { extractTextFromDocx } from "@/lib/docx-extractor";
 
 const MIN_CONTENT_LEN = 50;
 
@@ -278,6 +281,154 @@ async function backfillBenchmarks(): Promise<void> {
   }
 }
 
+/** Max chars per TOR/QA source file to prevent chunk explosion (~40 chunks). */
+const TOR_MAX_CHARS = 40 * 500;
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Check whether a (sourceType, sourceId) pair already has chunks indexed.
+ */
+async function isAlreadyIndexed(sourceType: string, sourceId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ exists: number }[]>`
+    SELECT 1 AS "exists" FROM "EmbeddingChunk"
+    WHERE "sourceType" = ${sourceType} AND "sourceId" = ${sourceId}
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Index raw TOR/addendum/annexure source documents from MinIO for one engagement.
+ */
+async function backfillTorSources(engagementId: string): Promise<void> {
+  const prefix = `engagements/${engagementId}/tor/`;
+  let keys: string[];
+  try {
+    keys = await listObjects(prefix);
+  } catch {
+    return; // No tor/ prefix — skip.
+  }
+
+  for (const key of keys) {
+    const filename = key.split("/").pop() ?? key;
+    const lower = filename.toLowerCase();
+    if (!lower.endsWith(".pdf") && !lower.endsWith(".docx")) continue;
+
+    const sourceId = `tor-${slugify(filename)}`;
+    if (await isAlreadyIndexed("TOR_SOURCE", sourceId)) {
+      console.log(`[backfill] TOR_SOURCE ${sourceId} already indexed — skipping`);
+      continue;
+    }
+
+    try {
+      const buffer = await downloadFile(key);
+      let text = "";
+      let pageCount: number | undefined;
+
+      if (lower.endsWith(".pdf")) {
+        const result = await extractTextFromPdf(buffer);
+        text = result.text;
+        pageCount = result.pageCount;
+      } else {
+        const result = await extractTextFromDocx(buffer);
+        text = result.text;
+      }
+
+      if (text.trim().length < MIN_CONTENT_LEN) continue;
+
+      const cappedContent = text.length > TOR_MAX_CHARS ? text.slice(0, TOR_MAX_CHARS) : text;
+      await indexArtefact({
+        engagementId,
+        sourceType: "TOR_SOURCE",
+        sourceId,
+        content: cappedContent,
+        metadata: {
+          filename,
+          mimeType: lower.endsWith(".pdf")
+            ? "application/pdf"
+            : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          ...(pageCount != null ? { pageCount } : {}),
+        },
+      });
+      bump();
+      console.log(`[backfill] TOR_SOURCE indexed: ${filename} (${cappedContent.length} chars)`);
+    } catch (err) {
+      console.warn(
+        `[backfill] TOR_SOURCE ${filename} failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+}
+
+/**
+ * Index Q&A response documents from MinIO for one engagement.
+ */
+async function backfillQaSources(engagementId: string): Promise<void> {
+  const prefix = `engagements/${engagementId}/responses_qna/`;
+  let keys: string[];
+  try {
+    keys = await listObjects(prefix);
+  } catch {
+    return; // No responses_qna/ prefix — skip.
+  }
+
+  for (const key of keys) {
+    const filename = key.split("/").pop() ?? key;
+    const lower = filename.toLowerCase();
+    if (!lower.endsWith(".pdf") && !lower.endsWith(".docx")) continue;
+
+    const sourceId = `qa-${slugify(filename)}`;
+    if (await isAlreadyIndexed("QA_SOURCE", sourceId)) {
+      console.log(`[backfill] QA_SOURCE ${sourceId} already indexed — skipping`);
+      continue;
+    }
+
+    try {
+      const buffer = await downloadFile(key);
+      let text = "";
+      let pageCount: number | undefined;
+
+      if (lower.endsWith(".pdf")) {
+        const result = await extractTextFromPdf(buffer);
+        text = result.text;
+        pageCount = result.pageCount;
+      } else {
+        const result = await extractTextFromDocx(buffer);
+        text = result.text;
+      }
+
+      if (text.trim().length < MIN_CONTENT_LEN) continue;
+
+      const cappedContent = text.length > TOR_MAX_CHARS ? text.slice(0, TOR_MAX_CHARS) : text;
+      await indexArtefact({
+        engagementId,
+        sourceType: "QA_SOURCE",
+        sourceId,
+        content: cappedContent,
+        metadata: {
+          filename,
+          mimeType: lower.endsWith(".pdf")
+            ? "application/pdf"
+            : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          ...(pageCount != null ? { pageCount } : {}),
+        },
+      });
+      bump();
+      console.log(`[backfill] QA_SOURCE indexed: ${filename} (${cappedContent.length} chars)`);
+    } catch (err) {
+      console.warn(
+        `[backfill] QA_SOURCE ${filename} failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+}
+
 async function main(): Promise<void> {
   if (!process.env.OPENAI_API_KEY) {
     console.error(
@@ -298,6 +449,24 @@ async function main(): Promise<void> {
     } catch (err) {
       console.warn(
         `[backfill] engagement ${e.id} failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    // Index raw TOR source documents from MinIO.
+    try {
+      await backfillTorSources(e.id);
+    } catch (err) {
+      console.warn(
+        `[backfill] TOR_SOURCE for ${e.id} failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    // Index Q&A response source documents from MinIO.
+    try {
+      await backfillQaSources(e.id);
+    } catch (err) {
+      console.warn(
+        `[backfill] QA_SOURCE for ${e.id} failed: ${err instanceof Error ? err.message : String(err)}`
       );
     }
   }
