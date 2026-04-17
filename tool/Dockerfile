@@ -46,6 +46,8 @@ COPY --from=builder /app/templates ./templates
 COPY <<'EOF' /app/entrypoint.sh
 #!/bin/sh
 set -e
+echo "Enabling pgvector extension..."
+echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --stdin 2>/dev/null || echo "pgvector enable skipped (extension may already exist or require superuser)"
 echo "Running prisma db push..."
 npx prisma db push
 echo "Seeding benchmarks (idempotent)..."
