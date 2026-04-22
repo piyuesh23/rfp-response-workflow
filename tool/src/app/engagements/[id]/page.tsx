@@ -22,6 +22,7 @@ import {
   isPhasePathSkipped,
 } from "@/lib/phase-chain"
 import { usePhaseNotifications } from "@/hooks/usePhaseNotifications"
+import { ProgressStream } from "@/components/phase/ProgressStream"
 import type { WorkflowPath } from "@/lib/phase-chain"
 
 interface TemplateStatus {
@@ -224,19 +225,8 @@ export default function EngagementOverviewPage() {
     [id, engagement?.outcome, fetchEngagement]
   )
 
-  // SSE auto-refresh for running phases
+  // ProgressStream renders its own SSE per running phase and calls fetchEngagement on complete/error.
   const runningPhase = engagement?.phases.find((p) => p.status === "RUNNING") ?? null
-  React.useEffect(() => {
-    if (!runningPhase) return
-
-    const eventSource = new EventSource(`/api/phases/${runningPhase.id}/sse`)
-    const refresh = () => { eventSource.close(); fetchEngagement() }
-
-    eventSource.addEventListener("done", refresh)
-    eventSource.addEventListener("error", refresh)
-
-    return () => { eventSource.close() }
-  }, [runningPhase?.id, fetchEngagement])
 
   // Polling while any phase is running — updates templateStatus and other engagement data
   const anyRunning = (engagement?.phases ?? []).some((p) => p.status === "RUNNING")
@@ -391,18 +381,20 @@ export default function EngagementOverviewPage() {
           onPhaseClick={(phaseNumber) => router.push(`/engagements/${id}/phases/${phaseNumber}`)}
         />
 
-        {/* Running phase indicator */}
+        {/* Running phase live log stream */}
         {runningPhases.map((p) => (
-          <div key={p.id} className="rounded-xl border border-blue-200 dark:border-blue-800 bg-card p-4 ring-1 ring-foreground/10">
-            <div className="flex items-start gap-2">
-              <Loader2 className="size-4 text-blue-500 shrink-0 mt-0.5 animate-spin" />
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-                  Phase {p.phaseNumber}: {getPhaseLabel(p.phaseNumber)} is running...
-                </p>
-                <p className="text-xs text-muted-foreground">The agent is generating artefacts. This updates automatically.</p>
-              </div>
+          <div key={p.id} className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 px-1">
+              <Loader2 className="size-4 text-blue-500 shrink-0 animate-spin" />
+              <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                Phase {p.phaseNumber}: {getPhaseLabel(p.phaseNumber)} is running...
+              </p>
             </div>
+            <ProgressStream
+              phaseId={p.id}
+              onComplete={fetchEngagement}
+              onError={fetchEngagement}
+            />
           </div>
         ))}
 
