@@ -10,6 +10,8 @@ interface InferredFields {
   techStack: string | null;
   engagementType: string | null;
   industry: string | null;
+  projectDescription: string | null;
+  legacyPlatform: string | null;
   confidence: {
     clientName: number;
     projectName: number;
@@ -26,6 +28,7 @@ const VALID_TECH_STACKS = [
   "WORDPRESS_NEXTJS",
   "NEXTJS",
   "REACT",
+  "OTHER",
 ];
 
 const VALID_ENGAGEMENT_TYPES = [
@@ -80,8 +83,12 @@ export async function POST(request: NextRequest) {
 3. **techStack** — The primary technology platform. Must be one of: ${VALID_TECH_STACKS.join(", ")}. Infer from technology requirements, platform mentions, CMS references. If Drupal is mentioned with a decoupled/headless frontend using Next.js or React, use DRUPAL_NEXTJS. If WordPress with Next.js frontend, use WORDPRESS_NEXTJS.
 4. **engagementType** — The type of work. Must be one of: ${VALID_ENGAGEMENT_TYPES.join(", ")}. NEW_BUILD = greenfield project. MIGRATION = moving from one platform to another. REDESIGN = rebuilding/redesigning existing site. ENHANCEMENT = adding features to existing system. DISCOVERY = research/assessment only.
 5. **industry** — The client's industry/domain. Must be one of: ${VALID_INDUSTRIES.join(", ")}. Infer from the client's organization type, the project domain, or explicit industry references in the document.
+6. **projectDescription** — A 2-3 sentence paraphrase in your own words of what this project is about (goals, desired outcome, scope in plain language). Neutral tone, no marketing fluff. Return null only if the TOR is too sparse to paraphrase.
+7. **legacyPlatform** — If (and only if) the TOR names an existing/current platform being migrated away from or redesigned (e.g. "current site runs on Sitecore 9.2", "migrating from AEM 6.5"), return a short free-text description (platform + version + hosting if stated). Otherwise return null. Do not invent a legacy platform for greenfield projects.
 
-For each field, also provide a confidence score from 0.0 to 1.0.
+Use techStack="OTHER" if the TOR clearly specifies a stack outside the provided enum (e.g. Laravel, Django, AEM, Sitecore, Magento, Shopify, custom PHP). Put the detail in projectDescription.
+
+For each field that has a confidence score (clientName, projectName, techStack, engagementType, industry), provide a confidence score from 0.0 to 1.0.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -90,6 +97,8 @@ Respond ONLY with valid JSON in this exact format:
   "techStack": "ENUM_VALUE or null",
   "engagementType": "ENUM_VALUE or null",
   "industry": "ENUM_VALUE or null",
+  "projectDescription": "string or null",
+  "legacyPlatform": "string or null",
   "confidence": {
     "clientName": 0.0,
     "projectName": 0.0,
@@ -102,7 +111,7 @@ Respond ONLY with valid JSON in this exact format:
   try {
     const response = await anthropic.messages.create({
       model: SONNET_MODEL,
-      max_tokens: 300,
+      max_tokens: 700,
       system: systemPrompt,
       messages: [
         {

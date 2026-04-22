@@ -10,6 +10,7 @@ export const techStackLabels: Record<string, string> = {
   WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
+  OTHER: "Other — describe below",
 };
 
 export const engagementTypeLabels: Record<string, string> = {

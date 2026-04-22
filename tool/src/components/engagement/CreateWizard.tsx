@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -33,7 +34,11 @@ interface WizardFormData {
   industry: Industry | ""
   projectName: string
   techStack: TechStack | ""
+  techStackCustom: string
   engagementType: EngagementType | ""
+  projectDescription: string
+  legacyPlatform: string
+  legacyPlatformUrl: string
 }
 
 interface InferenceResult {
@@ -42,6 +47,8 @@ interface InferenceResult {
   techStack: string | null
   engagementType: string | null
   industry: string | null
+  projectDescription: string | null
+  legacyPlatform: string | null
   confidence: {
     clientName: number
     projectName: number
@@ -249,7 +256,14 @@ function Step2Details({ data, onChange, confidence, accounts, onBack, onNext }: 
   const [accountSearch, setAccountSearch] = React.useState(data.accountName)
   const [showNewAccount, setShowNewAccount] = React.useState(data.isNewAccount)
 
-  const canProceed = (data.accountId !== "" || (showNewAccount && data.accountName.trim() !== "")) && data.techStack !== "" && data.engagementType !== ""
+  const needsLegacyBlock = data.engagementType === "MIGRATION" || data.engagementType === "REDESIGN"
+  const needsStackDescription = data.techStack === "OTHER"
+
+  const canProceed =
+    (data.accountId !== "" || (showNewAccount && data.accountName.trim() !== "")) &&
+    data.techStack !== "" &&
+    data.engagementType !== "" &&
+    (!needsStackDescription || data.techStackCustom.trim().length >= 10)
 
   const isLowConfidence = (field: keyof NonNullable<typeof confidence>) =>
     confidence && confidence[field] > 0 && confidence[field] < 0.7
@@ -448,6 +462,66 @@ function Step2Details({ data, onChange, confidence, accounts, onBack, onNext }: 
         </Select>
       </div>
 
+      {/* Free-text tech stack description */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="techStackCustom">
+          Tech Stack Details {needsStackDescription && <span className="text-destructive">*</span>}
+          {!needsStackDescription && <span className="text-muted-foreground text-xs"> (optional — augments the canonical stack)</span>}
+        </Label>
+        <Textarea
+          id="techStackCustom"
+          placeholder="e.g. Laravel 10 + Vue 3 + MySQL on AWS. One or two sentences covering language, framework, DB, hosting."
+          value={data.techStackCustom}
+          onChange={(e) => onChange({ techStackCustom: e.target.value })}
+          rows={2}
+        />
+        {needsStackDescription && data.techStackCustom.trim().length > 0 && data.techStackCustom.trim().length < 10 && (
+          <span className="text-xs text-amber-600">Please describe the stack in a little more detail (≥10 chars).</span>
+        )}
+      </div>
+
+      {/* Project description */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="projectDescription">
+          Project Description <span className="text-muted-foreground text-xs">(optional)</span>
+        </Label>
+        <Textarea
+          id="projectDescription"
+          placeholder="What is this project about? What is the customer trying to achieve? (1–3 paragraphs)"
+          value={data.projectDescription}
+          onChange={(e) => onChange({ projectDescription: e.target.value })}
+          rows={4}
+        />
+      </div>
+
+      {/* Legacy platform block — MIGRATION/REDESIGN only */}
+      {needsLegacyBlock && (
+        <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+          <span className="text-xs font-medium text-muted-foreground">
+            Current Platform {data.engagementType === "MIGRATION" ? "(source of migration)" : "(site being redesigned)"}
+          </span>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="legacyPlatform" className="text-xs">Current Platform</Label>
+            <Textarea
+              id="legacyPlatform"
+              placeholder="e.g. Sitecore 9.2 on IIS with MSSQL; custom PHP 7 monolith; WordPress 5.8 multisite"
+              value={data.legacyPlatform}
+              onChange={(e) => onChange({ legacyPlatform: e.target.value })}
+              rows={2}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="legacyPlatformUrl" className="text-xs">Current Site URL <span className="text-muted-foreground">(optional)</span></Label>
+            <Input
+              id="legacyPlatformUrl"
+              placeholder="https://www.example.com"
+              value={data.legacyPlatformUrl}
+              onChange={(e) => onChange({ legacyPlatformUrl: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between pt-2">
         <Button variant="outline" onClick={onBack}>
           Back
@@ -505,6 +579,34 @@ function Step3Confirm({ data, file, onBack, onSubmit, isSubmitting }: Step3Props
                 <Badge variant="outline">{engagementTypeLabels[data.engagementType as EngagementType]}</Badge>
               )}
             </span>
+
+            {data.techStackCustom.trim() && (
+              <>
+                <span className="text-muted-foreground">Stack Details</span>
+                <span className="font-medium whitespace-pre-wrap">{data.techStackCustom}</span>
+              </>
+            )}
+
+            {data.projectDescription.trim() && (
+              <>
+                <span className="text-muted-foreground">Project Description</span>
+                <span className="whitespace-pre-wrap">{data.projectDescription}</span>
+              </>
+            )}
+
+            {(data.engagementType === "MIGRATION" || data.engagementType === "REDESIGN") && data.legacyPlatform.trim() && (
+              <>
+                <span className="text-muted-foreground">Current Platform</span>
+                <span className="whitespace-pre-wrap">{data.legacyPlatform}</span>
+              </>
+            )}
+
+            {(data.engagementType === "MIGRATION" || data.engagementType === "REDESIGN") && data.legacyPlatformUrl.trim() && (
+              <>
+                <span className="text-muted-foreground">Current Site URL</span>
+                <span className="truncate"><a href={data.legacyPlatformUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">{data.legacyPlatformUrl}</a></span>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -567,7 +669,11 @@ export function CreateWizard() {
     industry: "",
     projectName: "",
     techStack: "",
+    techStackCustom: "",
     engagementType: "",
+    projectDescription: "",
+    legacyPlatform: "",
+    legacyPlatformUrl: "",
   })
 
   function patchForm(patch: Partial<WizardFormData>) {
@@ -630,7 +736,11 @@ export function CreateWizard() {
         industry: ((matchedAccount?.industry as Industry) || (result.industry as Industry)) ?? "",
         projectName: result.projectName ?? "",
         techStack: (result.techStack as TechStack) ?? "",
+        techStackCustom: "",
         engagementType: (result.engagementType as EngagementType) ?? "",
+        projectDescription: result.projectDescription ?? "",
+        legacyPlatform: result.legacyPlatform ?? "",
+        legacyPlatformUrl: "",
       })
     } catch (err) {
       console.error("[CreateWizard] Analysis failed:", err)
@@ -644,7 +754,7 @@ export function CreateWizard() {
     setTorFile(null)
     setInferenceResult(null)
     setAnalyzeError(null)
-    setFormData({ accountId: "", accountName: "", isNewAccount: false, industry: "", projectName: "", techStack: "", engagementType: "" })
+    setFormData({ accountId: "", accountName: "", isNewAccount: false, industry: "", projectName: "", techStack: "", techStackCustom: "", engagementType: "", projectDescription: "", legacyPlatform: "", legacyPlatformUrl: "" })
   }
 
   async function handleSubmit() {
@@ -675,7 +785,12 @@ export function CreateWizard() {
           clientName: formData.accountName,
           projectName: formData.projectName || undefined,
           techStack: formData.techStack,
+          techStackCustom: formData.techStackCustom.trim() || undefined,
+          techStackIsCustom: formData.techStack === "OTHER",
           engagementType: formData.engagementType || undefined,
+          projectDescription: formData.projectDescription.trim() || undefined,
+          legacyPlatform: formData.legacyPlatform.trim() || undefined,
+          legacyPlatformUrl: formData.legacyPlatformUrl.trim() || undefined,
           accountId: accountId || undefined,
         }),
       })

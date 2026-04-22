@@ -192,7 +192,15 @@ const worker = new Worker<PhaseJobData>(
       // Fetch engagement type for phase-specific behavior (e.g., conditional site audit)
       const engagementData = await prisma.engagement.findUnique({
         where: { id: engagementId },
-        select: { engagementType: true, clientName: true },
+        select: {
+          engagementType: true,
+          clientName: true,
+          techStackCustom: true,
+          techStackIsCustom: true,
+          projectDescription: true,
+          legacyPlatform: true,
+          legacyPlatformUrl: true,
+        },
       });
 
       // Phase 5 hard-fail gate: proposal generation requires a pre-approved
@@ -284,11 +292,49 @@ const worker = new Worker<PhaseJobData>(
         }
       }
 
+      // Phase 1A: if the engagement has an OTHER tech stack, bootstrap ecosystem
+      // notes + benchmarks via web-researched synthesis before building the prompt.
+      let ecosystemNotes: string | undefined;
+      let benchmarksMarkdown: string | undefined;
+      if (
+        String(phaseNumber) === "1A" &&
+        engagementData?.techStackIsCustom &&
+        engagementData.techStackCustom?.trim()
+      ) {
+        try {
+          await job.updateProgress({
+            type: "progress",
+            tool: "Tech Stack Research",
+            message: "Researching ecosystem for the user-provided tech stack…",
+          });
+          const { getOrRunTechStackResearch } = await import(
+            "@/workers/tech-stack-research"
+          );
+          const research = await getOrRunTechStackResearch(engagementId);
+          if (research) {
+            ecosystemNotes = research.ecosystemSummary;
+            benchmarksMarkdown = research.benchmarksMarkdown;
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Tech-stack research failed for engagement ${engagementId}: ${
+              err instanceof Error ? err.message : String(err)
+            } — continuing Phase 1A without bootstrapped ecosystem notes.`
+          );
+        }
+      }
+
       let config = getPhaseConfig(
         String(phaseNumber),
         techStack,
         engagementId,
-        engagementData?.engagementType
+        engagementData?.engagementType,
+        {
+          techStackCustom: engagementData?.techStackCustom ?? undefined,
+          projectDescription: engagementData?.projectDescription ?? undefined,
+          ecosystemNotes,
+          benchmarksMarkdown,
+        }
       );
 
       config = await applyPromptOverrides(config);
@@ -875,6 +921,71 @@ const worker = new Worker<PhaseJobData>(
           }
         } catch {
           // questions.md may not exist — non-fatal
+        }
+      }
+
+      // Phase 1A: for MIGRATION / REDESIGN engagements, emit a Legacy Platform
+      // Access Checklist as a secondary artefact. Runs inside the same work-dir
+      // so the file gets synced to storage in the step below.
+      if (
+        String(phaseNumber) === "1A" &&
+        (engagementData?.engagementType === "MIGRATION" ||
+          engagementData?.engagementType === "REDESIGN")
+      ) {
+        try {
+          await job.updateProgress({
+            type: "progress",
+            tool: "Legacy Access Checklist",
+            message: "Drafting legacy platform access checklist…",
+          });
+          const { getPhase1ALegacyChecklistConfig } = await import(
+            "@/lib/ai/phases/phase1a-legacy-checklist"
+          );
+          const checklistConfig = getPhase1ALegacyChecklistConfig({
+            engagementId,
+            techStack,
+            engagementType: engagementData?.engagementType,
+            legacyPlatform: engagementData?.legacyPlatform ?? undefined,
+            legacyPlatformUrl: engagementData?.legacyPlatformUrl ?? undefined,
+            techStackCustom: engagementData?.techStackCustom ?? undefined,
+          });
+          for await (const ev of runPhase(checklistConfig)) {
+            await job.updateProgress(ev);
+            if (ev.type === "error") {
+              console.warn(
+                `[phase-runner] Legacy-checklist agent error: ${ev.message}`
+              );
+            }
+          }
+          const checklistPath = `/data/engagements/${engagementId}/claude-artefacts/legacy-access-checklist.md`;
+          const checklistMd = await fs.readFile(checklistPath, "utf-8").catch(() => "");
+          if (checklistMd.trim().length > 100) {
+            const checklistArtefact = await prisma.phaseArtefact.create({
+              data: {
+                phaseId,
+                artefactType: ArtefactType.LEGACY_ACCESS_CHECKLIST,
+                version: 1,
+                label: "legacy-access-checklist.md",
+                contentMd: checklistMd,
+              },
+            });
+            await safeIndexArtefact({
+              engagementId,
+              sourceId: checklistArtefact.id,
+              content: checklistMd,
+              metadata: {
+                phaseNumber: "1A",
+                artefactType: ArtefactType.LEGACY_ACCESS_CHECKLIST,
+                label: "legacy-access-checklist.md",
+              },
+            });
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Legacy-checklist step failed for engagement ${engagementId}: ${
+              err instanceof Error ? err.message : String(err)
+            } — non-fatal, continuing.`
+          );
         }
       }
 

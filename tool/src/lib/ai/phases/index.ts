@@ -7,11 +7,19 @@ import { getPhase3Config } from "@/lib/ai/phases/phase3-review";
 import { getPhase4Config } from "@/lib/ai/phases/phase4-gaps";
 import { getPhase5Config } from "@/lib/ai/phases/phase5-capture";
 
+export interface GetPhaseConfigExtras {
+  techStackCustom?: string;
+  projectDescription?: string;
+  ecosystemNotes?: string;
+  benchmarksMarkdown?: string;
+}
+
 export function getPhaseConfig(
   phaseNumber: string,
   techStack: string,
   engagementId: string,
-  engagementType?: string
+  engagementType?: string,
+  extras?: GetPhaseConfigExtras
 ): PhaseConfig {
   switch (phaseNumber) {
     case "0":
@@ -19,7 +27,15 @@ export function getPhaseConfig(
     case "1":
       return getPhase1Config(engagementId, techStack);
     case "1A":
-      return getPhase1AEstimateConfig(engagementId, techStack, engagementType);
+      return getPhase1AEstimateConfig({
+        engagementId,
+        techStack,
+        engagementType,
+        techStackCustom: extras?.techStackCustom,
+        projectDescription: extras?.projectDescription,
+        ecosystemNotes: extras?.ecosystemNotes,
+        benchmarksMarkdown: extras?.benchmarksMarkdown,
+      });
     case "2":
       return getPhase2Config(engagementId, techStack);
     case "3":

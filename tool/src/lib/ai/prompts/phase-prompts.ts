@@ -125,14 +125,70 @@ Sidecar rules:
   must appear verbatim; writers regex-extract the body between them.`;
 }
 
-export function getPhase1AEstimatePrompt(techStack?: string, engagementType?: string): string {
-  const isWordPress = techStack?.startsWith("WORDPRESS");
-  const platformName = isWordPress ? "WordPress" : "Drupal";
+export interface Phase1AEstimatePromptParams {
+  techStack?: string;
+  engagementType?: string;
+  techStackCustom?: string;
+  projectDescription?: string;
+  ecosystemNotes?: string;
+  benchmarksMarkdown?: string;
+}
+
+// Back-compat overloads: accept either a params object or the old positional args.
+export function getPhase1AEstimatePrompt(params?: Phase1AEstimatePromptParams): string;
+export function getPhase1AEstimatePrompt(techStack?: string, engagementType?: string): string;
+export function getPhase1AEstimatePrompt(
+  arg1?: string | Phase1AEstimatePromptParams,
+  arg2?: string
+): string {
+  const params: Phase1AEstimatePromptParams =
+    typeof arg1 === "string" || arg1 === undefined
+      ? { techStack: arg1 as string | undefined, engagementType: arg2 }
+      : arg1;
+  const {
+    techStack,
+    engagementType,
+    techStackCustom,
+    projectDescription,
+    ecosystemNotes,
+    benchmarksMarkdown,
+  } = params;
+
+  const isOther = techStack === "OTHER" || Boolean(techStackCustom);
+  const isWordPress = !isOther && techStack?.startsWith("WORDPRESS");
+  const isDrupal = !isOther && (!techStack || techStack?.startsWith("DRUPAL") || techStack === "NEXTJS" || techStack === "REACT");
+  const platformName = isOther
+    ? (techStackCustom?.split(/[.,;\n]/)[0].trim() || "the specified stack")
+    : isWordPress
+      ? "WordPress"
+      : "Drupal";
   const nativeSolutions = isWordPress
     ? "WordPress plugins (cite wordpress.org links), core Gutenberg blocks/patterns, and theme.json capabilities"
-    : "contrib modules (cite drupal.org links), core features, and platform-native solutions";
-  const customDev = isWordPress ? "custom plugin development" : "custom module development";
+    : isDrupal
+      ? "contrib modules (cite drupal.org links), core features, and platform-native solutions"
+      : "platform-native / ecosystem packages (cite the relevant authoritative registry or docs — npm, Packagist, PyPI, GitHub org docs, vendor marketplace, etc.)";
+  const customDev = isWordPress
+    ? "custom plugin development"
+    : isDrupal
+      ? "custom module development"
+      : "bespoke custom development";
   const isDiscovery = engagementType === "DISCOVERY";
+
+  const projectContextBlock = projectDescription?.trim()
+    ? `\n## Project Context (User-Provided)\n\nThe user described this engagement as follows — treat this as authoritative intent alongside the TOR, but cite the TOR for any requirement-level claim:\n\n> ${projectDescription.trim().replace(/\n/g, "\n> ")}\n`
+    : "";
+
+  const stackDetailBlock = techStackCustom?.trim()
+    ? `\n**User-Provided Stack Detail:** ${techStackCustom.trim()}\n`
+    : "";
+
+  const ecosystemBlock = ecosystemNotes?.trim()
+    ? `\n## Ecosystem Notes (Web-Researched)\n\nThe following ecosystem summary was bootstrapped via web research for the user-provided stack. Use it to ground "native vs custom" recommendations. Cite the sources surfaced in the research step when leaning on these claims.\n\n${ecosystemNotes.trim()}\n`
+    : "";
+
+  const benchmarksBlock = benchmarksMarkdown?.trim()
+    ? `\n## Reference Benchmarks (Bootstrapped for This Stack)\n\nUse the following bootstrapped benchmark table as the primary BenchmarkRef source for this engagement. Every line item must cite a BenchmarkKey from this table (or "N/A" with explanation).\n\n${benchmarksMarkdown.trim()}\n`
+    : "";
 
   const discoveryPreamble = isDiscovery ? `
 
@@ -178,7 +234,7 @@ Use these categories for your line items. Every line item should describe a disc
 
 ${isDiscovery ? "Estimate the effort required to conduct discovery for this engagement." : "Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning."}
 
-**Platform: ${platformName}**${isDiscovery ? "" : ` — Prefer ${nativeSolutions} over ${customDev} where possible.`}${discoveryPreamble}
+**Platform: ${platformName}**${isDiscovery ? "" : ` — Prefer ${nativeSolutions} over ${customDev} where possible.`}${stackDetailBlock}${projectContextBlock}${ecosystemBlock}${benchmarksBlock}${discoveryPreamble}
 
 ${isDiscovery ? "" : `## Step 1: Solution Architecture Document
 
@@ -560,4 +616,89 @@ remediation column. Do not rewrite the full estimate.
 - Do NOT change output file paths or filenames.
 - Every row's Estimate Line Items list must use names that actually exist in
   the current estimate file (or be explicitly marked as new additions).`;
+}
+
+export function getMigrationAccessChecklistPrompt(params: {
+  engagementType?: string;
+  legacyPlatform?: string;
+  legacyPlatformUrl?: string;
+  techStackCustom?: string;
+}): string {
+  const { engagementType, legacyPlatform, legacyPlatformUrl, techStackCustom } = params;
+  const isRedesign = engagementType === "REDESIGN";
+  const platformLine = legacyPlatform?.trim()
+    ? `The customer's current platform is: **${legacyPlatform.trim()}**.`
+    : `The customer's current platform is not explicitly stated in the TOR — infer a best-guess from TOR references and the site at ${legacyPlatformUrl?.trim() || "the legacy URL (if any)"}, and call out ambiguity in the checklist's Notes column.`;
+  const urlLine = legacyPlatformUrl?.trim() ? `Current site URL: ${legacyPlatformUrl.trim()}.` : "";
+  const stackLine = techStackCustom?.trim() ? `Target stack context: ${techStackCustom.trim()}.` : "";
+
+  const scopeClause = isRedesign
+    ? `This is a **REDESIGN** engagement. Scope the checklist narrowly to access items needed to audit the current site, preserve SEO/analytics continuity, and cut over without breaking inbound traffic. Do NOT include full database/backend exports unless the redesign requires migrating content.`
+    : `This is a **MIGRATION** engagement. Scope the checklist fully — from source-system credentials through content exports, integration credentials, code/infra access, and stakeholder contacts.`;
+
+  return `Generate the Legacy Platform Access Checklist.
+
+${scopeClause}
+
+${platformLine} ${urlLine} ${stackLine}
+
+Produce a client-facing checklist that the customer can receive alongside the Technical Proposal. It lists every artefact, credential, export, or contact that QED42 requires from the customer's side to execute the engagement. Each row must be actionable — if the customer cannot understand what to hand over from one line, rewrite it.
+
+## Required Structure
+
+Use these EXACT markdown headings (parsers may depend on them later):
+
+\`\`\`
+## 1. Platform Credentials
+## 2. Content & Data Exports
+## 3. Integration Credentials
+## 4. Analytics, SEO & Marketing
+## 5. Code & Infrastructure
+## 6. Documentation & Knowledge Artefacts
+## 7. Stakeholder & Support Access
+\`\`\`
+
+Under each heading, a markdown table with these exact columns:
+
+| Item | Why Needed | Format / Access Type | Priority | Customer Owner | Notes |
+
+- **Item**: The specific artefact or access (e.g. "Production database dump", "Google Analytics 4 property — Viewer role for qed42-analytics@…").
+- **Why Needed**: Short justification tying back to a migration/redesign activity (e.g. "Required to migrate content types to target CMS", "Required to baseline Core Web Vitals before cutover").
+- **Format / Access Type**: Concrete format or access mechanism (SQL dump, SFTP credentials, IAM role, read-only dashboard access, shared drive link, etc.).
+- **Priority**: \`P0\` (blocking kickoff), \`P1\` (blocking mid-project milestone), \`P2\` (nice-to-have / enables optimisation).
+- **Customer Owner**: Role on customer's side expected to provide this (e.g. "IT/DevOps", "Marketing Ops", "CMS Admin", "Legal/Procurement"). Never put a specific person — always a role.
+- **Notes**: Ambiguities, assumptions about the legacy platform, alternative formats accepted, or redactions allowed.
+
+Tailor item specifics to the stated legacy platform. For example:
+- If WordPress → WXR export, wp-content/uploads tarball, wp_options dump.
+- If Drupal → Drush sql-dump, sites/default/files archive, Configuration sync export.
+- If Sitecore → content package (.zip), media library export, Solr index snapshot, xDB/xConnect access.
+- If AEM → package manager .zip export, DAM asset sync access, OSGi config snapshot.
+- If a custom/bespoke platform → source code repo access, DB dump in native format, file-system archive.
+
+Always include (regardless of platform) at least these P0 rows:
+- CMS admin credentials (or equivalent content-editing access) for audit.
+- Production DB dump or content export in the native format, with redaction rules documented.
+- Production media / asset library archive.
+- Primary integration API keys / service account creds surfaced in the TOR (if any).
+- Analytics access (GA4 or equivalent) for baselining.
+- Source code repository access (read-only clone or fork).
+- Single point of contact on customer's side (IT/DevOps lead) for provisioning follow-ups.
+
+## Output File
+
+Write output to \`claude-artefacts/legacy-access-checklist.md\` following \`templates/legacy-access-checklist-template.md\`. Prepend a short Introduction paragraph explaining what this document is and how the customer should return it (track provisioned items, owner, and estimated availability date).
+
+## Cross-Linking
+
+At the end of the document, add a one-line footer:
+> This checklist is a companion to the Technical Proposal. Items marked P0 are kickoff blockers — please prioritise provisioning for these.
+
+## Non-Negotiables
+
+- Every row MUST have a non-empty value in all six columns (use "—" only in Notes when truly not applicable).
+- Priorities must be realistic — not every item can be P0.
+- Do NOT invent credentials that the legacy platform would not have (e.g. don't ask for "Kubernetes kubeconfig" if the stated platform is a single-VM WordPress install).
+- Do NOT leak internal QED42 assignments into the Customer Owner column.
+`;
 }

@@ -105,6 +105,13 @@ model Engagement {
   estimatedBudget        Float? // tentative budget mentioned in TOR
   deliveryTimeline       String? // e.g. "6 months", "Q3 2026"
   rfpIssuedAt            DateTime? // when the RFP was issued
+  // Free-text scope augmentation
+  techStackCustom        String? // free-text when techStack=OTHER or when augmenting a canonical stack
+  techStackIsCustom      Boolean                  @default(false) // true when user chose OTHER; triggers tech-stack research
+  projectDescription     String? // user-provided description of what the project is about (1-3 paragraphs)
+  legacyPlatform         String? // MIGRATION/REDESIGN: free-text description of current platform
+  legacyPlatformUrl      String? // MIGRATION/REDESIGN: current site URL if any
+  techStackResearch      TechStackResearch?
   // Outcome tracking (recorded via admin back-office)
   outcome                EngagementOutcome?
   lossReason             LossReason?
@@ -176,6 +183,7 @@ enum TechStack {
   WORDPRESS_NEXTJS
   NEXTJS
   REACT
+  OTHER
 }
 
 enum EngagementType {
@@ -244,6 +252,7 @@ enum ArtefactType {
   ANNEXURE
   PREREQUISITES
   RESPONSE_FORMAT
+  LEGACY_ACCESS_CHECKLIST
 }
 
 model Assumption {
@@ -601,4 +610,19 @@ model ChatAuditLog {
 
   @@index([userId, createdAt])
   @@index([engagementId, createdAt])
+}
+
+/// Web-researched ecosystem summary and bootstrapped benchmark table for
+/// engagements with a non-enum (OTHER) tech stack. Populated once per
+/// engagement by the tech-stack-research worker before Phase 1A estimate.
+model TechStackResearch {
+  id                 String     @id @default(cuid())
+  engagement         Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId       String     @unique
+  stackDescription   String     @db.Text // echo of Engagement.techStackCustom at research time
+  ecosystemSummary   String     @db.Text // markdown summary of frameworks, libs, hosting, community
+  benchmarksMarkdown String     @db.Text // markdown benchmark table ingested into Phase 1A prompt
+  sourcesJson        Json // array of { url, title, fetchedAt }
+  provider           String? // e.g. "tavily"
+  createdAt          DateTime   @default(now())
 }

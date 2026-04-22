@@ -35,6 +35,7 @@ const techStackLabel: Record<TechStack, string> = {
   WORDPRESS_NEXTJS: "WordPress + Next.js",
   NEXTJS: "Next.js",
   REACT: "React",
+  OTHER: "Other",
 }
 
 function formatRelativeTime(date: Date): string {

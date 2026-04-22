@@ -17,11 +17,11 @@ services:
       S3_BUCKET: ${S3_BUCKET}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
-      # Coolify: set APP_URL in the Coolify env vars UI to the external HTTPS URL.
-      # Coolify auto-generates NEXTAUTH_URL as http://app.<domain> which is wrong.
-      # APP_URL is not auto-generated, so it stays as you set it.
-      NEXTAUTH_URL: ${APP_URL:-http://localhost:3000}
+      # Set to your external HTTPS URL. Coolify auto-generates NEXTAUTH_URL
+      # as http://app.<domain> which is wrong — hardcode the real value here.
+      NEXTAUTH_URL: ${APP_URL:-https://rfp-copilot.qed42.com}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       ALLOWED_EMAIL_DOMAIN: ${ALLOWED_EMAIL_DOMAIN}
@@ -73,6 +73,7 @@ services:
       S3_BUCKET: ${S3_BUCKET}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}

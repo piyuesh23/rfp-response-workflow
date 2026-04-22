@@ -97,17 +97,40 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { clientName, projectName, techStack, engagementType, accountId } = body as {
+  const {
+    clientName,
+    projectName,
+    techStack,
+    techStackCustom,
+    techStackIsCustom,
+    engagementType,
+    projectDescription,
+    legacyPlatform,
+    legacyPlatformUrl,
+    accountId,
+  } = body as {
     clientName: string;
     projectName?: string;
     techStack: TechStack;
+    techStackCustom?: string;
+    techStackIsCustom?: boolean;
     engagementType?: EngagementType;
+    projectDescription?: string;
+    legacyPlatform?: string;
+    legacyPlatformUrl?: string;
     accountId?: string;
   };
 
   if (!clientName || !techStack) {
     return NextResponse.json(
       { error: "clientName and techStack are required" },
+      { status: 400 }
+    );
+  }
+
+  if (techStack === "OTHER" && (!techStackCustom || techStackCustom.trim().length < 10)) {
+    return NextResponse.json(
+      { error: "techStackCustom is required (≥10 chars) when techStack is OTHER" },
       { status: 400 }
     );
   }
@@ -119,7 +142,12 @@ export async function POST(request: NextRequest) {
       clientName,
       projectName: projectName ?? null,
       techStack,
+      techStackCustom: techStackCustom?.trim() || null,
+      techStackIsCustom: Boolean(techStackIsCustom) || techStack === "OTHER",
       engagementType: engagementType ?? "NEW_BUILD",
+      projectDescription: projectDescription?.trim() || null,
+      legacyPlatform: legacyPlatform?.trim() || null,
+      legacyPlatformUrl: legacyPlatformUrl?.trim() || null,
       accountId: accountId ?? null,
       createdById: session.user.id,
       phases: {
