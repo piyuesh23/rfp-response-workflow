@@ -34,6 +34,63 @@ interface ResearchOutput {
   sources: ResearchSource[];
 }
 
+interface ParsedBenchmarkRow {
+  benchmarkKey: string;
+  task: string;
+  category: string;
+  tier: string | null;
+  lowHours: number;
+  highHours: number;
+  notes: string | null;
+}
+
+// Parses the synthesised benchmark markdown table. Rows missing required
+// numeric fields or with unparseable structure are silently dropped — the
+// DB upsert simply skips them. Any parse error is non-fatal.
+function parseBootstrappedBenchmarkRows(md: string): ParsedBenchmarkRow[] {
+  const rows: ParsedBenchmarkRow[] = [];
+  const lines = md.split(/\r?\n/);
+  let headers: string[] | null = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line.startsWith("|")) continue;
+    if (/^\|\s*-+/.test(line) || /^\|\s*:?-+/.test(line)) continue;
+    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+    if (cells.length === 0) continue;
+    if (!headers) {
+      // First real row is the header
+      if (cells.some((c) => /benchmarkkey/i.test(c))) {
+        headers = cells.map((c) => c.toLowerCase());
+      }
+      continue;
+    }
+    const get = (name: string): string => {
+      const idx = headers!.findIndex((h) => h === name);
+      return idx >= 0 ? cells[idx] ?? "" : "";
+    };
+    const key = get("benchmarkkey");
+    const task = get("task");
+    const category = get("category");
+    const complexity = get("complexity");
+    const low = Number(get("lowhrs").replace(/[^0-9.]/g, ""));
+    const high = Number(get("highhrs").replace(/[^0-9.]/g, ""));
+    const notes = get("notes");
+    if (!key || !task || !category || !Number.isFinite(low) || !Number.isFinite(high) || low <= 0 || high <= 0) {
+      continue;
+    }
+    rows.push({
+      benchmarkKey: key,
+      task,
+      category,
+      tier: complexity && /^T[123]$/i.test(complexity) ? complexity.toUpperCase() : null,
+      lowHours: low,
+      highHours: Math.max(low, high),
+      notes: notes || null,
+    });
+  }
+  return rows;
+}
+
 async function tavilySearch(query: string): Promise<TavilyResult[]> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) {
@@ -113,8 +170,8 @@ A markdown table with these EXACT columns, 12-18 rows:
 | BenchmarkKey | Task | Category | Complexity | LowHrs | HighHrs | Notes |
 
 Where:
-- BenchmarkKey: dot-separated short identifier (e.g. "backend.install.base", "integration.api.rest.t2", "frontend.component.header")
-- Task: the task name
+- BenchmarkKey: lowercase slug of the form "<category-slug>/<task-slug>" (e.g. "backend/platform-install-base", "integration/rest-api-t2", "frontend/header-component"). Only [a-z0-9-/] characters.
+- Task: human-readable task name
 - Category: one of { backend, frontend, integration, devops, qa, migration, ai }
 - Complexity: one of { T1, T2, T3 } — T1 simple (8-16h), T2 standard (16-32h), T3 complex (32-60h) — for integrations; for other categories use T1/T2/T3 as rough complexity buckets
 - LowHrs / HighHrs: integers, realistic for a mid-senior developer in this stack's idioms
@@ -185,6 +242,39 @@ export async function runTechStackResearch(engagementId: string): Promise<Resear
     title: r.title,
     fetchedAt: new Date().toISOString(),
   }));
+
+  // Persist each bootstrapped benchmark row into the Benchmark table as a
+  // techStack=OTHER row so that (a) the estimate prompt's loadBenchmarks()
+  // surfaces them through the canonical lookup table and (b) validate-estimate
+  // can resolve BenchmarkRef citations against the DB. Scoped to this engagement
+  // via sourceEngagementId for traceability.
+  try {
+    await prisma.benchmark.deleteMany({
+      where: { techStack: "OTHER", sourceEngagementId: engagementId },
+    });
+    const rows = parseBootstrappedBenchmarkRows(benchmarksMarkdown);
+    if (rows.length > 0) {
+      await prisma.benchmark.createMany({
+        data: rows.map((r) => ({
+          techStack: "OTHER",
+          category: r.category,
+          taskType: r.task,
+          lowHours: r.lowHours,
+          highHours: r.highHours,
+          tier: r.tier,
+          notes: r.notes,
+          sourceEngagementId: engagementId,
+          isActive: true,
+        })),
+      });
+    }
+  } catch (err) {
+    console.warn(
+      `[tech-stack-research] Failed to upsert bootstrapped Benchmark rows for ${engagementId}: ${
+        err instanceof Error ? err.message : String(err)
+      } — continuing; validator may flag these as unmatched.`
+    );
+  }
 
   const sourcesJson = sources as unknown as Prisma.InputJsonValue;
   await prisma.techStackResearch.upsert({

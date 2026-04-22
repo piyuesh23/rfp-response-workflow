@@ -370,6 +370,19 @@ const ALWAYS_INCLUDE_TASKS: Record<string, string[][]> = {
     ["deployment", "pipeline"],
     ["qa", "stabil"],
   ],
+  // Stack-neutral keyword sets for OTHER engagements. "install"/"setup" covers
+  // whatever the platform calls its base install; "role" covers roles / access /
+  // permissions; "deploy" covers deployment / release / CI-CD wording.
+  OTHER: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["install"],
+    ["config"],
+    ["role"],
+    ["media"],
+    ["deploy"],
+    ["qa"],
+  ],
 };
 
 /** Human-readable labels for always-include tasks */
@@ -413,6 +426,16 @@ const ALWAYS_INCLUDE_LABELS: Record<string, string[]> = {
     "Media Library Setup",
     "Deployment Pipeline",
     "QA/Bug Fixes & Stabilisation",
+  ],
+  OTHER: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "Platform Installation & Base Configuration",
+    "Configuration Management / Secrets",
+    "Roles & Permissions",
+    "Media / Asset Library Setup",
+    "Deployment Pipeline",
+    "QA / Stabilisation",
   ],
 };
 

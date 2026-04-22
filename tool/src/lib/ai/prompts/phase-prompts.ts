@@ -173,6 +173,11 @@ export function getPhase1AEstimatePrompt(
       ? "custom module development"
       : "bespoke custom development";
   const isDiscovery = engagementType === "DISCOVERY";
+  const isMigration = engagementType === "MIGRATION" || engagementType === "REDESIGN";
+
+  const legacyDiscoveryBlock = (isMigration && isOther)
+    ? `\n## Mandatory Legacy System Discovery Line Item\n\nBecause this is a ${engagementType} engagement on a custom/unfamiliar stack with no original vendor available to assist, you MUST include a dedicated **"Legacy System Discovery & Archaeology"** line item as the FIRST row of the Backend Tab. This task covers:\n- Reverse-engineering the existing platform's architecture, data model, and integrations without vendor support\n- Mapping all content types, custom logic, and third-party integrations in the legacy system\n- Identifying hidden scope (undocumented features, customisations, data quality issues)\n- Producing a discovery brief that feeds into the build estimate\n\nUse a base effort of **24–40 hours** (Conf 3–4 depending on platform complexity). Higher range applies when the legacy platform is proprietary, undocumented, or tightly coupled. Include in Assumptions: "No vendor/original developer support available; effort covers independent system archaeology only."\n`
+    : "";
 
   const projectContextBlock = projectDescription?.trim()
     ? `\n## Project Context (User-Provided)\n\nThe user described this engagement as follows — treat this as authoritative intent alongside the TOR, but cite the TOR for any requirement-level claim:\n\n> ${projectDescription.trim().replace(/\n/g, "\n> ")}\n`
@@ -232,9 +237,9 @@ Use these categories for your line items. Every line item should describe a disc
 
   return `Conduct Phase 1A: ${isDiscovery ? "Discovery Effort Estimation" : "Optimistic Estimation (No-Response Path)"}.
 
-${isDiscovery ? "Estimate the effort required to conduct discovery for this engagement." : "Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning."}
+${isDiscovery ? "Estimate the effort required to conduct discovery for this engagement." : isOther ? "Customer Q&A responses are not available. Generate assumption-heavy estimates. **This engagement uses a custom/unfamiliar tech stack — do NOT default to optimistic low-end figures. Use the mid-to-high end of all researched ranges and apply explicit estimation buffers to account for stack-specific unknowns.**" : "Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning."}
 
-**Platform: ${platformName}**${isDiscovery ? "" : ` — Prefer ${nativeSolutions} over ${customDev} where possible.`}${stackDetailBlock}${projectContextBlock}${ecosystemBlock}${benchmarksBlock}${discoveryPreamble}
+**Platform: ${platformName}**${isDiscovery ? "" : ` — Prefer ${nativeSolutions} over ${customDev} where possible.`}${stackDetailBlock}${projectContextBlock}${ecosystemBlock}${benchmarksBlock}${legacyDiscoveryBlock}${discoveryPreamble}
 
 ${isDiscovery ? "" : `## Step 1: Solution Architecture Document
 
@@ -263,9 +268,15 @@ At the end, produce a Traceability Matrix showing:
 
 ## Assumption Strategy
 
-1. Convert every Phase 1 clarifying question into an assumption. Select the lowest-effort option for each.
+1. Convert every Phase 1 clarifying question into an assumption. ${isOther ? "**Do NOT select the lowest-effort option for custom/unfamiliar stacks — choose the mid-range option to account for ecosystem uncertainty.**" : "Select the lowest-effort option for each."}
 2. Prefer ${nativeSolutions} over ${customDev}.
 3. Frame every assumption as a change-request boundary.
+${isOther ? `
+**Custom Stack Estimation Stance (MANDATORY):**
+- Default Conf for all line items should be **4** (not 5 or 6), which auto-applies a 50% High Hrs buffer. Only use Conf 5–6 for tasks that are truly stack-agnostic and well-understood (e.g., environment setup, DNS/SSL, project management).
+- Explicitly note estimation uncertainty in the Assumptions column for any task where the stack's ecosystem approach is unclear.
+- Do not compress hours to win on price — this stack has no established QED42 benchmark baseline.
+` : ""}
 
 For each assumption, write clearly:
 - **What is included**: Specific scope covered by this estimate line (e.g., "Includes a single-level mega menu with up to 8 top-level items and dropdown panels")
@@ -642,48 +653,62 @@ ${scopeClause}
 
 ${platformLine} ${urlLine} ${stackLine}
 
-Produce a client-facing checklist that the customer can receive alongside the Technical Proposal. It lists every artefact, credential, export, or contact that QED42 requires from the customer's side to execute the engagement. Each row must be actionable — if the customer cannot understand what to hand over from one line, rewrite it.
+## Working Assumption: Legacy Vendor Is Unavailable
+
+**IMPORTANT — write the entire checklist assuming the original vendor/agency/developer of the legacy website is NO LONGER REACHABLE** (they may have wound down, lost the relationship with the customer, or simply not responded). That means:
+- Every item must be phrased so that the customer's own in-house staff (often non-technical marketing, ops, or admin teams) can locate and hand it over without the old vendor's help.
+- Do NOT tell the customer to "ask your current vendor for X". Instead, tell them where to look inside their own accounts (hosting control panel, domain registrar, email inbox archive, invoices/SOWs, HR records of past employees, shared drives, password managers, etc.).
+- Where only the vendor would reasonably have a credential, mark the item Notes with: "If this is not locatable in your accounts, we will treat it as a data-recovery/reverse-engineering risk — see Notes." and explain in plain words what we would do instead (e.g. "we will rebuild this from scratch", "we will crawl the public site", "we will work with whatever export your hosting provider can give us directly").
+
+## Audience: Non-Technical Customer
+
+The reader may be a marketing lead, operations manager, or business owner — NOT a developer. Rewrite every row so a reader with no engineering background can understand what is being asked and how to provide it. Rules:
+- Spell out acronyms on first use (e.g. "DNS (Domain Name System — the setting that points your domain at a server)", "CDN (Content Delivery Network — e.g. Cloudflare, Akamai)").
+- Prefer human language over technical jargon ("a full copy of your website's database" rather than "SQL dump"; mention the technical term in parentheses afterwards).
+- Give a concrete example of where to look ("usually inside your hosting provider's control panel under 'Databases' or 'Backups'") instead of assuming the reader knows.
+- In the **Why Needed** column, explain the consequence in business terms ("Without this, content from the last 5 years may not carry over and editors will have to re-enter it by hand").
+- Be VERBOSE. One-line items are too terse. Aim for 2–4 sentences per Item and 2–3 sentences per Why Needed. This document is meant to be a standalone brief, not a quick-reference cheat sheet.
 
 ## Required Structure
 
 Use these EXACT markdown headings (parsers may depend on them later):
 
 \`\`\`
-## 1. Platform Credentials
-## 2. Content & Data Exports
-## 3. Integration Credentials
-## 4. Analytics, SEO & Marketing
-## 5. Code & Infrastructure
-## 6. Documentation & Knowledge Artefacts
-## 7. Stakeholder & Support Access
+## 1. Legacy Website — Admin & Hosting Access
+## 2. Legacy Website — Content, Media & Data Exports
+## 3. Third-Party Integrations & Vendor Accounts
+## 4. Credentials, Secrets & API Keys
+## 5. Analytics, SEO & Marketing
+## 6. Code, Source Files & Infrastructure
+## 7. Documentation, Contracts & Knowledge Artefacts
+## 8. Stakeholder & Support Access
 \`\`\`
 
 Under each heading, a markdown table with these exact columns:
 
-| Item | Why Needed | Format / Access Type | Priority | Customer Owner | Notes |
+| Item | Why Needed | Where to Find It | Format / Access Type | Priority | Customer Owner | Notes |
 
-- **Item**: The specific artefact or access (e.g. "Production database dump", "Google Analytics 4 property — Viewer role for qed42-analytics@…").
-- **Why Needed**: Short justification tying back to a migration/redesign activity (e.g. "Required to migrate content types to target CMS", "Required to baseline Core Web Vitals before cutover").
-- **Format / Access Type**: Concrete format or access mechanism (SQL dump, SFTP credentials, IAM role, read-only dashboard access, shared drive link, etc.).
-- **Priority**: \`P0\` (blocking kickoff), \`P1\` (blocking mid-project milestone), \`P2\` (nice-to-have / enables optimisation).
-- **Customer Owner**: Role on customer's side expected to provide this (e.g. "IT/DevOps", "Marketing Ops", "CMS Admin", "Legal/Procurement"). Never put a specific person — always a role.
-- **Notes**: Ambiguities, assumptions about the legacy platform, alternative formats accepted, or redactions allowed.
+- **Item**: Full, self-contained description written for a non-technical reader. 2–4 sentences including plain-language meaning + technical term in parentheses.
+- **Why Needed**: 2–3 sentences explaining, in business terms, what breaks or what risk we carry if this item is NOT provided. Avoid jargon.
+- **Where to Find It**: Plain-language hints on the customer's side — "Check your hosting provider's dashboard", "Look in old contracts with your previous agency", "Ask your finance team who paid the hosting invoices", "Look for login emails in [key stakeholder]'s inbox from [year] onwards". This column is critical when the legacy vendor is unreachable.
+- **Format / Access Type**: Concrete format or access mechanism (full database export, admin login, read-only dashboard access, shared drive link, etc.), phrased in customer-facing language.
+- **Priority**: \`P0\` (blocking kickoff), \`P1\` (blocking a mid-project milestone), \`P2\` (nice-to-have / enables optimisation). Be realistic — not every item is P0.
+- **Customer Owner**: Role on the customer's side expected to provide this (e.g. "Marketing Lead", "IT / Tech Contact", "Finance / Accounts", "Admin / Operations"). Use roles, not specific people.
+- **Notes**: Alternatives if the primary path is unavailable. State explicitly what QED42 will do if the item cannot be produced (rebuild from scratch, crawl public site, reconstruct from backups, treat as change request, etc.) — this is your "vendor-gone" fallback statement.
 
-Tailor item specifics to the stated legacy platform. For example:
-- If WordPress → WXR export, wp-content/uploads tarball, wp_options dump.
-- If Drupal → Drush sql-dump, sites/default/files archive, Configuration sync export.
-- If Sitecore → content package (.zip), media library export, Solr index snapshot, xDB/xConnect access.
-- If AEM → package manager .zip export, DAM asset sync access, OSGi config snapshot.
-- If a custom/bespoke platform → source code repo access, DB dump in native format, file-system archive.
+## Content Expectations Per Section
 
-Always include (regardless of platform) at least these P0 rows:
-- CMS admin credentials (or equivalent content-editing access) for audit.
-- Production DB dump or content export in the native format, with redaction rules documented.
-- Production media / asset library archive.
-- Primary integration API keys / service account creds surfaced in the TOR (if any).
-- Analytics access (GA4 or equivalent) for baselining.
-- Source code repository access (read-only clone or fork).
-- Single point of contact on customer's side (IT/DevOps lead) for provisioning follow-ups.
+Each section must have **at least 3 rows**; sections 1–4 should typically have 5–8 rows.
+
+**Section 1 — Legacy Website — Admin & Hosting Access** must cover: CMS/admin login for the legacy site; hosting provider login (where the site runs); DNS / domain registrar login (who owns the domain and points traffic); SSL certificate provider/login; email / mailbox associated with admin accounts; any VPN/firewall or security-layer access in front of the site.
+
+**Section 2 — Legacy Website — Content, Media & Data Exports** must cover: full database backup in whatever format the legacy hosting can produce; all uploaded files (images, PDFs, videos — "media library"); list of URLs and their redirects; list of content types/templates and how they map; user account list with roles (so we don't lose editors/authors); historical content (posts, pages, products, etc.) including anything archived/unpublished.
+
+**Section 3 — Third-Party Integrations & Vendor Accounts** must cover, at minimum, an exhaustive list of every external service the legacy site talks to or the marketing team uses around it. Prompt the customer to walk through: email marketing (Mailchimp, HubSpot, Marketo), CRM, payment gateways, live-chat widgets, analytics (GA4, Adobe Analytics, Hotjar), tag managers, search providers (Algolia, Elastic), social login, feature flags, A/B testing, customer support (Zendesk, Intercom), consent/cookie banners, newsletter signup, form-handling services, webhooks, any external APIs the site posts/pulls data from. For each: login access, the account's billing owner, and whether the subscription is active. Call out that any integration missed here will show up as a scope surprise later.
+
+**Section 4 — Credentials, Secrets & API Keys** must cover: every secret/API key the legacy site uses (payment, email, map, analytics, AI, etc.); the place they are stored today (environment files, password manager, hosting panel env vars); and how the customer can rotate them. If the customer doesn't know where the keys live, explicitly state "QED42 will rotate/replace all integration keys during migration" as the fallback.
+
+Sections 5–8 follow the same pattern — verbose, non-technical, vendor-gone-safe.
 
 ## Output File
 
