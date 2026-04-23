@@ -1,24 +1,27 @@
 /**
- * Gap-fix worker.
+ * Gap-fix worker (JSON-patch architecture).
  *
- * After the AI agent patches the estimate markdown, this worker re-syncs
- * LineItem DB rows from the updated sidecar JSON (same logic as phase-runner
- * Phase 1A/3) so that the structured validators query fresh data and the
- * accuracy score reflects the actual changes.
+ * Replaces the previous Claude Code SDK agent loop (which rewrote the full
+ * 55KB estimate markdown file on every turn, taking 2–5 min per turn). The
+ * new path:
+ *   1. Parse the current sidecar + TOR requirement list
+ *   2. Ask Anthropic for a SMALL JSON patch in ONE call (no tool use, no loop)
+ *   3. Apply the patch server-side: edit sidecar + append markdown rows
+ *   4. Re-sync LineItem DB rows from the patched sidecar
+ *   5. Re-run validateEstimateFull so the accuracy score updates
+ *
+ * Typical runtime: 10-30 seconds vs 30-60+ minutes for the agent loop.
  */
 import { Worker } from "bullmq";
-import { runPhase, prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
+import { prepareWorkDir, syncFilesToStorage } from "@/lib/ai/agent";
 import { validateEstimateFull } from "@/lib/ai/validate-estimate";
 import { extractEstimateSidecar, normalizeClauseRef } from "@/lib/ai/sidecar-extractors";
-import { getFixGapsPrompt } from "@/lib/ai/prompts/phase-prompts";
+import { generateGapFixPatch, applyGapFixPatch } from "@/lib/ai/gap-fix-patch";
 import { prisma } from "@/lib/db";
 import { redisConnection, GapFixJobData } from "@/lib/queue";
 import { getLatestValidationReportsByPhase } from "@/lib/accuracy";
-import type { PhaseConfig } from "@/lib/ai/agent";
 import * as fs from "fs/promises";
 import * as path from "path";
-
-const SONNET_MODEL = "claude-sonnet-4-20250514";
 
 const worker = new Worker<GapFixJobData>(
   "gap-fix",
@@ -31,6 +34,7 @@ const worker = new Worker<GapFixJobData>(
     });
 
     try {
+      await job.updateProgress({ type: "progress", tool: "Gap Fix", message: "Preparing work dir..." });
       const workDir = await prepareWorkDir(engagementId);
       const estimatePath = path.join(workDir, "estimates/optimistic-estimate.md");
 
@@ -40,7 +44,11 @@ const worker = new Worker<GapFixJobData>(
         throw new Error("No estimate file found at estimates/optimistic-estimate.md — run Phase 1A first.");
       }
 
-      // Load gap data from the GapFixRun snapshot
+      const original = await fs.readFile(estimatePath, "utf-8");
+      const sidecar = extractEstimateSidecar(original);
+      if (!sidecar) throw new Error("Estimate file has no ESTIMATE-LINEITEMS-JSON sidecar. Regenerate via Phase 1A.");
+
+      // Load gap data from the GapFixRun snapshot (written by POST endpoint)
       const run = await prisma.gapFixRun.findUnique({
         where: { id: gapFixRunId },
         select: { gapsBefore: true },
@@ -56,22 +64,37 @@ const worker = new Worker<GapFixJobData>(
         };
       };
 
-      // ValidationReport.details shape: { coverage, confFormula, riskRegister, ... }
-      // each key contains { details: { ... } } from the individual validator result.
       const det = gapsBefore.details ?? {};
-      const gapItems = (det.coverage?.details?.gaps ?? []) as Array<{ id: string; clauseRef: string; title: string; domain?: string }>;
-      const orphanItems = (det.coverage?.details?.orphans ?? []) as Array<{ id: string; tab: string; task: string }>;
-      // conf violations shape from validators/conf-formula: { id, task, tab, field, expected, actual }
-      const confItems = (det.confFormula?.details?.violations ?? []) as Array<{ id: string; tab: string; task: string; field: string; expected: number; actual: number }>;
-      // risk register missing shape: { id, task, conf }
-      const riskItems = (det.riskRegister?.details?.missing ?? []) as Array<{ id: string; task: string; conf: number }>;
+      const gapItems = (det.coverage?.details?.gaps ?? []) as Array<{ clauseRef: string; title: string; domain?: string }>;
+      const orphanItems = (det.coverage?.details?.orphans ?? []) as Array<{ tab: string; task: string }>;
+      const confItems = (det.confFormula?.details?.violations ?? []) as Array<{ tab: string; task: string; field: string; expected: number; actual: number }>;
+      const riskItems = (det.riskRegister?.details?.missing ?? []) as Array<{ task: string; conf: number }>;
 
       const engagement = await prisma.engagement.findUnique({
         where: { id: engagementId },
         select: { engagementType: true, techStackCustom: true },
       });
 
-      const userPrompt = getFixGapsPrompt({
+      // Collect valid TOR clauseRefs so the patch validator can reject hallucinated refs
+      const torRequirements = await prisma.torRequirement.findMany({
+        where: { engagementId },
+        select: { clauseRef: true, normalizedClauseRef: true },
+      });
+      const validClauseRefs = new Set<string>();
+      for (const r of torRequirements) {
+        validClauseRefs.add(r.clauseRef);
+        validClauseRefs.add(r.normalizedClauseRef);
+      }
+
+      await job.updateProgress({
+        type: "progress",
+        tool: "Gap Fix",
+        message: `Requesting patch — ${gapItems.length} gaps, ${orphanItems.length} orphans, ${confItems.length} conf violations, ${riskItems.length} missing risk entries`,
+      });
+
+      // --- Single Anthropic call, no tool loop ---
+      const patch = await generateGapFixPatch({
+        sidecar: sidecar.lineItems,
         gaps: gapItems,
         orphans: orphanItems,
         confViolations: confItems,
@@ -79,141 +102,98 @@ const worker = new Worker<GapFixJobData>(
         techStack,
         techStackCustom: engagement?.techStackCustom ?? undefined,
         engagementType: engagement?.engagementType ?? undefined,
+        validClauseRefs: [...validClauseRefs],
       });
-
-      const config: PhaseConfig = {
-        engagementId,
-        phase: 0,
-        techStack,
-        tools: ["Read", "Write"],
-        maxTurns: 15,
-        systemPrompt: `You are a senior ${techStack} architect patching a presales estimate. You patch only what is listed — do not restructure, rewrite, or remove anything else. You work inside the directory /data/engagements/${engagementId}. Be efficient: read estimates/optimistic-estimate.md ONCE at the start, then make ALL edits in a single Write call. Do NOT re-read the TOR — the issue list below already contains every clause ref and title you need. Do NOT read other files.`,
-        userPrompt,
-        model: SONNET_MODEL,
-      };
 
       await job.updateProgress({
         type: "progress",
-        tool: "Gap Fix Agent",
-        message: `Starting gap fix — ${gapItems.length} gaps, ${orphanItems.length} orphans, ${confItems.length} conf violations, ${riskItems.length} missing risk entries`,
+        tool: "Gap Fix",
+        message: `Patch received — ${patch.linkClauses.length} link-clauses, ${patch.newLineItems.length} new items, ${patch.orphanFixes.length} orphan fixes, ${patch.confCorrections.length} conf corrections, ${patch.riskEntries.length} risk entries`,
       });
 
-      for await (const event of runPhase(config)) {
-        await job.updateProgress(event);
-        if (event.type === "error") {
-          console.error(`[gap-fix] Agent error: ${event.message}`);
-        }
+      // --- Apply patch deterministically server-side ---
+      const { stats, warnings } = await applyGapFixPatch(estimatePath, patch, validClauseRefs);
+
+      for (const w of warnings) {
+        console.warn(`[gap-fix] ${w}`);
       }
 
       await job.updateProgress({
         type: "progress",
-        tool: "Gap Fix Agent",
-        message: "Patch complete — syncing LineItem rows to DB...",
+        tool: "Gap Fix",
+        message: `Applied: +${stats.clauseLinksAdded} links, +${stats.newItemsAdded} items, ${stats.orphanFixesApplied} orphan fixes, ${stats.confCorrected} conf fixes, +${stats.riskRowsAppended} risks${warnings.length > 0 ? ` (${warnings.length} warnings)` : ""}`,
       });
 
-      // Sync patched files to storage (non-fatal)
+      // --- Sync patched files back to object storage (non-fatal) ---
       try {
         await syncFilesToStorage(engagementId, workDir);
       } catch (err) {
         console.warn(`[gap-fix] Storage sync failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      // --- Critical: re-sync LineItem DB rows from the patched sidecar ---
-      // The structured validators (coverage, conf-formula, etc.) read from
-      // TorRequirement / LineItem DB tables, NOT the markdown file. Without
-      // this sync, validateEstimateFull queries stale rows and the score
-      // doesn't change.
-      const patchedEstimate = await fs.readFile(estimatePath, "utf-8").catch(() => "");
-      if (patchedEstimate.trim().length > 100) {
-        try {
-          const sidecar = extractEstimateSidecar(patchedEstimate);
-          if (sidecar && sidecar.lineItems.length > 0) {
-            // Build TorRequirement lookup for clause-ref → id resolution
-            const existingRequirements = await prisma.torRequirement.findMany({
-              where: { engagementId },
-              select: { id: true, normalizedClauseRef: true },
-            });
-            const reqByNormalized = new Map<string, string>();
-            for (const r of existingRequirements) {
-              reqByNormalized.set(r.normalizedClauseRef, r.id);
-            }
-
-            // Replace all LineItem rows for this engagement
-            await prisma.lineItem.deleteMany({ where: { engagementId } });
-
-            for (const li of sidecar.lineItems) {
-              const torIds: string[] = [];
-              for (const ref of li.torClauseRefs ?? []) {
-                const id = reqByNormalized.get(normalizeClauseRef(ref));
-                if (id) torIds.push(id);
-              }
-              const orphanJustification =
-                torIds.length === 0
-                  ? (li.orphanJustification?.trim() || "No TOR clause reference provided.")
-                  : null;
-
-              await prisma.lineItem.create({
-                data: {
-                  engagementId,
-                  tab: li.tab,
-                  task: li.task,
-                  description: li.description ?? "",
-                  hours: li.hours,
-                  conf: li.conf,
-                  lowHrs: li.lowHrs,
-                  highHrs: li.highHrs,
-                  benchmarkRef: li.benchmarkRef ?? null,
-                  integrationTier: li.integrationTier ?? null,
-                  orphanJustification,
-                  sourcePhaseId: null,
-                  ...(torIds.length > 0
-                    ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
-                    : {}),
-                },
-              });
-            }
-            // Diagnostic: count how many of the listed gap clauseRefs are now linked
-            const listedGapRefs = new Set(gapItems.map((g) => normalizeClauseRef(g.clauseRef)));
-            const sidecarCoveredRefs = new Set<string>();
-            for (const li of sidecar.lineItems) {
-              for (const ref of li.torClauseRefs ?? []) {
-                const norm = normalizeClauseRef(ref);
-                if (listedGapRefs.has(norm)) sidecarCoveredRefs.add(norm);
-              }
-            }
-            const unresolvedGaps = [...listedGapRefs].filter((r) => !sidecarCoveredRefs.has(r));
-            console.log(`[gap-fix] Re-synced ${sidecar.lineItems.length} LineItem rows. Gaps now covered in sidecar: ${sidecarCoveredRefs.size}/${listedGapRefs.size}. Unresolved: ${unresolvedGaps.join(", ") || "(none)"}`);
-            if (unresolvedGaps.length > 0) {
-              await job.updateProgress({
-                type: "progress",
-                tool: "Gap Fix Agent",
-                message: `Warning: ${unresolvedGaps.length}/${listedGapRefs.size} gap clauseRefs still not linked in sidecar (${unresolvedGaps.slice(0, 3).join(", ")}${unresolvedGaps.length > 3 ? "..." : ""}). Score may not improve. Consider re-running.`,
-              });
-            }
-          } else {
-            console.warn(`[gap-fix] No sidecar found in patched estimate — LineItem rows not updated. Validation may not reflect changes.`);
-          }
-        } catch (err) {
-          console.warn(`[gap-fix] LineItem re-sync failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        await job.updateProgress({
-          type: "progress",
-          tool: "Gap Fix Agent",
-          message: "Re-running validation to compute updated accuracy score...",
+      // --- Re-sync LineItem DB rows from the patched sidecar ---
+      const patchedEstimate = await fs.readFile(estimatePath, "utf-8");
+      const patchedSidecar = extractEstimateSidecar(patchedEstimate);
+      if (patchedSidecar && patchedSidecar.lineItems.length > 0) {
+        const reqById = await prisma.torRequirement.findMany({
+          where: { engagementId },
+          select: { id: true, normalizedClauseRef: true },
         });
+        const reqByNormalized = new Map<string, string>();
+        for (const r of reqById) reqByNormalized.set(r.normalizedClauseRef, r.id);
 
-        // Now run validation — will query the fresh LineItem rows
-        try {
-          await validateEstimateFull(
-            patchedEstimate,
-            techStack,
-            engagementId,
-            gapsBefore.phaseNumber ?? "1A"
-          );
-        } catch (err) {
-          console.warn(`[gap-fix] Validation re-run failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+        await prisma.lineItem.deleteMany({ where: { engagementId } });
+
+        for (const li of patchedSidecar.lineItems) {
+          const torIds: string[] = [];
+          for (const ref of li.torClauseRefs ?? []) {
+            const id = reqByNormalized.get(normalizeClauseRef(ref));
+            if (id) torIds.push(id);
+          }
+          const orphanJustification =
+            torIds.length === 0
+              ? (li.orphanJustification?.trim() || "No TOR clause reference provided.")
+              : null;
+
+          await prisma.lineItem.create({
+            data: {
+              engagementId,
+              tab: li.tab,
+              task: li.task,
+              description: li.description ?? "",
+              hours: li.hours,
+              conf: li.conf,
+              lowHrs: li.lowHrs,
+              highHrs: li.highHrs,
+              benchmarkRef: li.benchmarkRef ?? null,
+              integrationTier: li.integrationTier ?? null,
+              orphanJustification,
+              sourcePhaseId: null,
+              ...(torIds.length > 0
+                ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
+                : {}),
+            },
+          });
         }
+        console.log(`[gap-fix] Re-synced ${patchedSidecar.lineItems.length} LineItem rows for engagement ${engagementId}`);
+      }
+
+      // --- Re-run validation ---
+      await job.updateProgress({
+        type: "progress",
+        tool: "Gap Fix",
+        message: "Re-running validation to compute updated accuracy score...",
+      });
+
+      try {
+        await validateEstimateFull(
+          patchedEstimate,
+          techStack,
+          engagementId,
+          gapsBefore.phaseNumber ?? "1A"
+        );
+      } catch (err) {
+        console.warn(`[gap-fix] Validation re-run failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
       }
 
       // Snapshot updated scores
