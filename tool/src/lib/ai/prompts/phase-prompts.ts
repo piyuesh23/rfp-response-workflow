@@ -745,15 +745,13 @@ export interface GapFixConfViolation {
   id: string;
   tab: string;
   task: string;
-  hours: number;
-  conf: number;
-  expectedHigh: number;
-  actualHigh: number;
+  field: string;   // "lowHrs" | "highHrs" | "conf"
+  expected: number;
+  actual: number;
 }
 
 export interface GapFixRiskIssue {
   id: string;
-  tab: string;
   task: string;
   conf: number;
 }
@@ -786,14 +784,14 @@ export function getFixGapsPrompt(params: GapFixParams): string {
     : "";
 
   const confBlock = confViolations.length > 0
-    ? `### CONF FORMULA VIOLATIONS (${confViolations.length} rows with wrong High Hrs)\n\n${confViolations.map(v =>
-        `- **${v.tab} / ${v.task}** — Hours: ${v.hours}, Conf: ${v.conf}, Expected High Hrs: ${v.expectedHigh}, Actual: ${v.actualHigh}`
+    ? `### CONF FORMULA VIOLATIONS (${confViolations.length} rows with wrong field values)\n\n${confViolations.map(v =>
+        `- **${v.tab} / ${v.task}** — field: ${v.field}, expected: ${v.expected}, actual: ${v.actual}`
       ).join("\n")}`
     : "";
 
   const riskBlock = missingRiskItems.length > 0
     ? `### MISSING RISK REGISTER ENTRIES (${missingRiskItems.length} Conf ≤4 items not in Risk Register)\n\n${missingRiskItems.map(r =>
-        `- **${r.tab} / ${r.task}** — Conf ${r.conf}`
+        `- **${r.task}** — Conf ${r.conf}`
       ).join("\n")}`
     : "";
 
