@@ -169,7 +169,7 @@ export function ProgressStream({
       >
         {entries.length === 0 && connected && (
           <div className="text-xs text-muted-foreground text-center py-4">
-            Waiting for agent to start...
+            Connected — waiting for next agent update. Prior log entries from before this page load are not replayed.
           </div>
         )}
         {entries.map((entry) => {

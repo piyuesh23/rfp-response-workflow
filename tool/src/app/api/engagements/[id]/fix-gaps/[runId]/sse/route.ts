@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { QueueEvents } from "bullmq";
+import { QueueEvents, Queue } from "bullmq";
 import { redisConnection } from "@/lib/queue";
 import { prisma } from "@/lib/db";
 
@@ -69,6 +69,26 @@ export async function GET(
           });
           cleanup();
           return;
+        }
+
+        // Reconnect-friendly: replay the current job progress snapshot so a
+        // page refresh mid-run shows *something* beyond "Waiting for agent...".
+        // BullMQ only stores the latest progress, not full history, so this is
+        // a single snapshot rather than a full replay.
+        try {
+          const q = new Queue("gap-fix", { connection: redisConnection });
+          const job = await q.getJob(jobId);
+          if (job) {
+            const p = job.progress as { tool?: string; message?: string } | undefined;
+            if (p && typeof p === "object" && p.message) {
+              send("progress", { runId, tool: p.tool ?? "Agent", message: `Reconnected — current: ${p.message}` });
+            } else {
+              send("progress", { runId, tool: "Agent", message: "Reconnected — run in progress" });
+            }
+          }
+          await q.close().catch(() => {});
+        } catch {
+          // Snapshot replay is best-effort
         }
 
         setTimeout(() => {
