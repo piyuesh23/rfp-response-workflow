@@ -14,17 +14,17 @@ import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
-import { indexArtefact, indexStructuredRow } from "@/lib/rag/store";
-import { aiLimiter } from "@/lib/ai/rate-limiter";
-import { extractTextFromPdf } from "@/lib/pdf-extractor";
-import { extractTextFromDocx } from "@/lib/docx-extractor";
+import {
+  enqueueIndexArtefact,
+  enqueueIndexStructuredRow,
+  enqueueIndexTorFiles,
+} from "@/lib/rag/enqueue";
 import * as fs from "fs/promises";
-import * as path from "path";
 
 // --------------------------------------------------------------------------
-// RAG indexing helpers (non-fatal; a failed index must NEVER block the phase).
+// RAG indexing helpers — thin wrappers that enqueue work to the rag-indexing
+// queue so phase execution never blocks on OpenAI embedding latency.
 // --------------------------------------------------------------------------
-const RAG_MIN_CONTENT_LEN = 50;
 
 async function safeIndexArtefact(params: {
   engagementId: string;
@@ -32,25 +32,13 @@ async function safeIndexArtefact(params: {
   content: string | null | undefined;
   metadata: Record<string, unknown>;
 }): Promise<void> {
-  const content = params.content ?? "";
-  if (content.trim().length < RAG_MIN_CONTENT_LEN) return;
-  try {
-    await aiLimiter.execute(() =>
-      indexArtefact({
-        engagementId: params.engagementId,
-        sourceType: "ARTEFACT",
-        sourceId: params.sourceId,
-        content,
-        metadata: params.metadata,
-      })
-    );
-  } catch (err) {
-    console.warn(
-      `[rag-index] Failed to index artefact ${params.sourceId}: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    );
-  }
+  await enqueueIndexArtefact({
+    engagementId: params.engagementId,
+    sourceType: "ARTEFACT",
+    sourceId: params.sourceId,
+    content: params.content ?? "",
+    metadata: params.metadata,
+  });
 }
 
 async function safeIndexStructuredRow(params: {
@@ -60,100 +48,13 @@ async function safeIndexStructuredRow(params: {
   summary: string;
   metadata: Record<string, unknown>;
 }): Promise<void> {
-  if (!params.summary || params.summary.trim().length < RAG_MIN_CONTENT_LEN) return;
-  try {
-    await indexStructuredRow({
-      engagementId: params.engagementId ?? undefined,
-      sourceType: params.sourceType,
-      sourceId: params.sourceId,
-      summary: params.summary,
-      metadata: params.metadata,
-    });
-  } catch (err) {
-    console.warn(
-      `[rag-index] Failed to index ${params.sourceType} ${params.sourceId}: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    );
-  }
-}
-
-/** Max chunks per TOR file — prevents very long documents from flooding the index. */
-const TOR_MAX_CHUNKS = 40;
-/** Max chars to send to indexArtefact for a single TOR file (≈ TOR_MAX_CHUNKS × 500). */
-const TOR_MAX_CHARS = TOR_MAX_CHUNKS * 500;
-
-/** TOR-related doc types that should be indexed as TOR_SOURCE. */
-const TOR_SOURCE_TYPES = new Set(["TOR", "ADDENDUM", "ANNEXURE", "PREREQUISITES", "RESPONSE_FORMAT"]);
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-/**
- * Index all TOR/addendum files from the engagement's tor/ directory.
- * Non-fatal — errors are logged but never thrown.
- */
-async function indexTorSourceFiles(engagementId: string, workDir: string): Promise<void> {
-  const torDir = path.join(workDir, "tor");
-  let files: string[];
-  try {
-    files = await fs.readdir(torDir);
-  } catch {
-    // No tor/ directory — nothing to index.
-    return;
-  }
-
-  for (const filename of files) {
-    const lower = filename.toLowerCase();
-    if (!lower.endsWith(".pdf") && !lower.endsWith(".docx")) continue;
-
-    try {
-      const filePath = path.join(torDir, filename);
-      const buffer = await fs.readFile(filePath);
-      let text = "";
-      let pageCount: number | undefined;
-
-      if (lower.endsWith(".pdf")) {
-        const result = await extractTextFromPdf(buffer);
-        text = result.text;
-        pageCount = result.pageCount;
-      } else if (lower.endsWith(".docx")) {
-        const result = await extractTextFromDocx(buffer);
-        text = result.text;
-      }
-
-      if (text.trim().length < RAG_MIN_CONTENT_LEN) continue;
-
-      // Cap content length to limit chunk count.
-      const cappedContent = text.length > TOR_MAX_CHARS ? text.slice(0, TOR_MAX_CHARS) : text;
-      const sourceId = `tor-${slugify(filename)}`;
-
-      await aiLimiter.execute(() =>
-        indexArtefact({
-          engagementId,
-          sourceType: "TOR_SOURCE",
-          sourceId,
-          content: cappedContent,
-          metadata: {
-            filename,
-            mimeType: lower.endsWith(".pdf") ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ...(pageCount != null ? { pageCount } : {}),
-          },
-        })
-      );
-      console.log(`[rag-index] Indexed TOR_SOURCE: ${filename} (${cappedContent.length} chars)`);
-    } catch (err) {
-      console.warn(
-        `[rag-index] Failed to index TOR source ${filename}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-    }
-  }
+  await enqueueIndexStructuredRow({
+    engagementId: params.engagementId ?? undefined,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    summary: params.summary,
+    metadata: params.metadata,
+  });
 }
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -370,20 +271,12 @@ const worker = new Worker<PhaseJobData>(
         message: "AI agent completed. Processing artefacts...",
       });
 
-      // Index raw TOR/addendum source documents for RAG chatbot retrieval.
+      // Enqueue raw TOR/addendum source documents for RAG chatbot retrieval.
       // Runs after Phase 1 (when syncTorFiles has populated workDir/tor/).
       // Idempotent: indexArtefact deletes prior chunks before inserting.
       if (String(phaseNumber) === "1") {
         const torWorkDir = `/data/engagements/${engagementId}`;
-        try {
-          await indexTorSourceFiles(engagementId, torWorkDir);
-        } catch (err) {
-          console.warn(
-            `[rag-index] TOR source indexing failed for engagement ${engagementId}: ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
-        }
+        await enqueueIndexTorFiles(engagementId, torWorkDir);
       }
 
       // Persist artefact if the phase produced content

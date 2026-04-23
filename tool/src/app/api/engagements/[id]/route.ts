@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { indexStructuredRow } from "@/lib/rag/store";
+import { enqueueIndexStructuredRow } from "@/lib/rag/enqueue";
 import type { EngagementStatus, RfpSource, EngagementOutcome } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -24,25 +24,17 @@ async function indexEngagementMeta(engagement: {
   const outcome = engagement.outcome ?? "pending";
   const summary = `${engagement.clientName} / ${engagement.projectName ?? "—"} (${engagement.techStack}, ${engagement.engagementType}, ${engagement.status}). Deal: ${deal}. RFP source: ${rfp}. Outcome: ${outcome}.`;
   if (summary.trim().length < 50) return;
-  try {
-    await indexStructuredRow({
-      // engagementId omitted → stored as NULL so admin chat can retrieve globally.
-      sourceType: "ENGAGEMENT_META",
-      sourceId: engagement.id,
-      summary,
-      metadata: {
-        clientName: engagement.clientName,
-        outcome: engagement.outcome,
-        accountId: engagement.accountId,
-      },
-    });
-  } catch (err) {
-    console.warn(
-      `[rag-index] Failed to index ENGAGEMENT_META ${engagement.id}: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    );
-  }
+  await enqueueIndexStructuredRow({
+    // engagementId omitted → stored as NULL so admin chat can retrieve globally.
+    sourceType: "ENGAGEMENT_META",
+    sourceId: engagement.id,
+    summary,
+    metadata: {
+      clientName: engagement.clientName,
+      outcome: engagement.outcome,
+      accountId: engagement.accountId,
+    },
+  });
 }
 
 export async function GET(

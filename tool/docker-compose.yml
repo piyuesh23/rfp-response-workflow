@@ -89,6 +89,18 @@ services:
       - redis
       - minio
 
+  rag-index-worker:
+    build: .
+    command: npx tsx src/workers/rag-index-worker.ts
+    environment:
+      DATABASE_URL: postgresql://presales:presales@postgres:5432/presales
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      - postgres
+      - redis
+
   postgres:
     image: pgvector/pgvector:pg16
     environment:

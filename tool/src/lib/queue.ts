@@ -88,6 +88,50 @@ export function getImportQueue(): Queue<ImportJobData> {
   return _importQueue;
 }
 
+// --- RAG indexing queue ---
+export type RagIndexJobData =
+  | {
+      kind: "artefact";
+      engagementId?: string | null;
+      sourceType: string;
+      sourceId: string;
+      content: string;
+      metadata?: Record<string, unknown>;
+    }
+  | {
+      kind: "structured";
+      engagementId?: string | null;
+      sourceType: string;
+      sourceId: string;
+      summary: string;
+      metadata?: Record<string, unknown>;
+    }
+  | {
+      kind: "tor-files";
+      engagementId: string;
+      workDir: string;
+    };
+
+let _ragIndexQueue: Queue<RagIndexJobData> | undefined;
+
+export function getRagIndexQueue(): Queue<RagIndexJobData> {
+  if (!_ragIndexQueue) {
+    _ragIndexQueue = new Queue<RagIndexJobData>("rag-indexing", {
+      connection: getConnection(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 5000,
+        },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+      },
+    });
+  }
+  return _ragIndexQueue;
+}
+
 // Keep backward-compatible named exports that are lazy via getters
 // These are used by existing code that imports `connection` and `phaseQueue` directly
 export const connection: IORedis = new Proxy({} as IORedis, {

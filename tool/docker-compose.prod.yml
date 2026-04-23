@@ -1,39 +1,66 @@
+# Production compose — deployed via Coolify.
+#
+# Build strategy: `app` is the only service with a `build:` block. Coolify
+# builds it once, tags as `presales-tool:latest`, and the workers reuse that
+# tag. Workers depend on `app` so Coolify brings the image up before them.
+#
+# Shared config lives in YAML anchors (x-*). Coolify's env-var editor writes
+# to the referenced ${VAR} values, so anchors stay in sync automatically.
+
+x-worker-env: &worker-env
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_HOST: ${REDIS_HOST}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMTP_TO: ${SMTP_TO:-}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  # RAG indexing knobs — set RAG_INDEX_MODE=sync for an emergency rollback
+  # that bypasses the rag-indexing queue entirely.
+  RAG_INDEX_MODE: ${RAG_INDEX_MODE:-async}
+  RAG_INDEX_CONCURRENCY: ${RAG_INDEX_CONCURRENCY:-4}
+
+x-worker-s3-env: &worker-s3-env
+  S3_ENDPOINT: ${S3_ENDPOINT}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  S3_BUCKET: ${S3_BUCKET}
+
+x-service-defaults: &service-defaults
+  image: presales-tool:latest
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   app:
+    <<: *service-defaults
     build:
       context: .
       dockerfile: Dockerfile
-    image: presales-tool:latest
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      S3_ENDPOINT: ${S3_ENDPOINT}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET: ${S3_BUCKET}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      <<: [*worker-env, *worker-s3-env]
+      # App-only vars
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
-      # Set to your external HTTPS URL. Coolify auto-generates NEXTAUTH_URL
-      # as http://app.<domain> which is wrong — hardcode the real value here.
+      # Coolify auto-generates NEXTAUTH_URL as http://app.<domain> which is
+      # wrong — hardcode the real external HTTPS URL here.
       NEXTAUTH_URL: ${APP_URL:-https://rfp-copilot.qed42.com}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       ALLOWED_EMAIL_DOMAIN: ${ALLOWED_EMAIL_DOMAIN}
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      SMTP_TO: ${SMTP_TO:-}
-      SENTRY_DSN: ${SENTRY_DSN:-}
-    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -50,38 +77,14 @@ services:
       start_period: 40s
     volumes:
       - engagement-data:/data/engagements
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: presales-tool:latest
+    <<: *service-defaults
     command: node dist/workers/phase-runner.js
     environment:
-      NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      S3_ENDPOINT: ${S3_ENDPOINT}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET: ${S3_BUCKET}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      SMTP_TO: ${SMTP_TO:-}
-    restart: unless-stopped
+      <<: [*worker-env, *worker-s3-env]
+    depends_on:
+      - app
     deploy:
       resources:
         limits:
@@ -92,11 +95,31 @@ services:
           memory: 512M
     volumes:
       - engagement-data:/data/engagements
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+
+  rag-index-worker:
+    <<: *service-defaults
+    command: node dist/workers/rag-index-worker.js
+    # RAG worker only touches Postgres (pgvector) + Redis + OpenAI — no S3,
+    # no Anthropic, no SMTP. Keep its env minimal to shrink the secret surface.
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      RAG_INDEX_MODE: ${RAG_INDEX_MODE:-async}
+      RAG_INDEX_CONCURRENCY: ${RAG_INDEX_CONCURRENCY:-4}
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
 
 volumes:
   engagement-data:
