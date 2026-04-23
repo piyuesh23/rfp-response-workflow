@@ -12,7 +12,7 @@
  */
 import { Worker } from "bullmq";
 
-import { getConnection, RagIndexJobData } from "@/lib/queue";
+import { redisConnection, RagIndexJobData } from "@/lib/queue";
 import { indexArtefact, indexStructuredRow } from "@/lib/rag/store";
 import { indexTorSourceFiles } from "@/lib/rag/tor-indexer";
 
@@ -52,7 +52,7 @@ const worker = new Worker<RagIndexJobData>(
     }
   },
   {
-    connection: getConnection(),
+    connection: redisConnection,
     concurrency: Math.max(1, parseInt(process.env.RAG_INDEX_CONCURRENCY ?? "4", 10) || 4),
   }
 );
