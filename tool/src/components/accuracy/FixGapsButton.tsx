@@ -26,6 +26,20 @@ export function FixGapsButton({ engagementId, totalGaps, className }: FixGapsBut
   const [deltas, setDeltas] = React.useState<ScoreDelta[] | null>(null)
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
 
+  // On mount, check for an in-flight run so state survives page refresh
+  React.useEffect(() => {
+    let cancelled = false
+    fetch(`/api/engagements/${engagementId}/fix-gaps`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((body) => {
+        if (cancelled || !body?.activeRun) return
+        setRunId(body.activeRun.id)
+        setState("running")
+      })
+      .catch(() => { /* ignore — fall back to idle */ })
+    return () => { cancelled = true }
+  }, [engagementId])
+
   const disabled = totalGaps === 0 || state === "running"
 
   async function handleClick() {

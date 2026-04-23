@@ -4,6 +4,29 @@ import { prisma } from "@/lib/db";
 import { getGapFixQueue } from "@/lib/queue";
 import { getLatestValidationReportsByPhase } from "@/lib/accuracy";
 
+/**
+ * GET — returns the currently in-progress (QUEUED or RUNNING) GapFixRun for
+ * this engagement, or null. Used by the accuracy page's FixGapsButton to
+ * restore streaming state after a page refresh.
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id: engagementId } = await params;
+
+  const activeRun = await prisma.gapFixRun.findFirst({
+    where: { engagementId, status: { in: ["QUEUED", "RUNNING"] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, status: true, createdAt: true },
+  });
+
+  return NextResponse.json({ activeRun });
+}
+
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
