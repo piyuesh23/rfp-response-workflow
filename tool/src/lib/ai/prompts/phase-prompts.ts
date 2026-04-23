@@ -727,3 +727,128 @@ At the end of the document, add a one-line footer:
 - Do NOT leak internal QED42 assignments into the Customer Owner column.
 `;
 }
+
+export interface GapFixGap {
+  id: string;
+  clauseRef: string;
+  title: string;
+  domain?: string;
+}
+
+export interface GapFixOrphan {
+  id: string;
+  tab: string;
+  task: string;
+}
+
+export interface GapFixConfViolation {
+  id: string;
+  tab: string;
+  task: string;
+  hours: number;
+  conf: number;
+  expectedHigh: number;
+  actualHigh: number;
+}
+
+export interface GapFixRiskIssue {
+  id: string;
+  tab: string;
+  task: string;
+  conf: number;
+}
+
+export interface GapFixParams {
+  gaps: GapFixGap[];
+  orphans: GapFixOrphan[];
+  confViolations: GapFixConfViolation[];
+  missingRiskItems: GapFixRiskIssue[];
+  techStack: string;
+  techStackCustom?: string;
+  engagementType?: string;
+}
+
+export function getFixGapsPrompt(params: GapFixParams): string {
+  const { gaps, orphans, confViolations, missingRiskItems, techStack, techStackCustom, engagementType } = params;
+
+  const platformLabel = techStackCustom?.split(/[.,;\n]/)[0].trim() || techStack;
+
+  const gapsBlock = gaps.length > 0
+    ? `### MISSING LINE ITEMS (${gaps.length} TOR requirements with no estimate coverage)\n\n${gaps.map(g =>
+        `- **${g.clauseRef}** — ${g.title}${g.domain ? ` [Domain: ${g.domain}]` : ""}`
+      ).join("\n")}`
+    : "";
+
+  const orphansBlock = orphans.length > 0
+    ? `### ORPHAN LINE ITEMS (${orphans.length} estimate rows with no TOR reference)\n\n${orphans.map(o =>
+        `- **${o.tab} / ${o.task}** — add a TOR clause ref or an explicit orphanJustification`
+      ).join("\n")}`
+    : "";
+
+  const confBlock = confViolations.length > 0
+    ? `### CONF FORMULA VIOLATIONS (${confViolations.length} rows with wrong High Hrs)\n\n${confViolations.map(v =>
+        `- **${v.tab} / ${v.task}** — Hours: ${v.hours}, Conf: ${v.conf}, Expected High Hrs: ${v.expectedHigh}, Actual: ${v.actualHigh}`
+      ).join("\n")}`
+    : "";
+
+  const riskBlock = missingRiskItems.length > 0
+    ? `### MISSING RISK REGISTER ENTRIES (${missingRiskItems.length} Conf ≤4 items not in Risk Register)\n\n${missingRiskItems.map(r =>
+        `- **${r.tab} / ${r.task}** — Conf ${r.conf}`
+      ).join("\n")}`
+    : "";
+
+  const isMigration = engagementType === "MIGRATION" || engagementType === "REDESIGN";
+
+  return `You are patching an existing presales estimate for a ${platformLabel} engagement. Your task is surgical: address ONLY the specific issues listed below. Do NOT restructure, rewrite, or remove any existing content.
+
+## Engagement Context
+- Platform: ${platformLabel}
+- Engagement type: ${engagementType ?? "NEW_BUILD"}
+
+## Files to work with
+1. Read the current estimate at \`estimates/optimistic-estimate.md\`
+2. Read the TOR documents in \`tor/\` to source requirement details for gap line items
+3. After patching, overwrite \`estimates/optimistic-estimate.md\` with the corrected version
+
+---
+
+## Issues to Fix
+
+${[gapsBlock, orphansBlock, confBlock, riskBlock].filter(Boolean).join("\n\n")}
+
+---
+
+## Fix Instructions
+
+### For MISSING LINE ITEMS
+For each listed TOR requirement, add a new Backend or Frontend line item (pick the appropriate tab based on the requirement domain). Follow this format exactly:
+
+| Task | Description (include TOR reference) | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
+
+Rules:
+- Conf: use 4 by default (gives 50% High Hrs buffer). Only use 5–6 if the task is clearly bounded and well-understood.
+- High Hrs = Hours × (1 + Conf buffer%): Conf 6=0%, 5=25%, 4=50%, 3=50%, 2=75%, 1=100%
+- Low Hrs = Hours (base)
+- Assumptions MUST cite the TOR section (e.g. "TOR §3.2.1"). Include "Impact if wrong: ..."
+- BenchmarkRef: use the closest key from the Reference Benchmarks table, or "N/A" with explanation
+${isMigration ? "- For migration requirements, also check if a 'Legacy System Discovery & Archaeology' entry already exists; if not, add it as the first Backend row.\n" : ""}
+
+### For ORPHAN LINE ITEMS
+For each listed orphan row, either:
+- Add the matching TOR clause ref to the Description column (e.g. "Per TOR §4.1 ..."), OR
+- Add an orphanJustification in the Assumptions column (e.g. "Cross-cutting DevOps item not tied to a specific TOR clause")
+
+### For CONF FORMULA VIOLATIONS
+For each listed row, correct the High Hrs value to match: High Hrs = round(Hours × (1 + buffer[Conf]))
+
+### For MISSING RISK REGISTER ENTRIES
+Append new rows to the Risk Register table for each listed item. The Risk Register table has columns:
+| Task | Tab | Conf | Risk/Dependency | Open Question for PM/Client | Recommended Action | Hours at Risk |
+
+---
+
+## Output
+After making all patches, write the complete corrected estimate back to \`estimates/optimistic-estimate.md\`. Preserve all existing sections, tables, and the MACHINE-READABLE SIDECAR at the end — update the sidecar JSON to reflect any new or corrected line items.
+
+Do not produce any other output files. Do not produce a summary or explanation — just write the corrected file.`;
+}

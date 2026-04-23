@@ -18,6 +18,8 @@ export interface StreamEntry {
 
 interface ProgressStreamProps {
   phaseId: string
+  /** Override the SSE URL. Defaults to /api/phases/{phaseId}/sse */
+  sseUrl?: string
   onComplete?: () => void
   onError?: () => void
   className?: string
@@ -41,6 +43,7 @@ function formatTime(ts: Date | string): string {
 
 export function ProgressStream({
   phaseId,
+  sseUrl,
   onComplete,
   onError,
   className,
@@ -51,7 +54,7 @@ export function ProgressStream({
   const entryCountRef = React.useRef(0)
 
   React.useEffect(() => {
-    const eventSource = new EventSource(`/api/phases/${phaseId}/sse`)
+    const eventSource = new EventSource(sseUrl ?? `/api/phases/${phaseId}/sse`)
 
     eventSource.addEventListener("connected", () => {
       setConnected(true)

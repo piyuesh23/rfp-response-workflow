@@ -43,6 +43,29 @@ export function getPhaseQueue(): Queue<PhaseJobData> {
   return _phaseQueue;
 }
 
+// --- Gap-fix queue ---
+export interface GapFixJobData {
+  gapFixRunId: string;
+  engagementId: string;
+  techStack: string;
+}
+
+let _gapFixQueue: Queue<GapFixJobData> | undefined;
+
+export function getGapFixQueue(): Queue<GapFixJobData> {
+  if (!_gapFixQueue) {
+    _gapFixQueue = new Queue<GapFixJobData>("gap-fix", {
+      connection: getConnection(),
+      defaultJobOptions: {
+        attempts: 1,
+        removeOnComplete: 50,
+        removeOnFail: 100,
+      },
+    });
+  }
+  return _gapFixQueue;
+}
+
 // --- Import queue ---
 export interface ImportJobData {
   importJobId: string;

@@ -134,6 +134,7 @@ model Engagement {
   torRequirements        TorRequirement[]
   lineItems              LineItem[]
   validationReports      ValidationReport[]
+  gapFixRuns             GapFixRun[]
   embeddingChunks        EmbeddingChunk[]
 
   @@index([accountId])
@@ -609,6 +610,24 @@ model ChatAuditLog {
   createdAt     DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([engagementId, createdAt])
+}
+
+/// Tracks one user-triggered "Fix Gaps" pass against an engagement's estimate.
+/// Each run snapshots gap metrics before/after so the UI can show delta scores.
+model GapFixRun {
+  id           String     @id @default(cuid())
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId String
+  status       String     @default("QUEUED") // QUEUED | RUNNING | DONE | FAILED
+  jobId        String?    // BullMQ job ID for SSE matching
+  gapsBefore   Json       // { gapCount, orphanCount, confViolations, noBenchmarkCount, phaseNumber }
+  scoresBefore Json?      // { phaseNumber: string, accuracyScore: number }[]
+  scoresAfter  Json?      // { phaseNumber: string, accuracyScore: number }[]
+  errorMessage String?    @db.Text
+  createdAt    DateTime   @default(now())
+  completedAt  DateTime?
+
   @@index([engagementId, createdAt])
 }
 

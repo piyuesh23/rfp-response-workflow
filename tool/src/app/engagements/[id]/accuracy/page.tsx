@@ -37,6 +37,7 @@ import {
   type IntegrationTierIssueRow,
   type ProposalObjectiveIssueRow,
 } from "@/components/accuracy/DefectTables";
+import { FixGapsButton } from "@/components/accuracy/FixGapsButton";
 
 const TOR_REFERENCE_RX =
   /§\s*\d+|Section\s*\d+|Clause\s*\d+|Q&A\s*#?\d+|TOR\s*[§\d]/i;
@@ -465,6 +466,14 @@ export default async function AccuracyPage({
           </p>
         )}
       </div>
+
+      {/* Fix Gaps — only show when there is at least one validation report */}
+      {overall && (
+        <FixGapsButton
+          engagementId={id}
+          totalGaps={gaps.length + orphans.length + confViolations.length + riskIssues.length}
+        />
+      )}
 
       <Separator />
 

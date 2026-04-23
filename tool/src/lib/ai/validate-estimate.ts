@@ -373,6 +373,26 @@ const ALWAYS_INCLUDE_TASKS: Record<string, string[][]> = {
   // Stack-neutral keyword sets for OTHER engagements. "install"/"setup" covers
   // whatever the platform calls its base install; "role" covers roles / access /
   // permissions; "deploy" covers deployment / release / CI-CD wording.
+  NEXTJS: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["install", "config"],
+    ["configuration", "management"],
+    ["roles", "permission"],
+    ["media", "asset"],
+    ["deployment", "pipeline"],
+    ["qa", "stabil"],
+  ],
+  REACT: [
+    ["discovery", "requirement"],
+    ["environment", "setup"],
+    ["install", "config"],
+    ["configuration", "management"],
+    ["roles", "permission"],
+    ["media", "asset"],
+    ["deployment", "pipeline"],
+    ["qa", "stabil"],
+  ],
   OTHER: [
     ["discovery", "requirement"],
     ["environment", "setup"],
@@ -437,6 +457,26 @@ const ALWAYS_INCLUDE_LABELS: Record<string, string[]> = {
     "Deployment Pipeline",
     "QA / Stabilisation",
   ],
+  NEXTJS: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "Next.js Project Setup & Base Configuration",
+    "Configuration Management / Secrets",
+    "Roles & Permissions",
+    "Asset / Media Handling",
+    "Deployment Pipeline",
+    "QA / Stabilisation",
+  ],
+  REACT: [
+    "Discovery & Requirements Analysis",
+    "Environment Setup",
+    "React App Setup & Base Configuration",
+    "Configuration Management / Secrets",
+    "Roles & Permissions",
+    "Asset / Media Handling",
+    "Deployment Pipeline",
+    "QA / Stabilisation",
+  ],
 };
 
 /**
@@ -447,8 +487,8 @@ function validateAlwaysIncludeTasks(
   lineItems: ParsedLineItem[],
   techStack: string
 ): StructuralValidationItem {
-  const keywordSets = ALWAYS_INCLUDE_TASKS[techStack] ?? ALWAYS_INCLUDE_TASKS["DRUPAL"];
-  const labels = ALWAYS_INCLUDE_LABELS[techStack] ?? ALWAYS_INCLUDE_LABELS["DRUPAL"];
+  const keywordSets = ALWAYS_INCLUDE_TASKS[techStack] ?? ALWAYS_INCLUDE_TASKS["OTHER"];
+  const labels = ALWAYS_INCLUDE_LABELS[techStack] ?? ALWAYS_INCLUDE_LABELS["OTHER"];
   const backendItems = lineItems.filter((i) => i.tab === "Backend");
   const missing: string[] = [];
 
