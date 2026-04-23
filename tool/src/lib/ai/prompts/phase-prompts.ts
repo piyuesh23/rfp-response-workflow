@@ -818,35 +818,61 @@ ${[gapsBlock, orphansBlock, confBlock, riskBlock].filter(Boolean).join("\n\n")}
 
 ## Fix Instructions
 
-### For MISSING LINE ITEMS
-For each listed TOR requirement, add a new Backend or Frontend line item (pick the appropriate tab based on the requirement domain). Follow this format exactly:
+### For MISSING LINE ITEMS (gaps)
+
+Each listed TOR requirement currently has NO line item in the sidecar JSON with that clauseRef in \`torClauseRefs\`. You must fix this one of TWO ways for each gap — pick whichever is appropriate:
+
+**Option A — Link to an existing line item that already covers this scope.**
+Review the sidecar lineItems array. If an existing line item's work already covers the requirement (e.g. "Storyblok Space Configuration" covering "Central media library"), then add the gap's clauseRef to that line item's \`torClauseRefs\` array and update the matching markdown row's Description to reference the added TOR clause.
+
+**Option B — Add a new line item** when no existing item covers the scope. Add a row to the appropriate markdown table (Backend or Frontend) AND a corresponding entry to the sidecar \`lineItems\` array. The markdown table columns are:
 
 | Task | Description (include TOR reference) | Hours | BenchmarkRef | Conf | Low Hrs | High Hrs | Assumptions | Proposed Solution | Reference Links |
 
-Rules:
+Rules for new items:
 - Conf: use 4 by default (gives 50% High Hrs buffer). Only use 5–6 if the task is clearly bounded and well-understood.
-- High Hrs = Hours × (1 + Conf buffer%): Conf 6=0%, 5=25%, 4=50%, 3=50%, 2=75%, 1=100%
-- Low Hrs = Hours (base)
-- Assumptions MUST cite the TOR section (e.g. "TOR §3.2.1"). Include "Impact if wrong: ..."
+- Low Hrs = Hours (base); High Hrs = round(Hours × (1 + buffer)) where buffer: Conf 6=0, 5=0.25, 4=0.5, 3=0.5, 2=0.75, 1=1.0
+- Assumptions MUST cite the TOR section. Include "Impact if wrong: ..."
 - BenchmarkRef: use the closest key from the Reference Benchmarks table, or "N/A" with explanation
 ${isMigration ? "- For migration requirements, also check if a 'Legacy System Discovery & Archaeology' entry already exists; if not, add it as the first Backend row.\n" : ""}
 
+**CRITICAL:** After your edits, every gap clauseRef listed above MUST appear in at least one sidecar line item's \`torClauseRefs\` array. Do NOT just update a "traceability matrix" text section — the sidecar JSON is the single source of truth for validation. Text-only updates will NOT improve the accuracy score.
+
 ### For ORPHAN LINE ITEMS
-For each listed orphan row, either:
-- Add the matching TOR clause ref to the Description column (e.g. "Per TOR §4.1 ..."), OR
-- Add an orphanJustification in the Assumptions column (e.g. "Cross-cutting DevOps item not tied to a specific TOR clause")
+For each listed orphan row, in the sidecar JSON lineItems entry:
+- Add the matching TOR clause refs to \`torClauseRefs\`, OR
+- Set \`orphanJustification\` to a specific non-empty string (e.g. "Cross-cutting DevOps item not tied to a specific TOR clause")
 
 ### For CONF FORMULA VIOLATIONS
-For each listed row, correct the High Hrs value to match: High Hrs = round(Hours × (1 + buffer[Conf]))
+For each listed row, correct BOTH the markdown table High Hrs cell AND the sidecar \`highHrs\` field to match: highHrs = round(hours × (1 + buffer[conf]))
 
 ### For MISSING RISK REGISTER ENTRIES
-Append new rows to the Risk Register table for each listed item. The Risk Register table has columns:
+Append new rows to the Risk Register markdown table for each listed item. Columns:
 | Task | Tab | Conf | Risk/Dependency | Open Question for PM/Client | Recommended Action | Hours at Risk |
 
 ---
 
-## Output
-After making all patches, write the complete corrected estimate back to \`estimates/optimistic-estimate.md\`. Preserve all existing sections, tables, and the MACHINE-READABLE SIDECAR at the end — update the sidecar JSON to reflect any new or corrected line items.
+## Sidecar format reference
 
-Do not produce any other output files. Do not produce a summary or explanation — just write the corrected file.`;
+The sidecar at the end of the file looks like:
+
+\`\`\`
+<!-- ESTIMATE-LINEITEMS-JSON
+{
+  "lineItems": [
+    { "tab": "BACKEND", "task": "...", "description": "...",
+      "hours": 40, "conf": 5, "lowHrs": 40, "highHrs": 50,
+      "benchmarkRef": "backend.api.medium", "integrationTier": null,
+      "torClauseRefs": ["3.2.1"], "orphanJustification": null }
+  ]
+}
+-->
+\`\`\`
+
+\`tab\` values: \`BACKEND | FRONTEND | FIXED_COST | AI\`. The HTML comment markers must appear verbatim. Preserve strict JSON validity.
+
+---
+
+## Output
+Write the complete corrected file back to \`estimates/optimistic-estimate.md\`. Do not create any other files. Do not produce a summary — just write the corrected file.`;
 }

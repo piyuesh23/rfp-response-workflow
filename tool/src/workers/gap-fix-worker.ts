@@ -172,7 +172,24 @@ const worker = new Worker<GapFixJobData>(
                 },
               });
             }
-            console.log(`[gap-fix] Re-synced ${sidecar.lineItems.length} LineItem rows for engagement ${engagementId}`);
+            // Diagnostic: count how many of the listed gap clauseRefs are now linked
+            const listedGapRefs = new Set(gapItems.map((g) => normalizeClauseRef(g.clauseRef)));
+            const sidecarCoveredRefs = new Set<string>();
+            for (const li of sidecar.lineItems) {
+              for (const ref of li.torClauseRefs ?? []) {
+                const norm = normalizeClauseRef(ref);
+                if (listedGapRefs.has(norm)) sidecarCoveredRefs.add(norm);
+              }
+            }
+            const unresolvedGaps = [...listedGapRefs].filter((r) => !sidecarCoveredRefs.has(r));
+            console.log(`[gap-fix] Re-synced ${sidecar.lineItems.length} LineItem rows. Gaps now covered in sidecar: ${sidecarCoveredRefs.size}/${listedGapRefs.size}. Unresolved: ${unresolvedGaps.join(", ") || "(none)"}`);
+            if (unresolvedGaps.length > 0) {
+              await job.updateProgress({
+                type: "progress",
+                tool: "Gap Fix Agent",
+                message: `Warning: ${unresolvedGaps.length}/${listedGapRefs.size} gap clauseRefs still not linked in sidecar (${unresolvedGaps.slice(0, 3).join(", ")}${unresolvedGaps.length > 3 ? "..." : ""}). Score may not improve. Consider re-running.`,
+              });
+            }
           } else {
             console.warn(`[gap-fix] No sidecar found in patched estimate — LineItem rows not updated. Validation may not reflect changes.`);
           }
