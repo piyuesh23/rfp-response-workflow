@@ -85,9 +85,9 @@ const worker = new Worker<GapFixJobData>(
         engagementId,
         phase: 0,
         techStack,
-        tools: ["Read", "Write", "Glob"],
-        maxTurns: 30,
-        systemPrompt: `You are a senior ${techStack} architect patching a presales estimate. You patch only what is listed — do not restructure, rewrite, or remove anything else. You work inside the directory /data/engagements/${engagementId}.`,
+        tools: ["Read", "Write"],
+        maxTurns: 15,
+        systemPrompt: `You are a senior ${techStack} architect patching a presales estimate. You patch only what is listed — do not restructure, rewrite, or remove anything else. You work inside the directory /data/engagements/${engagementId}. Be efficient: read estimates/optimistic-estimate.md ONCE at the start, then make ALL edits in a single Write call. Do NOT re-read the TOR — the issue list below already contains every clause ref and title you need. Do NOT read other files.`,
         userPrompt,
         model: SONNET_MODEL,
       };

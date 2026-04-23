@@ -804,9 +804,9 @@ export function getFixGapsPrompt(params: GapFixParams): string {
 - Engagement type: ${engagementType ?? "NEW_BUILD"}
 
 ## Files to work with
-1. Read the current estimate at \`estimates/optimistic-estimate.md\`
-2. Read the TOR documents in \`tor/\` to source requirement details for gap line items
-3. After patching, overwrite \`estimates/optimistic-estimate.md\` with the corrected version
+1. Read \`estimates/optimistic-estimate.md\` ONCE at the start of your turn
+2. Make ALL patches and write the corrected file back in a SINGLE Write call
+3. Do NOT read the TOR files — the issue list below contains every clauseRef and title you need. Reading the TOR wastes turns and budget.
 
 ---
 
