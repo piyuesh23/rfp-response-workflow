@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
     legacyPlatform,
     legacyPlatformUrl,
     accountId,
+    estimationMode,
   } = body as {
     clientName: string;
     projectName?: string;
@@ -111,6 +112,7 @@ export async function POST(request: NextRequest) {
     legacyPlatform?: string;
     legacyPlatformUrl?: string;
     accountId?: string;
+    estimationMode?: "BIG_BANG" | "PHASED" | "UNDECIDED";
   };
 
   if (!clientName || !techStack) {
@@ -127,7 +129,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const phaseNumbers = ["0", "1", "1A", "2", "3", "4", "5"];
+  const phaseNumbers = ["0", "1", "1B", "1A", "2", "3", "3R", "5", "5B"];
 
   const engagement = await prisma.engagement.create({
     data: {
@@ -141,6 +143,7 @@ export async function POST(request: NextRequest) {
       legacyPlatform: legacyPlatform?.trim() || null,
       legacyPlatformUrl: legacyPlatformUrl?.trim() || null,
       accountId: accountId ?? null,
+      estimationMode: estimationMode ?? "BIG_BANG",
       createdById: session.user.id,
       phases: {
         create: phaseNumbers.map((phaseNumber) => ({
