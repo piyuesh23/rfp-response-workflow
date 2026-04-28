@@ -21,13 +21,15 @@ export interface PhaseDef {
 }
 
 export const PHASE_DEFS: PhaseDef[] = [
-  { number: "0",  label: "Research",              dependsOn: [],          workflowPath: null,           optional: false },
-  { number: "1",  label: "TOR Assessment",        dependsOn: [],          workflowPath: null,           optional: false },
-  { number: "1A", label: "Optimistic Estimate",   dependsOn: ["0", "1"],  workflowPath: "NO_RESPONSE",  optional: true },
-  { number: "2",  label: "Responses",             dependsOn: ["0", "1"],  workflowPath: "HAS_RESPONSE", optional: false },
-  { number: "3",  label: "Estimate Analysis",      dependsOn: ["2"],       workflowPath: "HAS_RESPONSE", optional: false },
-  { number: "3R", label: "Review & Gap Analysis", dependsOn: ["3"],       workflowPath: "HAS_RESPONSE", optional: false },
-  { number: "5",  label: "Technical Proposal",     dependsOn: [],          workflowPath: null,           optional: false },
+  { number: "0",   label: "Research",                  dependsOn: [],            workflowPath: null,           optional: false },
+  { number: "1",   label: "TOR Assessment",            dependsOn: [],            workflowPath: null,           optional: false },
+  { number: "1B",  label: "Delivery Phases Inference", dependsOn: ["0", "1"],    workflowPath: "NO_RESPONSE",  optional: true },
+  { number: "1A",  label: "Optimistic Estimate",       dependsOn: ["0", "1"],    workflowPath: "NO_RESPONSE",  optional: true },
+  { number: "2",   label: "Responses",                 dependsOn: ["0", "1"],    workflowPath: "HAS_RESPONSE", optional: false },
+  { number: "3",   label: "Estimate Analysis",         dependsOn: ["2"],         workflowPath: "HAS_RESPONSE", optional: false },
+  { number: "3R",  label: "Review & Gap Analysis",     dependsOn: ["3"],         workflowPath: "HAS_RESPONSE", optional: false },
+  { number: "5",   label: "Technical Proposal",        dependsOn: [],            workflowPath: null,           optional: false },
+  { number: "5B",  label: "Project Plan",              dependsOn: ["5"],         workflowPath: null,           optional: true },
 ];
 
 /** Get phase definition by number */

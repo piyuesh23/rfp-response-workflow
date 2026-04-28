@@ -132,6 +132,13 @@ export interface Phase1AEstimatePromptParams {
   projectDescription?: string;
   ecosystemNotes?: string;
   benchmarksMarkdown?: string;
+  deliveryPhase?: {
+    name: string;
+    summary: string;
+    scopeBullets: string[];
+    ordinal: number;
+    totalPhases: number;
+  };
 }
 
 // Back-compat overloads: accept either a params object or the old positional args.
@@ -152,6 +159,7 @@ export function getPhase1AEstimatePrompt(
     projectDescription,
     ecosystemNotes,
     benchmarksMarkdown,
+    deliveryPhase,
   } = params;
 
   const isOther = techStack === "OTHER" || Boolean(techStackCustom);
@@ -235,7 +243,11 @@ Instead, estimate the effort required to CONDUCT a comprehensive discovery phase
 Use these categories for your line items. Every line item should describe a discovery ACTIVITY, not a build deliverable.
 ` : "";
 
-  return `Conduct Phase 1A: ${isDiscovery ? "Discovery Effort Estimation" : "Optimistic Estimation (No-Response Path)"}.
+  const deliveryPhaseScopeLimiter = deliveryPhase
+    ? `\n\n## SCOPE LIMITER — Phased Delivery Mode\n\nYou are estimating ONLY **${deliveryPhase.name}** (phase ${deliveryPhase.ordinal} of ${deliveryPhase.totalPhases}).\n\n**In-scope for this estimate:**\n${deliveryPhase.scopeBullets.map((b) => `- ${b}`).join("\n")}\n\n**Out of scope:** Any work belonging to other delivery phases. Do NOT include it here. If you identify cross-phase dependencies, flag them in the Assumptions section with a note like "Depends on Phase N: [description]".\n`
+    : "";
+
+  return `${deliveryPhaseScopeLimiter}Conduct Phase 1A: ${isDiscovery ? "Discovery Effort Estimation" : "Optimistic Estimation (No-Response Path)"}.
 
 ${isDiscovery ? "Estimate the effort required to conduct discovery for this engagement." : isOther ? "Customer Q&A responses are not available. Generate assumption-heavy estimates. **This engagement uses a custom/unfamiliar tech stack — do NOT default to optimistic low-end figures. Use the mid-to-high end of all researched ranges and apply explicit estimation buffers to account for stack-specific unknowns.**" : "Customer Q&A responses are not available. Generate assumption-heavy estimates optimised for competitive positioning."}
 
@@ -398,8 +410,22 @@ Sidecar rules:
   appear verbatim.`;
 }
 
-export function getPhase1AProposalPrompt(engagementType?: string): string {
+export interface DeliveryPhaseData {
+  name: string;
+  summary: string;
+  scopeBullets: string[];
+  ordinal: number;
+  targetDurationWeeks?: number | null;
+  lowHrsTotal?: number;
+  highHrsTotal?: number;
+}
+
+export function getPhase1AProposalPrompt(
+  engagementType?: string,
+  deliveryPhases?: DeliveryPhaseData[]
+): string {
   const isDiscovery = engagementType === "DISCOVERY";
+  const isPhased = deliveryPhases && deliveryPhases.length > 0;
 
   const scopeSection = isDiscovery
     ? `4. Discovery Scope: what discovery activities are included (workshops, architecture review, PoCs, documentation, etc.) — NOT build deliverables`
@@ -417,6 +443,22 @@ export function getPhase1AProposalPrompt(engagementType?: string): string {
     ? `\n8. Discovery Deliverables: list all outputs the client will receive (assessment report, architecture document, wireframes, PoC results, recommendations deck, recorded walkthroughs)`
     : "";
 
+  const phasedDeliverySection = isPhased
+    ? `5. Phased Delivery Plan:
+${deliveryPhases!.map((p) => `   **${p.name}**: ${p.summary}
+   - Scope: ${p.scopeBullets.join("; ")}
+   - Estimated Effort: Low ${p.lowHrsTotal ?? "TBD"} hrs / High ${p.highHrsTotal ?? "TBD"} hrs
+   - Target Duration: ${p.targetDurationWeeks ? `${p.targetDurationWeeks} weeks` : "TBD"}`).join("\n")}
+
+   Include a Mermaid gantt chart with per-phase swimlanes:
+   \`\`\`mermaid
+   gantt
+       title Phased Delivery Timeline
+       dateFormat YYYY-MM-DD
+${deliveryPhases!.map((p) => `       section ${p.name}\n           ${p.name} :p${p.ordinal}, after ${p.ordinal > 1 ? `p${p.ordinal - 1}` : "2026-01-01"}, ${p.targetDurationWeeks ? `${p.targetDurationWeeks * 7}d` : "30d"}`).join("\n")}
+   \`\`\``
+    : `5. Assumptions & Exclusions: key assumptions that define scope boundaries`;
+
   return `Generate a client-facing ${isDiscovery ? "Discovery Proposal" : "Technical Proposal"} Document.
 
 Based on the TOR analysis and ${isDiscovery ? "discovery effort estimates" : "optimistic estimates"} already produced, write a professional ${isDiscovery ? "discovery" : "technical"} proposal suitable for sending to the client.
@@ -426,9 +468,9 @@ The proposal should cover:
 ${approachSection}
 3. Technical Architecture: proposed stack, integrations, hosting
 ${scopeSection}
-5. Assumptions & Exclusions: key assumptions that define scope boundaries
-${timelineSection}
-7. Why Us: relevant experience, capability highlights${deliverables}
+${phasedDeliverySection}
+${isPhased ? "6. Assumptions & Exclusions: key assumptions that define scope boundaries\n7. Timeline: see Phased Delivery Plan in section 5 above" : `5. Assumptions & Exclusions: key assumptions that define scope boundaries\n${timelineSection}`}
+${isPhased ? "8" : "7"}. Why Us: relevant experience, capability highlights${deliverables}
 
 Write output to claude-artefacts/technical-proposal.md following the technical-proposal-template.md structure.`;
 }
@@ -726,4 +768,106 @@ At the end of the document, add a one-line footer:
 - Do NOT invent credentials that the legacy platform would not have (e.g. don't ask for "Kubernetes kubeconfig" if the stated platform is a single-VM WordPress install).
 - Do NOT leak internal QED42 assignments into the Customer Owner column.
 `;
+
+// ─── Delivery Phase Inference Prompt ─────────────────────────────────────────
+
+export interface DeliveryPhaseInferencePromptParams {
+  torText?: string;
+  torAssessment?: string;
+  customerResearch?: string;
+  engagementType?: string;
+}
+
+export function getDeliveryPhaseInferencePrompt(
+  params: DeliveryPhaseInferencePromptParams
+): { system: string; user: string } {
+  const { torText, torAssessment, customerResearch, engagementType } = params;
+
+  const system = `You are a Senior Delivery Architect specialising in phased software delivery planning. Your task is to analyse a Terms of Reference (TOR) document and decompose the engagement into logical delivery phases.
+
+Each delivery phase must:
+1. Group logically related TOR requirements that deliver a coherent client-facing capability.
+2. Be sequenced so each phase delivers demonstrable, testable value to the client.
+3. Have a client-facing milestone name that reflects the business outcome (e.g. "Phase 1: Foundation & Content Architecture", "Phase 2: Integrations & Personalisation").
+4. Include a concise summary (2-3 sentences) describing what the client will have at the end of this phase.
+5. Include 3-6 scope bullets as specific, action-oriented deliverables.
+6. Include rationale explaining why this grouping makes sense from a delivery risk and value perspective.
+7. Map to specific TOR sections.
+
+Target 3-6 phases for typical engagements. Never exceed 8 phases. Never produce fewer than 2.
+
+Respond ONLY with valid JSON matching the schema exactly. No explanatory text outside the JSON.`;
+
+  const contextBlocks: string[] = [];
+  if (engagementType) contextBlocks.push(`**Engagement Type:** ${engagementType.replace(/_/g, " ")}`);
+  if (customerResearch) contextBlocks.push(`## Customer Research Summary\n\n${customerResearch.slice(0, 3000)}`);
+  if (torAssessment) contextBlocks.push(`## TOR Assessment\n\n${torAssessment.slice(0, 4000)}`);
+  if (torText) contextBlocks.push(`## TOR Document (excerpt)\n\n${torText.slice(0, 8000)}`);
+
+  const user = `${contextBlocks.join("\n\n")}
+
+Based on the above, decompose this engagement into logical delivery phases. Output JSON with this exact schema:
+{
+  "phases": [
+    {
+      "name": "Phase 1: <Client-Facing Milestone Name>",
+      "summary": "<2-3 sentence description of what the client will have at end of phase>",
+      "scopeBullets": ["<deliverable 1>", "<deliverable 2>", "..."],
+      "targetDurationWeeks": <integer or omit if unknown>,
+      "rationale": "<Why this grouping? Delivery risk, client value sequencing.>",
+      "mappedTorSections": ["<TOR section ref>", "..."]
+    }
+  ]
+}`;
+
+  return { system, user };
+}
+
+// ─── Project Plan Prompt ──────────────────────────────────────────────────────
+
+export interface ProjectPlanPromptParams {
+  engagementType?: string;
+  mode: "BIG_BANG" | "PHASED";
+  deliveryPhases?: DeliveryPhaseData[];
+  lineItemSummary?: string;
+  assumptions?: string;
+  risks?: string;
+}
+
+export function getProjectPlanPrompt(params: ProjectPlanPromptParams): string {
+  const { engagementType, mode, deliveryPhases, lineItemSummary, assumptions, risks } = params;
+
+  const phaseSection =
+    mode === "PHASED" && deliveryPhases && deliveryPhases.length > 0
+      ? `## Milestone Table\n\n| Phase | Scope Summary | Effort (Low-High hrs) | Target Duration |\n|---|---|---|---|\n${deliveryPhases.map((p) => `| ${p.name} | ${p.summary.slice(0, 80)} | ${p.lowHrsTotal ?? "TBD"} – ${p.highHrsTotal ?? "TBD"} hrs | ${p.targetDurationWeeks ? `${p.targetDurationWeeks} weeks` : "TBD"} |`).join("\n")}\n\n## Mermaid Gantt Chart\n\n\`\`\`mermaid\ngantt\n    title Project Delivery Timeline\n    dateFormat YYYY-MM-DD\n${deliveryPhases.map((p) => `    section ${p.name}\n        ${p.name} :p${p.ordinal}, after ${p.ordinal > 1 ? `p${p.ordinal - 1}` : "2026-01-01"}, ${p.targetDurationWeeks ? `${p.targetDurationWeeks * 7}d` : "30d"}`).join("\n")}\n\`\`\``
+      : `## Milestone Table\n\n| Milestone | Description | Target | Status |\n|---|---|---|---|\n| Kickoff | Project initiation and environment setup | Week 1 | |\n| Alpha | Core functionality complete | Week 8 | |\n| Beta | Feature complete, QA underway | Week 12 | |\n| Go-Live | Production deployment | Week 16 | |\n\n## Mermaid Gantt Chart\n\n\`\`\`mermaid\ngantt\n    title Project Delivery Timeline\n    dateFormat YYYY-MM-DD\n    section Delivery\n        Foundation :a1, 2026-01-01, 28d\n        Core Build :a2, after a1, 42d\n        Integration & QA :a3, after a2, 21d\n        Go-Live :a4, after a3, 7d\n\`\`\``;
+
+  return `Generate a standalone Project Plan document for this ${engagementType?.replace(/_/g, " ") ?? ""} engagement.
+
+The plan should be professional, client-ready markdown covering:
+
+## 1. Executive Summary
+2-3 paragraphs covering: project goals, delivery approach (${mode === "PHASED" ? "phased delivery" : "single-phase delivery"}), and key success factors.
+
+${phaseSection}
+
+## Sign-Off Gates
+For each major milestone/phase, define the sign-off criteria:
+| Gate | Criteria | Required Approvers | Blockers |
+|---|---|---|---|
+(populate with realistic gates for each phase or milestone)
+
+## Risk Register
+| Risk | Probability | Impact | Mitigation |
+|---|---|---|---|
+${risks ? `Based on identified risks:\n${risks.slice(0, 2000)}` : "(populate from engagement risk analysis)"}
+
+## Key Assumptions
+${assumptions ? assumptions.slice(0, 2000) : "(populate from engagement assumptions)"}
+
+## Estimate Summary
+${lineItemSummary ? lineItemSummary.slice(0, 2000) : "(populate from line item totals per tab)"}
+
+Write this document in clean, client-facing markdown. Do NOT include internal QED42 references or internal pricing. Save to \`claude-artefacts/project-plan.md\`.`;
+}
 }
