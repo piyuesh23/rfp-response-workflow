@@ -6,7 +6,6 @@
  * Persists each inferred phase as a DeliveryPhase row (status: DRAFT) and
  * stores the raw inference as a DELIVERY_PHASES_INFERENCE PhaseArtefact.
  */
-import Anthropic from "@anthropic-ai/sdk";
 import { aiJsonCall } from "@/lib/ai/ai-with-retry";
 import { DeliveryPhaseInferenceSchema } from "@/lib/ai/schemas/delivery-phases";
 import { getDeliveryPhaseInferencePrompt } from "@/lib/ai/prompts/phase-prompts";

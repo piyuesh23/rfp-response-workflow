@@ -211,7 +211,7 @@ export function DeliveryPhasesPanel({
       const phase1B = eng.phases.find((p) => p.phaseNumber === "1B")
       if (!phase1B) throw new Error("Phase 1B not found — re-create engagement")
 
-      const runRes = await fetch(`/api/engagements/${engagementId}/phases/${phase1B.id}/run`, {
+      const runRes = await fetch(`/api/phases/${phase1B.id}/run`, {
         method: "POST",
       })
       if (!runRes.ok) {
