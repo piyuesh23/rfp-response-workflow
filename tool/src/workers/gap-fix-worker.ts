@@ -142,6 +142,16 @@ const worker = new Worker<GapFixJobData>(
         const reqByNormalized = new Map<string, string>();
         for (const r of reqById) reqByNormalized.set(r.normalizedClauseRef, r.id);
 
+        // Preserve deliveryPhaseId assignments before deleting rows (PHASED mode)
+        const existingLineItems = await prisma.lineItem.findMany({
+          where: { engagementId },
+          select: { task: true, tab: true, deliveryPhaseId: true },
+        });
+        const deliveryPhaseByTaskTab = new Map<string, string | null>();
+        for (const li of existingLineItems) {
+          deliveryPhaseByTaskTab.set(`${li.tab}::${li.task}`, li.deliveryPhaseId);
+        }
+
         await prisma.lineItem.deleteMany({ where: { engagementId } });
 
         for (const li of patchedSidecar.lineItems) {
@@ -154,6 +164,10 @@ const worker = new Worker<GapFixJobData>(
             torIds.length === 0
               ? (li.orphanJustification?.trim() || "No TOR clause reference provided.")
               : null;
+
+          // Restore deliveryPhaseId from pre-delete snapshot (if this task existed before)
+          const deliveryPhaseId =
+            deliveryPhaseByTaskTab.get(`${li.tab}::${li.task}`) ?? null;
 
           await prisma.lineItem.create({
             data: {
@@ -169,6 +183,7 @@ const worker = new Worker<GapFixJobData>(
               integrationTier: li.integrationTier ?? null,
               orphanJustification,
               sourcePhaseId: null,
+              deliveryPhaseId,
               ...(torIds.length > 0
                 ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
                 : {}),

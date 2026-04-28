@@ -101,6 +101,7 @@ const worker = new Worker<PhaseJobData>(
           projectDescription: true,
           legacyPlatform: true,
           legacyPlatformUrl: true,
+          estimationMode: true,
         },
       });
 
@@ -189,6 +190,104 @@ const worker = new Worker<PhaseJobData>(
             // Notification failure must not break the worker
           }
 
+          return;
+        }
+      }
+
+      // ─── Phase 1B: Delivery Phases Inference (direct AI call, no agent loop) ─
+      if (String(phaseNumber) === "1B") {
+        await job.updateProgress({
+          type: "progress",
+          tool: "Delivery Phases Inference",
+          message: "Inferring delivery phases from TOR analysis...",
+        });
+        const { runPhase1BDeliveryPhases } = await import("@/lib/ai/phases/phase1b-delivery-phases");
+        const phases = await runPhase1BDeliveryPhases({
+          engagementId,
+          phaseId,
+          engagementType: engagementData?.engagementType,
+        });
+        await job.updateProgress({
+          type: "progress",
+          tool: "Delivery Phases Inference",
+          message: `Inferred ${phases.length} delivery phase(s) — ready for review.`,
+        });
+        await prisma.phase.update({
+          where: { id: phaseId },
+          data: { status: PhaseStatus.REVIEW, completedAt: new Date() },
+        });
+        try { await notifyReviewNeeded(engagementId, "1B"); } catch { /* non-fatal */ }
+        return;
+      }
+
+      // ─── Phase 5B: Project Plan Generation (direct AI call, no agent loop) ──
+      if (String(phaseNumber) === "5B") {
+        await job.updateProgress({
+          type: "progress",
+          tool: "Project Plan",
+          message: "Generating project plan document...",
+        });
+        const { runPhase5BProjectPlan } = await import("@/lib/ai/phases/phase5b-project-plan");
+        await runPhase5BProjectPlan({
+          engagementId,
+          phaseId,
+          engagementType: engagementData?.engagementType,
+        });
+        await job.updateProgress({
+          type: "progress",
+          tool: "Project Plan",
+          message: "Project plan generated successfully.",
+        });
+        await prisma.phase.update({
+          where: { id: phaseId },
+          data: { status: PhaseStatus.REVIEW, completedAt: new Date() },
+        });
+        try { await notifyReviewNeeded(engagementId, "5B"); } catch { /* non-fatal */ }
+        return;
+      }
+
+      // ─── Phase 1A estimation mode gate ────────────────────────────────────────
+      if (String(phaseNumber) === "1A" && engagementData?.estimationMode === "UNDECIDED") {
+        const gateMessage = "Estimation approach not yet chosen. Select Big Bang or Phased before generating estimates.";
+        await job.updateProgress({ type: "progress", tool: "Phase Gate", message: gateMessage });
+        await prisma.phaseArtefact.create({
+          data: {
+            phaseId,
+            artefactType: ArtefactType.ESTIMATE,
+            version: 1,
+            label: "ESTIMATE_BLOCKED.md",
+            contentMd: `# Estimate Blocked — Choose Estimation Approach\n\n${gateMessage}\n\nNavigate to the Delivery Phases panel to choose between Big Bang or Phased estimation.`,
+            metadata: { blocked: true, reason: gateMessage },
+          },
+        });
+        await prisma.phase.update({
+          where: { id: phaseId },
+          data: { status: PhaseStatus.FAILED, completedAt: new Date() },
+        });
+        return;
+      }
+
+      if (String(phaseNumber) === "1A" && engagementData?.estimationMode === "PHASED") {
+        const confirmedPhases = await prisma.deliveryPhase.count({
+          where: { engagementId, status: "CONFIRMED" },
+        });
+        if (confirmedPhases === 0) {
+          const gateMessage = "Phased estimation requires at least one Confirmed delivery phase. Review and confirm the AI-inferred delivery phases before generating estimates.";
+          await job.updateProgress({ type: "progress", tool: "Phase Gate", message: gateMessage });
+          await prisma.phaseArtefact.create({
+            data: {
+              phaseId,
+              artefactType: ArtefactType.ESTIMATE,
+              version: 1,
+              label: "ESTIMATE_BLOCKED.md",
+              contentMd: `# Estimate Blocked — Confirm Delivery Phases\n\n${gateMessage}`,
+              metadata: { blocked: true, reason: gateMessage },
+            },
+          });
+          await prisma.phase.update({
+            where: { id: phaseId },
+            data: { status: PhaseStatus.FAILED, completedAt: new Date() },
+          });
           return;
         }
       }
