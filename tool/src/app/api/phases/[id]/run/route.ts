@@ -33,9 +33,9 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (phase.status !== "PENDING" && phase.status !== "FAILED") {
+  if (phase.status !== "PENDING" && phase.status !== "FAILED" && phase.status !== "REVIEW") {
     return NextResponse.json(
-      { error: `Phase cannot run: status is ${phase.status}, expected PENDING or FAILED` },
+      { error: `Phase cannot run: status is ${phase.status}, expected PENDING, FAILED, or REVIEW` },
       { status: 422 }
     );
   }

@@ -343,14 +343,15 @@ export function DeliveryPhasesPanel({
               : `${phases.length} phase(s) inferred — review and confirm to unlock estimates.`}
           </p>
         </div>
-        {!allConfirmed && phases.length === 0 && (
+        {!allConfirmed && (
           <Button
             size="sm"
+            variant={phases.length > 0 ? "outline" : "default"}
             disabled={inferring}
             onClick={handleRunInference}
           >
             {inferring ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-            Infer Phases (AI)
+            {phases.length > 0 ? "Re-infer Phases (AI)" : "Infer Phases (AI)"}
           </Button>
         )}
       </div>
