@@ -768,6 +768,7 @@ At the end of the document, add a one-line footer:
 - Do NOT invent credentials that the legacy platform would not have (e.g. don't ask for "Kubernetes kubeconfig" if the stated platform is a single-VM WordPress install).
 - Do NOT leak internal QED42 assignments into the Customer Owner column.
 `;
+}
 
 // ─── Delivery Phase Inference Prompt ─────────────────────────────────────────
 
@@ -869,5 +870,4 @@ ${assumptions ? assumptions.slice(0, 2000) : "(populate from engagement assumpti
 ${lineItemSummary ? lineItemSummary.slice(0, 2000) : "(populate from line item totals per tab)"}
 
 Write this document in clean, client-facing markdown. Do NOT include internal QED42 references or internal pricing. Save to \`claude-artefacts/project-plan.md\`.`;
-}
 }
