@@ -122,6 +122,7 @@ model Engagement {
   outcomeFeedback        String?
   outcomeRecordedAt      DateTime?
   outcomeRecordedBy      String?
+  estimationMode         EstimationMode           @default(UNDECIDED)
   // Relations
   createdBy              User                     @relation(fields: [createdById], references: [id])
   createdById            String
@@ -136,6 +137,7 @@ model Engagement {
   validationReports      ValidationReport[]
   gapFixRuns             GapFixRun[]
   embeddingChunks        EmbeddingChunk[]
+  deliveryPhases         DeliveryPhase[]
 
   @@index([accountId])
 }
@@ -226,18 +228,40 @@ enum PhaseStatus {
 }
 
 model PhaseArtefact {
-  id           String       @id @default(cuid())
-  phase        Phase        @relation(fields: [phaseId], references: [id], onDelete: Cascade)
-  phaseId      String
-  artefactType ArtefactType
-  version      Int          @default(1)
-  label        String?
-  contentMd    String?
-  fileUrl      String?
-  metadata     Json?
-  createdAt    DateTime     @default(now())
+  id              String        @id @default(cuid())
+  phase           Phase         @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  phaseId         String
+  artefactType    ArtefactType
+  version         Int           @default(1)
+  label           String?
+  contentMd       String?
+  fileUrl         String?
+  metadata        Json?
+  createdAt       DateTime      @default(now())
+  deliveryPhaseId String?
+  deliveryPhase   DeliveryPhase? @relation(fields: [deliveryPhaseId], references: [id], onDelete: SetNull)
 
   @@unique([phaseId, artefactType, version])
+}
+
+model DeliveryPhase {
+  id                  String                  @id @default(cuid())
+  engagementId        String
+  ordinal             Int
+  name                String
+  summary             String                  @db.Text
+  scopeBullets        Json
+  targetDurationWeeks Int?
+  sourceType          DeliveryPhaseSourceType @default(AI_INFERRED)
+  status              DeliveryPhaseStatus     @default(DRAFT)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  engagement          Engagement              @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  lineItems           LineItem[]
+  phaseArtefacts      PhaseArtefact[]
+
+  @@unique([engagementId, ordinal])
+  @@index([engagementId])
 }
 
 enum ArtefactType {
@@ -254,6 +278,25 @@ enum ArtefactType {
   PREREQUISITES
   RESPONSE_FORMAT
   LEGACY_ACCESS_CHECKLIST
+  PROJECT_PLAN
+  DELIVERY_PHASES_INFERENCE
+}
+
+enum EstimationMode {
+  BIG_BANG
+  PHASED
+  UNDECIDED
+}
+
+enum DeliveryPhaseSourceType {
+  AI_INFERRED
+  USER_EDITED
+  USER_DEFINED
+}
+
+enum DeliveryPhaseStatus {
+  DRAFT
+  CONFIRMED
 }
 
 model Assumption {
@@ -524,12 +567,15 @@ model LineItem {
   integrationTier     String? // T1 | T2 | T3 when the line item represents an integration
   orphanJustification String? // populated only when no TorRequirement is linked
   sourcePhaseId       String?
+  deliveryPhaseId     String?
   createdAt           DateTime   @default(now())
 
   torRefs        TorRequirement[] @relation("LineItemToTorRequirement")
   assumptionRefs Assumption[]     @relation("AssumptionToLineItem")
+  deliveryPhase  DeliveryPhase?   @relation(fields: [deliveryPhaseId], references: [id], onDelete: SetNull)
 
   @@index([engagementId, tab])
+  @@index([deliveryPhaseId])
 }
 
 /// One row per validator run — aggregated accuracy signal surfaced in the UI.
