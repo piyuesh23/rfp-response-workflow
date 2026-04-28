@@ -27,6 +27,8 @@ interface AccountOption {
   industry: string
 }
 
+type EstimationMode = "BIG_BANG" | "PHASED" | "UNDECIDED"
+
 interface WizardFormData {
   accountId: string
   accountName: string
@@ -39,6 +41,7 @@ interface WizardFormData {
   projectDescription: string
   legacyPlatform: string
   legacyPlatformUrl: string
+  estimationMode: EstimationMode
 }
 
 interface InferenceResult {
@@ -67,6 +70,7 @@ import { techStackLabels, engagementTypeLabels, industryLabels } from "@/lib/eng
 const STEPS = [
   { label: "Upload TOR" },
   { label: "Details" },
+  { label: "Estimation" },
   { label: "Confirm" },
 ]
 
@@ -534,7 +538,81 @@ function Step2Details({ data, onChange, confidence, accounts, onBack, onNext }: 
   )
 }
 
-// ─── Step 3: Confirm ─────────────────────────────────────────────────────────
+// ─── Step 3: Estimation Approach ─────────────────────────────────────────────
+
+interface Step3EstimationProps {
+  mode: EstimationMode
+  onChange: (mode: EstimationMode) => void
+  onBack: () => void
+  onNext: () => void
+}
+
+function Step3EstimationMode({ mode, onChange, onBack, onNext }: Step3EstimationProps) {
+  const options: Array<{ value: EstimationMode; title: string; description: string; icon: string }> = [
+    {
+      value: "BIG_BANG",
+      title: "Big Bang",
+      description: "Single comprehensive estimate covering the full engagement. Best for smaller projects or when scope is well-defined.",
+      icon: "B",
+    },
+    {
+      value: "PHASED",
+      title: "Phased",
+      description: "AI breaks the TOR into logical delivery phases. Each phase gets its own estimate and Excel workbook. Best for larger or staged engagements.",
+      icon: "P",
+    },
+    {
+      value: "UNDECIDED",
+      title: "Decide Later",
+      description: "Skip for now. You can choose after Phase 1 TOR analysis when scope is clearer.",
+      icon: "?",
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-sm text-muted-foreground">
+        How should estimates be structured for this engagement?
+      </p>
+
+      <div className="flex flex-col gap-3">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={[
+              "flex items-start gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors",
+              mode === opt.value
+                ? "border-primary bg-primary/5"
+                : "border-muted-foreground/20 hover:border-primary/40 hover:bg-muted/20",
+            ].join(" ")}
+          >
+            <div className={[
+              "flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+              mode === opt.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground",
+            ].join(" ")}>
+              {opt.icon}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">{opt.title}</span>
+              <span className="text-xs text-muted-foreground">{opt.description}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex justify-between pt-2">
+        <Button variant="outline" onClick={onBack}>Back</Button>
+        <Button onClick={onNext}>Next</Button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 4: Confirm ─────────────────────────────────────────────────────────
 
 interface Step3Props {
   data: WizardFormData
@@ -674,6 +752,7 @@ export function CreateWizard() {
     projectDescription: "",
     legacyPlatform: "",
     legacyPlatformUrl: "",
+    estimationMode: "BIG_BANG",
   })
 
   function patchForm(patch: Partial<WizardFormData>) {
@@ -741,6 +820,7 @@ export function CreateWizard() {
         projectDescription: result.projectDescription ?? "",
         legacyPlatform: result.legacyPlatform ?? "",
         legacyPlatformUrl: "",
+        estimationMode: "BIG_BANG",
       })
     } catch (err) {
       console.error("[CreateWizard] Analysis failed:", err)
@@ -754,7 +834,7 @@ export function CreateWizard() {
     setTorFile(null)
     setInferenceResult(null)
     setAnalyzeError(null)
-    setFormData({ accountId: "", accountName: "", isNewAccount: false, industry: "", projectName: "", techStack: "", techStackCustom: "", engagementType: "", projectDescription: "", legacyPlatform: "", legacyPlatformUrl: "" })
+    setFormData({ accountId: "", accountName: "", isNewAccount: false, industry: "", projectName: "", techStack: "", techStackCustom: "", engagementType: "", projectDescription: "", legacyPlatform: "", legacyPlatformUrl: "", estimationMode: "BIG_BANG" })
   }
 
   async function handleSubmit() {
@@ -792,6 +872,7 @@ export function CreateWizard() {
           legacyPlatform: formData.legacyPlatform.trim() || undefined,
           legacyPlatformUrl: formData.legacyPlatformUrl.trim() || undefined,
           accountId: accountId || undefined,
+          estimationMode: formData.estimationMode,
         }),
       })
 
@@ -847,10 +928,19 @@ export function CreateWizard() {
       )}
 
       {step === 3 && (
+        <Step3EstimationMode
+          mode={formData.estimationMode}
+          onChange={(m) => patchForm({ estimationMode: m })}
+          onBack={() => setStep(2)}
+          onNext={() => setStep(4)}
+        />
+      )}
+
+      {step === 4 && (
         <Step3Confirm
           data={formData}
           file={torFile}
-          onBack={() => setStep(2)}
+          onBack={() => setStep(3)}
           onSubmit={handleSubmit}
           isSubmitting={isSubmitting}
         />

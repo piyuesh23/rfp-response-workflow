@@ -37,6 +37,7 @@ const TAB_ITEMS = [
   { label: "Files", href: "/files" },
   { label: "Estimate", href: "/estimate" },
   { label: "Proposal", href: "/proposal" },
+  { label: "Project Plan", href: "/plan" },
   { label: "Assumptions", href: "/assumptions" },
   { label: "Risks", href: "/risks" },
 ]

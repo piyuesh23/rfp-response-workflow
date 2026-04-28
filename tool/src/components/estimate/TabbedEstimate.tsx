@@ -21,9 +21,29 @@ export interface EstimateData {
   ai: LineItem[]
 }
 
+interface DeliveryPhaseOption {
+  id: string
+  name: string
+  ordinal: number
+}
+
 interface TabbedEstimateProps {
   initialData: EstimateData
   onSave?: (markdown: string) => Promise<void>
+  estimationMode?: "BIG_BANG" | "PHASED" | "UNDECIDED"
+  deliveryPhases?: DeliveryPhaseOption[]
+  /** If provided, raw DB-level line items with tab + deliveryPhaseId for PHASED filtering */
+  allLineItems?: Array<{
+    id: string
+    task: string
+    description: string
+    hours: number
+    conf: number
+    lowHrs: number
+    highHrs: number
+    tab: string
+    deliveryPhaseId?: string | null
+  }>
 }
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -105,10 +125,44 @@ function GrandTotalBar({ data }: { data: EstimateData }) {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
+export function TabbedEstimate({ initialData, onSave, estimationMode, deliveryPhases, allLineItems }: TabbedEstimateProps) {
   const [data, setData] = React.useState<EstimateData>(initialData)
   const [dirty, setDirty] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
+  const [selectedPhaseId, setSelectedPhaseId] = React.useState<string | null>(
+    deliveryPhases && deliveryPhases.length > 0 ? deliveryPhases[0].id : null
+  )
+
+  // For PHASED mode: filter display data by selected delivery phase
+  const displayData: EstimateData = React.useMemo(() => {
+    if (estimationMode !== "PHASED" || !allLineItems || !selectedPhaseId) {
+      return data
+    }
+    const filtered = allLineItems.filter((li) => li.deliveryPhaseId === selectedPhaseId)
+    const toLineItem = (li: typeof filtered[number]): LineItem => ({
+      id: li.id,
+      task: li.task,
+      description: li.description,
+      conf: li.conf as LineItem["conf"],
+      hours: li.hours,
+    })
+    const matchTab = (li: typeof filtered[number], tabKey: string) => {
+      const t = li.tab?.toUpperCase() ?? ""
+      if (tabKey === "backend") return t === "BACKEND"
+      if (tabKey === "frontend") return t === "FRONTEND"
+      if (tabKey === "fixed") return t === "FIXED_COST" || t === "FIXED"
+      if (tabKey === "design") return t === "DESIGN"
+      if (tabKey === "ai") return t === "AI"
+      return false
+    }
+    return {
+      backend: filtered.filter((li) => matchTab(li, "backend")).map(toLineItem),
+      frontend: filtered.filter((li) => matchTab(li, "frontend")).map(toLineItem),
+      fixed: filtered.filter((li) => matchTab(li, "fixed")).map(toLineItem),
+      design: filtered.filter((li) => matchTab(li, "design")).map(toLineItem),
+      ai: filtered.filter((li) => matchTab(li, "ai")).map(toLineItem),
+    }
+  }, [estimationMode, allLineItems, selectedPhaseId, data])
 
   function handleCellEdit(tab: TabKey, id: string, field: "hours", value: number) {
     setData((prev) => ({
@@ -134,6 +188,27 @@ export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Delivery phase selector — PHASED mode only */}
+      {estimationMode === "PHASED" && deliveryPhases && deliveryPhases.length > 0 && (
+        <div className="flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-2">
+          {deliveryPhases.map((dp) => (
+            <button
+              key={dp.id}
+              type="button"
+              onClick={() => setSelectedPhaseId(dp.id)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                selectedPhaseId === dp.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background border hover:bg-muted text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {dp.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {onSave && dirty && (
         <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-2">
           <span className="text-xs text-amber-700 dark:text-amber-400">You have unsaved changes</span>
@@ -146,7 +221,7 @@ export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
       <Tabs defaultValue="backend">
         <TabsList className="h-auto w-full justify-start gap-1 rounded-lg bg-muted p-1">
           {TAB_CONFIG.map(({ key, label, value }) => {
-            const count = data[key].length
+            const count = displayData[key].length
             return (
               <TabsTrigger
                 key={key}
@@ -170,16 +245,16 @@ export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
 
         {TAB_CONFIG.map(({ key, label, value }) => (
           <TabsContent key={key} value={value} className="mt-4 flex flex-col gap-3">
-            <TabSummaryBar rows={data[key]} label={label} />
+            <TabSummaryBar rows={displayData[key]} label={label} />
             <EstimateTable
-              rows={data[key]}
+              rows={displayData[key]}
               onCellEdit={(id, field, val) => handleCellEdit(key, id, field, val)}
             />
           </TabsContent>
         ))}
       </Tabs>
 
-      <GrandTotalBar data={data} />
+      <GrandTotalBar data={displayData} />
     </div>
   )
 }
