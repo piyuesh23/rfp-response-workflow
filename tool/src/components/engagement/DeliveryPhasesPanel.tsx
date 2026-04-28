@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { PlusIcon, Trash2, CheckCircle2, Circle, Loader2, GripVertical } from "lucide-react"
+import { ProgressStream } from "@/components/phase/ProgressStream"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -158,6 +159,7 @@ export function DeliveryPhasesPanel({
   const [saving, setSaving] = React.useState(false)
   const [confirming, setConfirming] = React.useState(false)
   const [inferring, setInferring] = React.useState(false)
+  const [runningPhaseId, setRunningPhaseId] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
 
   const allConfirmed = phases.length > 0 && phases.every((p) => p.status === "CONFIRMED")
@@ -203,6 +205,7 @@ export function DeliveryPhasesPanel({
   async function handleRunInference() {
     setInferring(true)
     setError(null)
+    setRunningPhaseId(null)
     try {
       // Find and trigger Phase 1B
       const phasesRes = await fetch(`/api/engagements/${engagementId}`)
@@ -218,13 +221,23 @@ export function DeliveryPhasesPanel({
         const err = await runRes.json().catch(() => ({})) as { error?: string }
         throw new Error(err.error ?? "Failed to start inference")
       }
-      // Reload after a brief delay (or user can refresh)
-      setTimeout(() => loadPhases(), 3000)
+      // Subscribe to SSE stream — ProgressStream will render until done/error
+      setRunningPhaseId(phase1B.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Inference failed")
     } finally {
       setInferring(false)
     }
+  }
+
+  function handleInferenceComplete() {
+    setRunningPhaseId(null)
+    loadPhases()
+  }
+
+  function handleInferenceError() {
+    setRunningPhaseId(null)
+    setError("Inference failed — check the phase log for details")
   }
 
   async function handleUpdatePhase(phaseId: string, updates: Partial<DeliveryPhase>) {
@@ -347,16 +360,30 @@ export function DeliveryPhasesPanel({
           <Button
             size="sm"
             variant={phases.length > 0 ? "outline" : "default"}
-            disabled={inferring}
+            disabled={inferring || !!runningPhaseId}
             onClick={handleRunInference}
           >
-            {inferring ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
+            {(inferring || runningPhaseId) ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
             {phases.length > 0 ? "Re-infer Phases (AI)" : "Infer Phases (AI)"}
           </Button>
         )}
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {runningPhaseId && (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+            <Loader2 className="size-3.5 animate-spin" />
+            <span className="font-medium">Inferring delivery phases...</span>
+          </div>
+          <ProgressStream
+            phaseId={runningPhaseId}
+            onComplete={handleInferenceComplete}
+            onError={handleInferenceError}
+          />
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
