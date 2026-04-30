@@ -1,27 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { requireEngagementEdit } from "@/lib/engagement-access";
 import { EngagementOutcome, LossReason } from "@/generated/prisma/client";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id } = await params;
 
   const existing = await prisma.engagement.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
   }
+  await requireEngagementEdit(session, id);
 
   const body = await request.json();
   const {
@@ -78,4 +73,8 @@ export async function PATCH(
   });
 
   return NextResponse.json({ ...updated, warnings });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }

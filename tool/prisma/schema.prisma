@@ -18,7 +18,9 @@ model User {
   blockedBy   String?
   createdAt   DateTime     @default(now())
   lastLoginAt DateTime?
-  engagements Engagement[]
+  engagements             Engagement[]
+  engagementShares        EngagementShare[] @relation("EngagementShares")
+  createdEngagementShares EngagementShare[] @relation("CreatedShares")
 }
 
 enum UserRole {
@@ -136,6 +138,7 @@ model Engagement {
   validationReports      ValidationReport[]
   gapFixRuns             GapFixRun[]
   embeddingChunks        EmbeddingChunk[]
+  shares                 EngagementShare[]
 
   @@index([accountId])
 }
@@ -200,6 +203,31 @@ enum EngagementStatus {
   IN_PROGRESS
   COMPLETED
   ARCHIVED
+}
+
+enum ShareAccessLevel {
+  READ_ONLY
+  FULL_ACCESS
+}
+
+model EngagementShare {
+  id           String          @id @default(cuid())
+  engagementId String
+  engagement   Engagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  email        String
+  userId       String?
+  user         User?           @relation("EngagementShares", fields: [userId], references: [id], onDelete: SetNull)
+  accessLevel  ShareAccessLevel
+  createdById  String
+  createdBy    User            @relation("CreatedShares", fields: [createdById], references: [id])
+  createdAt    DateTime        @default(now())
+  revokedAt    DateTime?
+  revokedById  String?
+
+  @@unique([engagementId, email])
+  @@index([email])
+  @@index([userId])
+  @@index([engagementId, revokedAt])
 }
 
 model Phase {

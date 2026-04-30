@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { getEngagementAccess, requireEngagementEdit } from "@/lib/engagement-access";
 import { prisma } from "@/lib/db";
 import { getGapFixQueue } from "@/lib/queue";
 import { getLatestValidationReportsByPhase } from "@/lib/accuracy";
@@ -13,10 +14,11 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  try {
+  const session = await requireAuth();
   const { id: engagementId } = await params;
+  const access = await getEngagementAccess(session, engagementId);
+  if (!access.canRead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const activeRun = await prisma.gapFixRun.findFirst({
     where: { engagementId, status: { in: ["QUEUED", "RUNNING"] } },
@@ -25,16 +27,20 @@ export async function GET(
   });
 
   return NextResponse.json({ activeRun });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  try {
+  const session = await requireAuth();
   const { id: engagementId } = await params;
+  await requireEngagementEdit(session, engagementId);
 
   const engagement = await prisma.engagement.findUnique({
     where: { id: engagementId },
@@ -107,4 +113,8 @@ export async function POST(
   });
 
   return NextResponse.json({ runId: run.id }, { status: 202 });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }

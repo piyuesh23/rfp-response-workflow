@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { requireEngagementEdit } from "@/lib/engagement-access";
 import { prisma } from "@/lib/db";
 import { validateEstimate } from "@/lib/ai/validate-estimate";
 
@@ -14,12 +15,10 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; phase: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id: engagementId, phase: phaseNumber } = await params;
+  await requireEngagementEdit(session, engagementId);
 
   // Find the phase and its latest artefact
   const phase = await prisma.phase.findFirst({
@@ -48,4 +47,8 @@ export async function POST(
   const report = await validateEstimate(artefact.contentMd);
 
   return NextResponse.json(report);
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { getEngagementAccess, requireEngagementEdit } from "@/lib/engagement-access";
 import { enqueueIndexStructuredRow } from "@/lib/rag/enqueue";
 import type { EngagementStatus, RfpSource, EngagementOutcome } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
@@ -41,55 +42,52 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const session = await requireAuth();
+    const { id } = await params;
 
-  const { id } = await params;
+    const access = await getEngagementAccess(session, id);
+    if (!access.canRead) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-  const engagement = await prisma.engagement.findUnique({
-    where: { id },
-    include: {
-      account: { select: { id: true, canonicalName: true, industry: true } },
-      phases: {
-        orderBy: { phaseNumber: "asc" },
-        include: {
-          artefacts: { orderBy: { createdAt: "desc" } },
+    const engagement = await prisma.engagement.findUnique({
+      where: { id },
+      include: {
+        account: { select: { id: true, canonicalName: true, industry: true } },
+        phases: {
+          orderBy: { phaseNumber: "asc" },
+          include: {
+            artefacts: { orderBy: { createdAt: "desc" } },
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!engagement) {
-    return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
+    if (!engagement) {
+      return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ...engagement, effectiveAccess: access });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
   }
-
-  if (engagement.createdById !== session.user.id && session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  return NextResponse.json(engagement);
 }
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id } = await params;
 
   const existing = await prisma.engagement.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
   }
-  if (existing.createdById !== session.user.id && session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  await requireEngagementEdit(session, id);
 
   const body = await request.json();
   const {
@@ -171,33 +169,32 @@ export async function PATCH(
   });
 
   return NextResponse.json(updated);
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }
 
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await requireAuth();
+    const { id } = await params;
+
+    const existing = await prisma.engagement.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
+    }
+    await requireEngagementEdit(session, id);
+
+    await prisma.importItem.deleteMany({ where: { engagementId: id } });
+    await prisma.engagement.delete({ where: { id } });
+
+    return new NextResponse(null, { status: 204 });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
   }
-
-  const { id } = await params;
-
-  const existing = await prisma.engagement.findUnique({ where: { id } });
-  if (!existing) {
-    return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
-  }
-  if (existing.createdById !== session.user.id && session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // Delete any linked ImportItems (from ZIP imports)
-  await prisma.importItem.deleteMany({
-    where: { engagementId: id },
-  });
-
-  await prisma.engagement.delete({ where: { id } });
-
-  return new NextResponse(null, { status: 204 });
 }

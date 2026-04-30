@@ -38,15 +38,37 @@ async function indexEngagementMeta(engagement: {
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const mineOnly = request.nextUrl.searchParams.get("mine") === "1";
   const isAdmin = session.user.role === "ADMIN";
+  const isManager = session.user.role === "MANAGER";
+
+  let where = {};
+  if (mineOnly) {
+    // Return only engagements the user owns or has an active share on.
+    const sharedIds = (
+      await prisma.engagementShare.findMany({
+        where: { userId: session.user.id, revokedAt: null },
+        select: { engagementId: true },
+      })
+    ).map((s) => s.engagementId);
+    where = {
+      OR: [
+        { createdById: session.user.id },
+        { id: { in: sharedIds } },
+      ],
+    };
+  } else if (!isAdmin && !isManager) {
+    where = { createdById: session.user.id };
+  }
+
   const engagements = await prisma.engagement.findMany({
-    where: isAdmin ? {} : { createdById: session.user.id },
+    where,
     orderBy: { updatedAt: "desc" },
     include: {
       _count: { select: { phases: true } },

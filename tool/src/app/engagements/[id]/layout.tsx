@@ -3,11 +3,14 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Trash2 } from "lucide-react"
+import { Trash2, Share2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
+import { EngagementAccessProvider, type EffectiveAccessClient } from "@/contexts/engagement-access-context"
+import { SharePanel } from "@/components/engagement/SharePanel"
 
 const TECH_STACK_LABELS: Record<string, string> = {
   DRUPAL: "Drupal",
@@ -46,6 +49,7 @@ interface Engagement {
   projectName?: string | null
   techStack: string
   status: string
+  effectiveAccess?: EffectiveAccessClient
 }
 
 interface EngagementLayoutProps {
@@ -62,6 +66,13 @@ export default function EngagementLayout({ children, params }: EngagementLayoutP
   const [engagement, setEngagement] = React.useState<Engagement | null>(null)
   const [deleting, setDeleting] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
+  const [shareOpen, setShareOpen] = React.useState(false)
+  const effectiveAccess: EffectiveAccessClient = engagement?.effectiveAccess ?? {
+    canRead: true,
+    canEdit: true,
+    source: "GLOBAL",
+    shareLevel: null,
+  }
 
   React.useEffect(() => {
     fetch(`/api/engagements/${id}`)
@@ -105,32 +116,55 @@ export default function EngagementLayout({ children, params }: EngagementLayoutP
             >
               {STATUS_LABELS[engagement.status] ?? engagement.status}
             </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive"
-              disabled={deleting}
-              onClick={async () => {
-                if (!confirm(`Delete "${engagement.clientName}"? This will permanently remove all phases, artefacts, and files. This cannot be undone.`)) return
-                setDeleting(true)
-                try {
-                  const res = await fetch(`/api/engagements/${id}`, { method: "DELETE" })
-                  if (res.ok) {
-                    router.push("/")
-                  } else {
-                    const err = await res.json()
-                    alert(err.error ?? "Failed to delete engagement")
+            {effectiveAccess.canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setShareOpen(true)}
+                title="Share engagement"
+              >
+                <Share2 className="size-4" />
+              </Button>
+            )}
+            {effectiveAccess.canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-destructive"
+                disabled={deleting}
+                onClick={async () => {
+                  if (!confirm(`Delete "${engagement.clientName}"? This will permanently remove all phases, artefacts, and files. This cannot be undone.`)) return
+                  setDeleting(true)
+                  try {
+                    const res = await fetch(`/api/engagements/${id}`, { method: "DELETE" })
+                    if (res.ok) {
+                      router.push("/")
+                    } else {
+                      const err = await res.json()
+                      alert(err.error ?? "Failed to delete engagement")
+                    }
+                  } catch {
+                    alert("Failed to delete engagement")
+                  } finally {
+                    setDeleting(false)
                   }
-                } catch {
-                  alert("Failed to delete engagement")
-                } finally {
-                  setDeleting(false)
-                }
-              }}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+                }}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            )}
           </div>
+
+          {/* Share sheet */}
+          <Sheet open={shareOpen} onOpenChange={setShareOpen}>
+            <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+              <SheetHeader className="mb-4">
+                <SheetTitle>Share "{engagement.clientName}"</SheetTitle>
+              </SheetHeader>
+              <SharePanel engagementId={id} />
+            </SheetContent>
+          </Sheet>
         </div>
 
         {/* Tab navigation */}
@@ -163,7 +197,9 @@ export default function EngagementLayout({ children, params }: EngagementLayoutP
 
       <Separator className="mb-4" />
 
-      {children}
+      <EngagementAccessProvider access={effectiveAccess}>
+        {children}
+      </EngagementAccessProvider>
     </div>
   )
 }

@@ -44,8 +44,13 @@ export const authOptions: NextAuthOptions = {
         },
       });
 
-      // Block sign-in for blocked users
       if (dbUser.isBlocked) return false;
+
+      // Link any pending share grants created before this user's first sign-in.
+      await prisma.engagementShare.updateMany({
+        where: { email: dbUser.email, userId: null, revokedAt: null },
+        data: { userId: dbUser.id },
+      });
 
       return true;
     },
