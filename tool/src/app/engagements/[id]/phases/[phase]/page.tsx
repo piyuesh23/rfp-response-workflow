@@ -71,6 +71,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const [uploading, setUploading] = React.useState(false)
   const [resetLoading, setResetLoading] = React.useState(false)
   const [stopLoading, setStopLoading] = React.useState(false)
+  const [runError, setRunError] = React.useState<string | null>(null)
   const [rerunConfirmOpen, setRerunConfirmOpen] = React.useState(false)
   const [stalePhases, setStalePhases] = React.useState<Array<{ phaseNumber: string; label: string; status: string }>>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -214,6 +215,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
 
   async function handleRun() {
     if (!phaseData) return
+    setRunError(null)
     setActionLoading(true)
     try {
       const res = await fetch(`/api/phases/${phaseData.id}/run`, { method: "POST" })
@@ -221,10 +223,10 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         fetchPhaseData()
       } else {
         const err = await res.json()
-        console.error("Run failed:", err.error)
+        setRunError(err.error ?? "Failed to start phase")
       }
     } catch (err) {
-      console.error("Run failed:", err)
+      setRunError(err instanceof Error ? err.message : "Failed to start phase")
     } finally {
       setActionLoading(false)
     }
@@ -643,6 +645,12 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           </Button>
         )}
       </div>
+
+      {runError && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {runError}
+        </div>
+      )}
     </div>
   )
 }

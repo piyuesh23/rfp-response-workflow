@@ -97,9 +97,14 @@ export function canStartPhase(
         return { canStart: false, reason: "Phase 1A must be completed first" };
       }
     } else if (workflowPath === "HAS_RESPONSE") {
+      // Phase 3R (Review & Gap Analysis) is the preferred predecessor, but
+      // Phase 3 (Informed Estimates) approved is sufficient — 3R is optional.
+      const phase3 = phaseStatuses["3"];
       const phase3R = phaseStatuses["3R"];
-      if (phase3R !== "APPROVED" && phase3R !== "SKIPPED") {
-        return { canStart: false, reason: "Review & Gap Analysis must be completed first" };
+      const phase3RDone = phase3R === "APPROVED" || phase3R === "SKIPPED";
+      const phase3Done = phase3 === "APPROVED" || phase3 === "REVIEW";
+      if (!phase3RDone && !phase3Done) {
+        return { canStart: false, reason: "Informed Estimates (Phase 3) must be completed first" };
       }
     } else {
       return { canStart: false, reason: "Workflow decision not yet made" };
