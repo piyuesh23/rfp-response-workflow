@@ -293,7 +293,7 @@ const worker = new Worker<PhaseJobData>(
         "1": ["claude-artefacts/tor-assessment.md", "claude-artefacts/solution-architecture.md"],
         "1A": ["estimates/optimistic-estimate.md", "claude-artefacts/solution-architecture.md"],
         "2": ["claude-artefacts/response-analysis.md"],
-        "3": ["estimates/revised-estimate.md", "estimates/optimistic-estimate.md"],
+        "3": ["estimates/informed-estimate.md", "estimates/revised-estimate.md", "estimates/optimistic-estimate.md"],
         "3R": ["claude-artefacts/gap-analysis.md"],
         "5": ["claude-artefacts/technical-proposal.md"],
       };

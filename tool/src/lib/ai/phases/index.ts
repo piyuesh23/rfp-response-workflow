@@ -3,7 +3,7 @@ import { getPhase0Config } from "@/lib/ai/phases/phase0-research";
 import { getPhase1Config } from "@/lib/ai/phases/phase1-analysis";
 import { getPhase1AEstimateConfig } from "@/lib/ai/phases/phase1a-estimate";
 import { getPhase2Config } from "@/lib/ai/phases/phase2-responses";
-import { getPhase3Config } from "@/lib/ai/phases/phase3-review";
+import { getPhase3Config, getPhase3RConfig } from "@/lib/ai/phases/phase3-review";
 import { getPhase4Config } from "@/lib/ai/phases/phase4-gaps";
 import { getPhase5Config } from "@/lib/ai/phases/phase5-capture";
 
@@ -39,10 +39,10 @@ export function getPhaseConfig(
     case "2":
       return getPhase2Config(engagementId, techStack);
     case "3":
-      return getPhase3Config(engagementId, techStack);
+      return getPhase3Config(engagementId, techStack, engagementType);
     case "3R": {
-      // Combined Review & Gap Analysis: merge prompts from Phase 3 + Phase 4
-      const reviewConfig = getPhase3Config(engagementId, techStack);
+      // Combined Review & Gap Analysis: validate Phase 3 estimates + full gap analysis
+      const reviewConfig = getPhase3RConfig(engagementId, techStack);
       const gapConfig = getPhase4Config(engagementId, techStack);
       return {
         ...reviewConfig,

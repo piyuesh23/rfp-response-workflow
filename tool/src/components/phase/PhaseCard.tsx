@@ -40,7 +40,7 @@ const PHASE_LABELS: Record<string, string> = {
   "1": "TOR Assessment",
   "1A": "Optimistic Estimate",
   "2": "Responses",
-  "3": "Estimate Analysis",
+  "3": "Informed Estimates",
   "3R": "Review & Gap Analysis",
   "5": "Technical Proposal",
 }

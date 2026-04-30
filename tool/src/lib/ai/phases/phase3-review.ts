@@ -1,9 +1,27 @@
 import { PhaseConfig } from "@/lib/ai/agent";
 import { getBaseSystemPrompt } from "@/lib/ai/prompts/system-base";
 import { getCarlRules } from "@/lib/ai/prompts/carl-rules";
-import { getPhase3Prompt } from "@/lib/ai/prompts/phase-prompts";
+import { getPhase3Prompt, getPhase3ReviewPrompt } from "@/lib/ai/prompts/phase-prompts";
 
 export function getPhase3Config(
+  engagementId: string,
+  techStack: string,
+  engagementType?: string
+): PhaseConfig {
+  return {
+    engagementId,
+    phase: 3,
+    techStack,
+    tools: ["Read", "Glob", "Grep", "Write"],
+    maxTurns: 80,
+    systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
+      "\n\n---\n\n"
+    ),
+    userPrompt: getPhase3Prompt(techStack, engagementType),
+  };
+}
+
+export function getPhase3RConfig(
   engagementId: string,
   techStack: string
 ): PhaseConfig {
@@ -16,6 +34,6 @@ export function getPhase3Config(
     systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
       "\n\n---\n\n"
     ),
-    userPrompt: getPhase3Prompt(),
+    userPrompt: getPhase3ReviewPrompt(),
   };
 }

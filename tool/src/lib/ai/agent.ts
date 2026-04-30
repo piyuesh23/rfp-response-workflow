@@ -171,7 +171,7 @@ async function loadTemplate(phaseNumber: string): Promise<string> {
     "0": ["customer-research-template.md"],
     "1": ["tor-assessment-template.md"],
     "1A": ["solution-architecture-template.md", "optimistic-estimate-template.md"],
-    "3": ["estimate-review-template.md"],
+    "3": ["solution-architecture-template.md", "optimistic-estimate-template.md"],
     "3R": ["gap-analysis-template.md"],
     "4": ["gap-analysis-template.md"],
   };

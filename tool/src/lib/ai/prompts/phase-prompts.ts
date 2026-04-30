@@ -487,10 +487,122 @@ Sidecar rules:
 - JSON must be strictly valid. HTML comment markers must appear verbatim.`;
 }
 
-export function getPhase3Prompt(): string {
-  return `Conduct Phase 3: Estimate Review.
+export function getPhase3Prompt(techStack?: string, engagementType?: string): string {
+  const isDiscovery = engagementType === "DISCOVERY";
 
-Estimates are in estimates/. Review them against TOR requirements and customer responses.
+  return `Conduct Phase 3: Informed Estimates.
+
+You have the customer's Q&A responses available. Use them to generate a fully-informed estimate — not an optimistic one. Every scope decision is now grounded in actual customer answers, not assumptions.
+
+## Mandatory Inputs (read in order)
+
+1. Read \`claude-artefacts/tor-assessment.md\` — requirements and clarity ratings from Phase 1.
+2. Read \`claude-artefacts/response-analysis.md\` — Phase 2's unified analysis of all response documents.
+3. Read ALL files in \`responses_qna/\` — for direct reference to customer statements.
+4. Read \`claude-artefacts/solution-architecture.md\` — the v0 architecture from Phase 1 to update.
+
+---
+
+## Step 1 — Revise Solution Architecture to v1
+
+Update \`claude-artefacts/solution-architecture.md\` in-place to v1:
+
+- Remove the "v0 draft" header; mark as \`**Version: v1 — informed by Phase 2 Q&A responses**\`.
+- For each open architecture question from v0, record the customer's answer (cite the response doc).
+- Update proposed stack choices, integration map, and component list based on responses.
+- Close resolved questions; retain any still-unresolved items as explicit "Remaining Open Questions".
+
+---
+
+## Step 2 — Generate Informed Estimates
+
+${isDiscovery ? `This is a DISCOVERY engagement. Estimate the effort to CONDUCT discovery activities only (workshops, architecture review, PoCs, documentation). Do NOT estimate build/implementation effort.` : `Generate a complete estimate for the build scope confirmed by the customer's responses.`}
+
+### Guiding Principles (different from Phase 1A)
+
+- Use **actual customer answers** to determine scope — not optimistic assumptions.
+- Where responses CLEAR ambiguities, apply specific confirmed scope. Where ambiguities remain, document them as residual assumptions.
+- Confidence (Conf) values should generally be higher than Phase 1A (more info = more certainty).
+- Still-unresolved items may warrant Conf 3–4; flag those explicitly.
+
+### Estimate Tabs
+
+Produce four tabs. Write the full estimate to \`estimates/informed-estimate.md\`.
+
+**Backend Tab** — CMS/server-side development tasks (PM + QA auto-calculated):
+- One row per feature/module, component-level granularity
+- Include all always-required Backend tasks: Discovery & Requirements Analysis, Environment Setup, Base Configuration, CMI Setup, Roles & Permissions, Media Library, Deployment Pipeline, QA/Stabilisation
+- Classify all integrations by tier: T1 (8–16h), T2 (16–32h), T3 (32–60h)
+- Quote the TOR clause or Q&A document for every scope decision
+
+**Frontend Tab** — Component-level UI estimates (PM + QA auto-calculated):
+- One row per component (Header, Footer, Hero, Card, Navigation, etc.)
+- Include Design System line item
+- Add visual reference links to comparable components when designs unavailable
+- Exclusions column: list what is NOT included
+
+**Fixed Cost Items Tab** — Operational tasks (NO QA/PM overhead):
+- DevOps, documentation, training, onboarding, UAT support, warranty/hypercare
+- Never place development tasks here
+
+**AI Tab** — AI-powered features only (if applicable)
+
+### Confidence & Buffer Rules
+
+- Conf 6 = 0%, 5 = +25%, 4 = +50%, 3 = +50%, 2 = +75%, 1 = +100%
+- Low Hrs = base Hours; High Hrs = Hours × (1 + buffer %)
+- Most items should be Conf 4–6 given Q&A responses are available
+- Generate Risk Register for all items with Conf ≤ 4
+
+### State File
+
+Write \`estimates/informed-estimate-state.md\` alongside the estimate (use same structure as optimistic-estimate-state.md) with any remaining open questions and their expected impact if still unresolved.
+
+---
+
+## Step 3 — Machine-Readable Sidecar (MANDATORY)
+
+At the VERY END of \`estimates/informed-estimate.md\`, append an HTML comment containing the line-item sidecar. Same format as Phase 1A:
+
+\`\`\`
+<!-- ESTIMATE-LINEITEMS-JSON
+{
+  "lineItems": [
+    {
+      "tab": "BACKEND",
+      "task": "Task name",
+      "description": "Covers TOR §X.Y.",
+      "hours": 24,
+      "conf": 5,
+      "lowHrs": 24,
+      "highHrs": 30,
+      "benchmarkRef": "backend/task-type",
+      "integrationTier": null,
+      "torClauseRefs": ["X.Y"],
+      "orphanJustification": null
+    }
+  ]
+}
+-->
+\`\`\`
+
+Sidecar rules (identical to Phase 1A):
+- One row per line item across ALL tabs.
+- \`torClauseRefs\`: TOR clauseRef strings (same values Phase 1 emitted). Required.
+- \`integrationTier\`: \`"T1" | "T2" | "T3" | null\` — required non-null for integration items.
+- \`orphanJustification\`: required non-empty string when \`torClauseRefs\` is empty, else \`null\`.
+- JSON must be strictly valid. HTML comment markers must appear verbatim.`;
+}
+
+/**
+ * Phase 3R review prompt — validates the estimates generated by Phase 3.
+ * Used by the 3R combined config (review + gap analysis).
+ */
+export function getPhase3ReviewPrompt(): string {
+  return `Conduct Phase 3R Part A: Estimate Review & Validation.
+
+The estimates generated by Phase 3 (Informed Estimates) are in \`estimates/informed-estimate.md\`.
+Review them against TOR requirements and customer responses.
 
 Perform three validation passes:
 
@@ -505,52 +617,11 @@ Perform three validation passes:
 - Check that always-include Backend tasks are present.
 
 **Pass 3: Assumption Consistency**
-- Are estimate assumptions consistent with customer Q&A responses?
+- Are residual assumptions consistent with what the customer's Q&A confirmed?
 - Do assumptions reference TOR sections or Q&A responses (not internal artefacts)?
 - Is the Conf buffer formula applied correctly for all Low/High Hrs?
 
-Write output to claude-artefacts/estimate-review.md following the estimate-review-template.md structure.
-
-## Revised Estimate Sidecar (MANDATORY when revising line items)
-
-If this review results in a revised estimate written to
-\`estimates/revised-estimate.md\` (or updates \`estimates/optimistic-estimate.md\`),
-append a raw HTML comment at the VERY END of the estimate file containing the
-full revised line-item list as JSON. Do NOT wrap in a code fence.
-
-\`\`\`
-<!-- ESTIMATE-LINEITEMS-JSON
-{
-  "lineItems": [
-    {
-      "tab": "BACKEND",
-      "task": "Content API + syndication service",
-      "description": "Covers TOR §3.2.1.",
-      "hours": 48,
-      "conf": 5,
-      "lowHrs": 48,
-      "highHrs": 60,
-      "benchmarkRef": "backend.api.medium",
-      "integrationTier": null,
-      "torClauseRefs": ["3.2.1"],
-      "orphanJustification": null
-    }
-  ]
-}
--->
-\`\`\`
-
-Sidecar rules (same as Phase 1A):
-- One row per revised line item across ALL tabs.
-- \`tab\`: \`BACKEND | FRONTEND | FIXED_COST | DESIGN | AI\`.
-- \`torClauseRefs\`: TOR clauseRef strings (not DB IDs). The writer resolves them
-  to \`TorRequirement.id\`. Use the same clauseRefs Phase 1 emitted.
-- \`integrationTier\`: \`"T1" | "T2" | "T3" | null\`.
-- \`orphanJustification\`: required non-empty string when \`torClauseRefs\` is empty,
-  else \`null\`.
-- JSON must be strictly valid. HTML comment markers verbatim.
-
-If the review does NOT modify estimate line items, skip the sidecar.`;
+Write review notes to \`claude-artefacts/estimate-review.md\`.`;
 }
 
 export function getPhase4Prompt(): string {

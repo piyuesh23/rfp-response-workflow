@@ -58,12 +58,6 @@ const UPLOAD_PHASES: Record<string, { accept: string; label: string; description
     description: "Upload the customer's responses to clarifying questions.",
     s3Prefix: "responses_qna",
   },
-  "3": {
-    accept: ".xlsx,.xls,.csv,.md",
-    label: "Upload Estimate Sheet",
-    description: "Upload the estimate spreadsheet for review and gap analysis.",
-    s3Prefix: "estimates",
-  },
 }
 
 export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
@@ -551,7 +545,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     "1": "Analyse the TOR and generate clarifying questions.",
     "1A": "Generate optimistic estimates based on assumptions, or upload an existing estimate sheet.",
     "2": "Upload customer Q&A responses, then run analysis against the TOR and original questions.",
-    "3": "Upload the estimate sheet for review, or generate one from the Q&A analysis.",
+    "3": "Generate informed estimates based on the TOR and customer Q&A responses from Phase 2.",
     "3R": "AI reviews the estimate against TOR + Q&A responses. Produces gap analysis and revised estimate.",
     "5": "Generate a client-facing technical proposal based on all prior analysis and estimates.",
   }
