@@ -245,12 +245,21 @@ async function collectPriorContext(
     }
   }
 
-  // For Phase 1A/3: inject prior estimate totals as a calibration anchor
+  // For Phase 1A/3: inject prior estimate totals as a calibration anchor.
+  // Probe in priority order: informed (Phase 3) > optimistic (Phase 1A) > revised.
   if (["1A", "3"].includes(currentPhase)) {
-    const estimatePath = path.join(workDir, "estimates", "optimistic-estimate.md");
+    const ESTIMATE_CANDIDATES = [
+      path.join(workDir, "estimates", "informed-estimate.md"),
+      path.join(workDir, "estimates", "optimistic-estimate.md"),
+      path.join(workDir, "estimates", "revised-estimate.md"),
+    ];
+    let priorEstimateContent: string | null = null;
+    for (const candidate of ESTIMATE_CANDIDATES) {
+      try { priorEstimateContent = await readFile(candidate, "utf-8"); break; } catch { /* try next */ }
+    }
     try {
-      const priorEstimate = await readFile(estimatePath, "utf-8");
-      const totals = extractPriorEstimateTotals(priorEstimate);
+      if (!priorEstimateContent) throw new Error("no estimate");
+      const totals = extractPriorEstimateTotals(priorEstimateContent);
       if (totals) {
         sections.push(`### Prior Estimate (for calibration — do NOT copy blindly)
 
@@ -726,9 +735,14 @@ export async function* runPhase(
       message: `Turn ${turns}/${config.maxTurns}`,
     };
 
+    yield {
+      type: "progress",
+      tool: "Claude",
+      message: `Calling API (turn ${turns}/${config.maxTurns})…`,
+    };
+
     let response: Anthropic.Messages.Message;
     try {
-      // Use streaming to avoid 10-minute timeout on long Opus requests
       const stream = anthropic.messages.stream({
         model,
         max_tokens: 16384,
@@ -736,6 +750,29 @@ export async function* runPhase(
         tools,
         messages,
       });
+
+      // Consume the stream event-by-event so we can emit heartbeat progress
+      // events during long Opus generations. Without this, the SSE connection
+      // goes silent for the full API response time (can be 10-20 min on large
+      // contexts), which appears identical to a hang.
+      let outputTokenCount = 0;
+      for await (const event of stream) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          outputTokenCount++;
+          if (outputTokenCount % 60 === 0) {
+            yield {
+              type: "progress",
+              tool: "Claude",
+              message: `Generating response… (~${outputTokenCount} tokens)`,
+            };
+          }
+        }
+      }
+
+      // finalMessage() resolves immediately after the stream is consumed
       response = await stream.finalMessage();
     } catch (err) {
       yield {

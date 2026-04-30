@@ -10,7 +10,7 @@ import { PHASE_LABELS } from "@/components/phase/PhaseCard"
 import type { PhaseStatus } from "@/components/phase/PhaseCard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Loader2, Upload, SkipForward, RotateCcw } from "lucide-react"
+import { Loader2, Upload, SkipForward, RotateCcw, Square } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -70,6 +70,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const [approveMessage, setApproveMessage] = React.useState<string | null>(null)
   const [uploading, setUploading] = React.useState(false)
   const [resetLoading, setResetLoading] = React.useState(false)
+  const [stopLoading, setStopLoading] = React.useState(false)
   const [rerunConfirmOpen, setRerunConfirmOpen] = React.useState(false)
   const [stalePhases, setStalePhases] = React.useState<Array<{ phaseNumber: string; label: string; status: string }>>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -247,6 +248,24 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     }
   }
 
+  async function handleStop() {
+    if (!phaseData) return
+    setStopLoading(true)
+    try {
+      const res = await fetch(`/api/phases/${phaseData.id}/cancel`, { method: "POST" })
+      if (res.ok) {
+        fetchPhaseData()
+      } else {
+        const err = await res.json()
+        console.error("Stop failed:", err.error)
+      }
+    } catch (err) {
+      console.error("Stop failed:", err)
+    } finally {
+      setStopLoading(false)
+    }
+  }
+
   function handleRerun() {
     if (!phaseData) return
     const downstream = getTransitiveDownstream(phase)
@@ -377,6 +396,16 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
           <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 text-xs">
             Running
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto text-destructive hover:text-destructive"
+            disabled={stopLoading}
+            onClick={() => void handleStop()}
+          >
+            {stopLoading ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-3 fill-current" />}
+            Stop
+          </Button>
         </div>
         <ProgressStream
           phaseId={phaseData.id}

@@ -36,12 +36,28 @@ const worker = new Worker<GapFixJobData>(
     try {
       await job.updateProgress({ type: "progress", tool: "Gap Fix", message: "Preparing work dir..." });
       const workDir = await prepareWorkDir(engagementId);
-      const estimatePath = path.join(workDir, "estimates/optimistic-estimate.md");
 
-      try {
-        await fs.access(estimatePath);
-      } catch {
-        throw new Error("No estimate file found at estimates/optimistic-estimate.md — run Phase 1A first.");
+      // Probe candidate estimate files in priority order.
+      // Phase 3 writes informed-estimate.md; Phase 1A writes optimistic-estimate.md.
+      const ESTIMATE_CANDIDATES = [
+        "estimates/informed-estimate.md",
+        "estimates/optimistic-estimate.md",
+        "estimates/revised-estimate.md",
+      ];
+      let estimatePath: string | null = null;
+      for (const candidate of ESTIMATE_CANDIDATES) {
+        try {
+          await fs.access(path.join(workDir, candidate));
+          estimatePath = path.join(workDir, candidate);
+          break;
+        } catch {
+          // not found — try next
+        }
+      }
+      if (!estimatePath) {
+        throw new Error(
+          `No estimate file found (tried: ${ESTIMATE_CANDIDATES.join(", ")}) — run Phase 1A or Phase 3 first.`
+        );
       }
 
       const original = await fs.readFile(estimatePath, "utf-8");

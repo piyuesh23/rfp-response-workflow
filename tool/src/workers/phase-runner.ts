@@ -961,6 +961,17 @@ const worker = new Worker<PhaseJobData>(
         return;
       }
 
+      // Guard: if the phase was cancelled while the agent was running, the
+      // cancel route already set status to FAILED. Do not overwrite with REVIEW.
+      const currentPhase = await prisma.phase.findUnique({
+        where: { id: phaseId },
+        select: { status: true },
+      });
+      if (currentPhase?.status === PhaseStatus.FAILED) {
+        console.log(`[phase-runner] Phase ${phaseNumber} was cancelled — skipping REVIEW transition.`);
+        return;
+      }
+
       console.log(`[phase-runner] Phase ${phaseNumber} complete — ${artefactCount} artefact(s), moving to REVIEW`);
 
       // Record PhaseExecution for analytics
@@ -1094,6 +1105,10 @@ const worker = new Worker<PhaseJobData>(
   {
     concurrency: 3,
     connection: redisConnection,
+    // Opus phases routinely take 10-20 minutes on large contexts.
+    // Default lockDuration is 30s — way too short. Setting to 15 min so
+    // BullMQ's stall detector doesn't requeue a legitimately running job.
+    lockDuration: 900_000,
   }
 );
 
