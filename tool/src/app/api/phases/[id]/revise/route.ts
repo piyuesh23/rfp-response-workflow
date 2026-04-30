@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { requireEngagementEdit } from "@/lib/engagement-access";
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+  const session = await requireAuth();
   const { id } = await params;
   const { feedback } = await req.json();
 
@@ -15,11 +19,16 @@ export async function POST(
     );
   }
 
-  const phase = await prisma.phase.findUnique({ where: { id } });
+  const phase = await prisma.phase.findUnique({
+    where: { id },
+    include: { engagement: { select: { id: true } } },
+  });
 
   if (!phase) {
     return NextResponse.json({ error: "Phase not found" }, { status: 404 });
   }
+
+  await requireEngagementEdit(session, phase.engagement.id);
 
   if (phase.status !== "REVIEW") {
     return NextResponse.json(
@@ -44,4 +53,8 @@ export async function POST(
   });
 
   return NextResponse.json({ phase: updated, revisionRequested: true });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { requireEngagementEdit } from "@/lib/engagement-access";
 import { phaseQueue } from "@/lib/queue";
 import { canStartPhase } from "@/lib/phase-chain";
 import type { WorkflowPath } from "@/lib/phase-chain";
@@ -9,11 +10,8 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id } = await params;
 
   const phase = await prisma.phase.findUnique({
@@ -29,9 +27,7 @@ export async function POST(
     return NextResponse.json({ error: "Phase not found" }, { status: 404 });
   }
 
-  if (phase.engagement.createdById !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  await requireEngagementEdit(session, phase.engagement.id);
 
   if (phase.status !== "PENDING" && phase.status !== "FAILED") {
     return NextResponse.json(
@@ -97,4 +93,8 @@ export async function POST(
   });
 
   return NextResponse.json({ jobId: job.id }, { status: 202 });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { getEngagementAccess } from "@/lib/engagement-access";
 import { listObjects } from "@/lib/storage";
 
 export interface FileEntry {
@@ -14,24 +14,13 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id } = await params;
 
-  const engagement = await prisma.engagement.findUnique({
-    where: { id },
-    select: { createdById: true },
-  });
-
-  if (!engagement) {
-    return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
-  }
-
-  if (engagement.createdById !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await getEngagementAccess(session, id);
+  if (!access.canRead) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const prefix = `engagements/${id}/`;
@@ -50,10 +39,11 @@ export async function GET(
     });
 
     return NextResponse.json({ files });
+  } catch {
+    return NextResponse.json({ error: "Failed to list files" }, { status: 500 });
+  }
   } catch (err) {
-    return NextResponse.json(
-      { error: `Failed to list files: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 500 }
-    );
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
   }
 }

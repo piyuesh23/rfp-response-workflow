@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { requireEngagementEdit } from "@/lib/engagement-access";
 import { validateEstimateFull } from "@/lib/ai/validate-estimate";
 import { validateProposal } from "@/lib/ai/validate-proposal";
 
@@ -8,11 +9,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id } = await params;
 
   const phase = await prisma.phase.findUnique({
@@ -33,9 +31,7 @@ export async function GET(
     return NextResponse.json({ error: "Phase not found" }, { status: 404 });
   }
 
-  if (phase.engagement.createdById !== session.user.id && session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  await requireEngagementEdit(session, phase.engagement.id);
 
   const artefact = phase.artefacts[0];
   if (!artefact?.contentMd) {
@@ -61,4 +57,8 @@ export async function GET(
   }
 
   return NextResponse.json({ error: "Validation not supported for this phase type" }, { status: 422 });
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
+  }
 }

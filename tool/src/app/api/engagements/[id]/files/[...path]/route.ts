@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { requireAuth, guardErrorStatus } from "@/lib/auth-guard";
+import { getEngagementAccess } from "@/lib/engagement-access";
 import { downloadFile } from "@/lib/storage";
 
 const PREVIEWABLE_EXTENSIONS = new Set(["md", "csv", "txt", "json", "html"]);
@@ -9,24 +9,13 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; path: string[] }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+  try {
+  const session = await requireAuth();
   const { id, path: pathSegments } = await params;
 
-  const engagement = await prisma.engagement.findUnique({
-    where: { id },
-    select: { createdById: true },
-  });
-
-  if (!engagement) {
-    return NextResponse.json({ error: "Engagement not found" }, { status: 404 });
-  }
-
-  if (engagement.createdById !== session.user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await getEngagementAccess(session, id);
+  if (!access.canRead) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const relativePath = pathSegments.join("/");
@@ -85,9 +74,10 @@ export async function GET(
       },
     });
   } catch {
-    return NextResponse.json(
-      { error: `File not found: ${relativePath}` },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: "File not found" }, { status: 404 });
+  }
+  } catch (err) {
+    const { status, message } = guardErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
   }
 }
