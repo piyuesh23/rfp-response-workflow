@@ -7,6 +7,7 @@ import { validateEstimateFull } from "@/lib/ai/validate-estimate";
 import { validateProposal } from "@/lib/ai/validate-proposal";
 import {
   extractPhase1Sidecar,
+  extractPhase2Sidecar,
   extractEstimateSidecar,
   normalizeClauseRef,
 } from "@/lib/ai/sidecar-extractors";
@@ -532,6 +533,51 @@ const worker = new Worker<PhaseJobData>(
         } catch (err) {
           console.warn(
             `[phase-runner] Phase 1 — TorRequirement sidecar ingest failed: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+
+      // Phase 2: update TorRequirement clarity ratings from the response sidecar.
+      if (phaseStr === "2" && artefactContent) {
+        try {
+          const sidecar = extractPhase2Sidecar(artefactContent);
+          if (!sidecar) {
+            console.warn(
+              `[phase-runner] Phase 2 — no valid PHASE2-REQUIREMENTS-UPDATE-JSON sidecar; skipping TorRequirement updates.`
+            );
+          } else if (sidecar.updates.length === 0) {
+            console.warn(`[phase-runner] Phase 2 — sidecar parsed but contained 0 updates.`);
+          } else {
+            const existingRequirements = await prisma.torRequirement.findMany({
+              where: { engagementId },
+              select: { id: true, normalizedClauseRef: true },
+            });
+            const reqByNormalized = new Map<string, string>();
+            for (const r of existingRequirements) {
+              reqByNormalized.set(r.normalizedClauseRef, r.id);
+            }
+
+            let updated = 0;
+            for (const upd of sidecar.updates) {
+              const norm = normalizeClauseRef(upd.clauseRef);
+              const reqId = reqByNormalized.get(norm);
+              if (!reqId) {
+                console.warn(`[phase-runner] Phase 2 — unknown clauseRef in update: ${upd.clauseRef}`);
+                continue;
+              }
+              await prisma.torRequirement.update({
+                where: { id: reqId },
+                data: { clarityRating: upd.clarityRating },
+              });
+              updated++;
+            }
+            console.log(
+              `[phase-runner] Phase 2 — updated ${updated} TorRequirement clarity ratings from ${sidecar.updates.length} sidecar entries.`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[phase-runner] Phase 2 — TorRequirement update failed: ${err instanceof Error ? err.message : String(err)}`
           );
         }
       }

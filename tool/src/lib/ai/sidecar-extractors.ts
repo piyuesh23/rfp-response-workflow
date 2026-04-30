@@ -144,6 +144,53 @@ export function extractEstimateSidecar(markdown: string): EstimateSidecar | null
 }
 
 /**
+ * Phase 2 TOR requirements update sidecar
+ * Embedded at the end of claude-artefacts/response-analysis.md as:
+ *
+ *   <!-- PHASE2-REQUIREMENTS-UPDATE-JSON
+ *   { "updates": [ { "clauseRef", "clarityRating", "responseNotes" }, ... ] }
+ *   -->
+ */
+
+const Phase2RequirementUpdateSchema = z.object({
+  clauseRef: z.string().min(1),
+  clarityRating: z.enum(CLARITY_VALUES).catch("NEEDS_CLARIFICATION"),
+  responseNotes: z.string().default(""),
+});
+
+const Phase2SidecarSchema = z.object({
+  updates: z.array(Phase2RequirementUpdateSchema),
+});
+
+export type Phase2RequirementUpdate = z.infer<typeof Phase2RequirementUpdateSchema>;
+export type Phase2Sidecar = z.infer<typeof Phase2SidecarSchema>;
+
+const PHASE2_SIDECAR_RE = /<!--\s*PHASE2-REQUIREMENTS-UPDATE-JSON\s*([\s\S]*?)-->/;
+
+/**
+ * Extract the Phase 2 requirements update sidecar from markdown.
+ * Returns null if the sidecar is missing or malformed (non-crashing).
+ */
+export function extractPhase2Sidecar(markdown: string): Phase2Sidecar | null {
+  if (!markdown) return null;
+  const match = markdown.match(PHASE2_SIDECAR_RE);
+  if (!match || !match[1]) return null;
+  const parsed = safeJsonParse(match[1].trim());
+  if (!parsed) {
+    console.warn("[sidecar-extractors] PHASE2-REQUIREMENTS-UPDATE-JSON: JSON parse failed");
+    return null;
+  }
+  const result = Phase2SidecarSchema.safeParse(parsed);
+  if (!result.success) {
+    console.warn(
+      `[sidecar-extractors] PHASE2-REQUIREMENTS-UPDATE-JSON: schema validation failed — ${result.error.message}`
+    );
+    return null;
+  }
+  return result.data;
+}
+
+/**
  * Normalize a TOR clause reference for fuzzy matching.
  * Matches the DB field `TorRequirement.normalizedClauseRef`.
  */

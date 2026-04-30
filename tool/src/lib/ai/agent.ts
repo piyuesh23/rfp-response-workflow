@@ -474,6 +474,44 @@ async function syncTorFiles(
 }
 
 /**
+ * Sync files from a non-TOR engagement directory (e.g. responses_qna, estimates)
+ * from MinIO to the local work directory. Called for phases that need access to
+ * uploaded documents beyond the TOR itself.
+ * Non-fatal: storage unavailability is logged and swallowed.
+ */
+async function syncAdditionalDirectory(
+  engagementId: string,
+  workDir: string,
+  dirName: string
+): Promise<number> {
+  const prefix = `engagements/${engagementId}/${dirName}/`;
+  let synced = 0;
+  try {
+    const keys = await listObjects(prefix);
+    for (const key of keys) {
+      const filename = path.basename(key);
+      if (!filename) continue;
+      const localPath = path.join(workDir, dirName, filename);
+      try {
+        const localStat = await stat(localPath);
+        if (localStat.size > 0) continue; // Already on disk
+      } catch {
+        // File doesn't exist locally — download it
+      }
+      const buffer = await downloadFile(key);
+      await mkdir(path.dirname(localPath), { recursive: true });
+      await writeFile(localPath, buffer);
+      synced++;
+    }
+  } catch (err) {
+    console.warn(
+      `[agent] Could not sync ${dirName}/ from storage: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  return synced;
+}
+
+/**
  * Sync all files from the local engagement directory back to MinIO/S3.
  * Called after a phase completes to persist generated artefacts.
  * Skips the tor/ directory (those are source files, not generated).
@@ -583,6 +621,18 @@ export async function* runPhase(
       message:
         "No TOR files found in storage. The agent will work with whatever files exist locally.",
     };
+  }
+
+  // 2b. Sync additional phase-specific directories (responses_qna, estimates)
+  const phaseStr0 = String(config.phase);
+  if (["2", "3", "3R", "4"].includes(phaseStr0)) {
+    const responseCount = await syncAdditionalDirectory(config.engagementId, workDir, "responses_qna");
+    if (responseCount > 0) {
+      yield { type: "progress", message: `Synced ${responseCount} response file(s) from storage` };
+    }
+  }
+  if (["3", "3R", "4"].includes(phaseStr0)) {
+    await syncAdditionalDirectory(config.engagementId, workDir, "estimates");
   }
 
   // 3. Enrich context: benchmarks, templates, prior phase artefacts

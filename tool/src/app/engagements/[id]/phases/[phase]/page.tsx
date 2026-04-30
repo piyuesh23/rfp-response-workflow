@@ -310,13 +310,21 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
         return
       }
 
-      // For Phase 2: auto-set workflow path to HAS_RESPONSE before running
+      // For Phase 2: auto-set workflow path + reset if this is an addendum run
       if (phase === "2") {
         await fetch(`/api/engagements/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workflowPath: "HAS_RESPONSE" }),
         })
+        // Addendum: reset the phase so it can re-run with all docs including new ones
+        if (phaseData && (phaseData.status === "REVIEW" || phaseData.status === "APPROVED")) {
+          const resetRes = await fetch(`/api/phases/${phaseData.id}/reset`, { method: "POST" })
+          if (!resetRes.ok) {
+            console.error("Addendum reset failed")
+            return
+          }
+        }
       }
 
       // After upload, run the phase to process the uploaded files
@@ -408,6 +416,27 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
             {resetLoading ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
             Re-run
           </Button>
+          {phase === "2" && uploadConfig && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={uploadConfig.accept}
+                className="hidden"
+                onChange={handleFileUpload}
+                multiple
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={uploading || resetLoading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                {uploading ? "Uploading..." : "Add responses"}
+              </Button>
+            </>
+          )}
         </div>
         {versions.length > 0 ? (
           <PhaseGate
@@ -457,6 +486,27 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
             {resetLoading ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
             Re-run
           </Button>
+          {phase === "2" && uploadConfig && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={uploadConfig.accept}
+                className="hidden"
+                onChange={handleFileUpload}
+                multiple
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={uploading || resetLoading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                {uploading ? "Uploading..." : "Add responses"}
+              </Button>
+            </>
+          )}
         </div>
         {versions.length > 0 ? (
           <PhaseGate

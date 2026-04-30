@@ -436,14 +436,55 @@ Write output to claude-artefacts/technical-proposal.md following the technical-p
 export function getPhase2Prompt(): string {
   return `Conduct Phase 2: Response Integration.
 
-Customer responses are in responses_qna/. Analyse them against the original TOR and clarifying questions.
+Read ALL files in responses_qna/ using Glob then Read — there may be multiple documents uploaded across separate sessions (addendums). Treat ALL of them collectively as the complete customer response.
 
-1. Map each response back to its original question and TOR requirement.
-2. Identify still-unresolved ambiguities after responses.
-3. Note any new scope items or constraints revealed by responses.
-4. Produce an updated requirement clarity assessment.
+Cross-reference the responses against:
+- initial_questions/questions.md — the original clarifying questions
+- claude-artefacts/tor-assessment.md — the requirement clarity assessments from Phase 1
 
-Write output to claude-artefacts/response-analysis.md.`;
+## Steps
+
+1. **Inventory all response documents**: list every file found in responses_qna/ at the top of your output.
+
+2. **Map responses to requirements**: for each TOR requirement that was questioned (from questions.md), identify what the customer said. If multiple addendum documents address the same question, merge the answers.
+
+3. **Update clarity ratings**: for each requirement addressed by the responses, determine the new clarity rating:
+   - CLEAR — fully answered, no ambiguity remains
+   - NEEDS_CLARIFICATION — partially answered, a specific follow-up is still needed
+   - AMBIGUOUS — response was vague or contradictory
+   - MISSING_DETAIL — question was not answered at all in any response document
+
+4. **Identify new scope items** revealed by responses that were not in the original TOR.
+
+5. **List remaining open questions** that the customer has not yet addressed.
+
+6. Write a unified response analysis to claude-artefacts/response-analysis.md covering all uploaded documents.
+
+## MACHINE-READABLE SIDECAR (MANDATORY)
+
+At the VERY END of claude-artefacts/response-analysis.md, append an HTML comment sidecar so the platform can update requirement clarity ratings in the database.
+
+\`\`\`
+<!-- PHASE2-REQUIREMENTS-UPDATE-JSON
+{
+  "updates": [
+    {
+      "clauseRef": "3.2.1",
+      "clarityRating": "CLEAR",
+      "responseNotes": "Customer confirmed X in document Y."
+    }
+  ]
+}
+-->
+\`\`\`
+
+Sidecar rules:
+- Emit ONE entry per TOR requirement that was addressed (even partially) by any response document.
+- \`clauseRef\`: MUST match a clauseRef from Phase 1's requirements assessment exactly.
+- \`clarityRating\`: the UPDATED rating after all responses — one of \`CLEAR | NEEDS_CLARIFICATION | AMBIGUOUS | MISSING_DETAIL\`.
+- \`responseNotes\`: 1–2 sentence summary of what the customer said. Be specific; cite the document name if there are multiple.
+- Only include requirements with relevant customer input. Omit requirements not addressed in any response.
+- JSON must be strictly valid. HTML comment markers must appear verbatim.`;
 }
 
 export function getPhase3Prompt(): string {
