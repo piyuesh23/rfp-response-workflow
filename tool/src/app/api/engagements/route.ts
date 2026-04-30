@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const phaseNumbers = ["0", "1", "1A", "2", "3", "4", "5"];
+  const phaseNumbers = ["0", "1", "1A", "2", "3", "3R", "5"];
 
   const engagement = await prisma.engagement.create({
     data: {

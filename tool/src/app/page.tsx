@@ -58,7 +58,7 @@ export default function DashboardPage() {
             const wp = e.workflowPath
             // Phases on the inactive path shouldn't count toward progress
             const NO_RESPONSE_PHASES = new Set(["0", "1", "1A", "5"])
-            const HAS_RESPONSE_PHASES = new Set(["0", "1", "2", "3", "4", "5"])
+            const HAS_RESPONSE_PHASES = new Set(["0", "1", "2", "3", "3R", "5"])
             const activePhases = wp === "NO_RESPONSE"
               ? e.phases.filter((p) => NO_RESPONSE_PHASES.has(p.phaseNumber))
               : wp === "HAS_RESPONSE"
