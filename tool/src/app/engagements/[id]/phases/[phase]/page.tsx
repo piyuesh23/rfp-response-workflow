@@ -10,8 +10,14 @@ import { PHASE_LABELS } from "@/components/phase/PhaseCard"
 import type { PhaseStatus } from "@/components/phase/PhaseCard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Loader2, Upload, SkipForward } from "lucide-react"
-import { getPhaseDef } from "@/lib/phase-chain"
+import { Loader2, Upload, SkipForward, RotateCcw } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { getPhaseDef, getTransitiveDownstream, getPhaseLabel } from "@/lib/phase-chain"
 import { usePhaseNotifications } from "@/hooks/usePhaseNotifications"
 
 interface PhaseArtefact {
@@ -64,10 +70,14 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
   const { id, phase } = React.use(params)
   const router = useRouter()
   const [phaseData, setPhaseData] = React.useState<PhaseData | null>(null)
+  const [allPhases, setAllPhases] = React.useState<PhaseData[]>([])
   const [loading, setLoading] = React.useState(true)
   const [actionLoading, setActionLoading] = React.useState(false)
   const [approveMessage, setApproveMessage] = React.useState<string | null>(null)
   const [uploading, setUploading] = React.useState(false)
+  const [resetLoading, setResetLoading] = React.useState(false)
+  const [rerunConfirmOpen, setRerunConfirmOpen] = React.useState(false)
+  const [stalePhases, setStalePhases] = React.useState<Array<{ phaseNumber: string; label: string; status: string }>>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const fetchPhaseData = React.useCallback(() => {
@@ -75,6 +85,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.phases) {
+          setAllPhases(data.phases)
           const matched = data.phases.find(
             (p: PhaseData) => p.phaseNumber === phase
           )
@@ -242,6 +253,40 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     }
   }
 
+  function handleRerun() {
+    if (!phaseData) return
+    const downstream = getTransitiveDownstream(phase)
+    const stale = allPhases
+      .filter((p) => downstream.includes(p.phaseNumber) && p.status !== "PENDING" && p.status !== "SKIPPED")
+      .map((p) => ({ phaseNumber: p.phaseNumber, label: getPhaseLabel(p.phaseNumber), status: p.status }))
+
+    if (stale.length > 0) {
+      setStalePhases(stale)
+      setRerunConfirmOpen(true)
+    } else {
+      void doResetAndRun()
+    }
+  }
+
+  async function doResetAndRun() {
+    if (!phaseData) return
+    setRerunConfirmOpen(false)
+    setResetLoading(true)
+    try {
+      const res = await fetch(`/api/phases/${phaseData.id}/reset`, { method: "POST" })
+      if (res.ok) {
+        await handleRun()
+      } else {
+        const err = await res.json()
+        console.error("Reset failed:", err.error)
+      }
+    } catch (err) {
+      console.error("Reset failed:", err)
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.target.files
     if (!files || files.length === 0 || !phaseData) return
@@ -284,6 +329,42 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
     }
   }
 
+  // Confirmation dialog for re-run (must be declared before status early-returns)
+  const rerunConfirmDialog = (
+    <Dialog open={rerunConfirmOpen} onOpenChange={setRerunConfirmOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Re-run Phase {phase}?</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 pt-2">
+          <p className="text-sm text-muted-foreground">
+            This will clear all artefacts for this phase and run the AI agent again.
+            {stalePhases.length > 0 && " The following downstream phases will need to be re-run manually after:"}
+          </p>
+          {stalePhases.length > 0 && (
+            <ul className="flex flex-col gap-1.5 rounded-lg border bg-muted/50 px-3 py-2">
+              {stalePhases.map((p) => (
+                <li key={p.phaseNumber} className="flex items-center gap-2 text-sm">
+                  <Badge variant="secondary" className="text-xs capitalize">{p.status.toLowerCase()}</Badge>
+                  <span>{p.label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setRerunConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => void doResetAndRun()}>
+              <RotateCcw className="size-4" />
+              Confirm Re-run
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+
   // --- Render by status ---
 
   if (status === "RUNNING") {
@@ -317,6 +398,16 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
               {versions.length} {versions.length === 1 ? "version" : "versions"}
             </Badge>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={resetLoading || actionLoading}
+            onClick={handleRerun}
+          >
+            {resetLoading ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+            Re-run
+          </Button>
         </div>
         {versions.length > 0 ? (
           <PhaseGate
@@ -338,6 +429,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
             </p>
           </div>
         )}
+        {rerunConfirmDialog}
       </div>
     )
   }
@@ -355,6 +447,16 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
               {versions.length} {versions.length === 1 ? "version" : "versions"}
             </Badge>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={resetLoading || actionLoading}
+            onClick={handleRerun}
+          >
+            {resetLoading ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+            Re-run
+          </Button>
         </div>
         {versions.length > 0 ? (
           <PhaseGate
@@ -371,6 +473,7 @@ export default function PhaseDetailPage({ params }: PhaseDetailPageProps) {
             <p className="text-sm text-muted-foreground">Phase approved with no artefacts.</p>
           </div>
         )}
+        {rerunConfirmDialog}
       </div>
     )
   }

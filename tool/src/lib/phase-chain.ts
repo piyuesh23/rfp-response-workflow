@@ -123,6 +123,37 @@ export function canStartPhase(
 }
 
 /**
+ * Get all phase numbers that transitively depend on the given phase.
+ * Respects the special Phase 5 dependency on 1A / 3R.
+ */
+export function getTransitiveDownstream(phaseNumber: string): string[] {
+  const result: string[] = [];
+  const visited = new Set<string>();
+  const queue = [phaseNumber];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    for (const def of PHASE_DEFS) {
+      if (def.dependsOn.includes(current) && !result.includes(def.number)) {
+        result.push(def.number);
+        queue.push(def.number);
+      }
+    }
+
+    // Phase 5 depends on 1A or 3R via special canStartPhase logic (not in dependsOn)
+    if ((current === "1A" || current === "3R") && !result.includes("5")) {
+      result.push("5");
+      queue.push("5");
+    }
+  }
+
+  return result;
+}
+
+/**
  * Get the next phase(s) to act on after a phase is approved.
  * Returns an array since multiple phases may be unlockable.
  */
