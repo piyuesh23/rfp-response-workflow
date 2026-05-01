@@ -1,5 +1,6 @@
 import { Worker } from "bullmq";
 import { runPhase, prepareWorkDir, syncFilesToStorage, UsageStats } from "@/lib/ai/agent";
+import { runPhase3RCritique, formatFindingsAsMarkdown } from "@/lib/ai/phase3r-critique";
 import { getPhaseConfig } from "@/lib/ai/phases";
 import { applyPromptOverrides } from "@/lib/ai/phases/prompt-overrides";
 import { extractMetadataForPhase, extractRiskRegister, extractAssumptions } from "@/lib/ai/metadata-extractor";
@@ -13,9 +14,10 @@ import {
   normalizeClauseRef,
 } from "@/lib/ai/sidecar-extractors";
 import { createCodeGenerator } from "@/lib/ai/assumption-code";
+import { generateStageSummary } from "@/lib/ai/generate-stage-summary";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
-import { redisConnection, PhaseJobData } from "@/lib/queue";
+import { redisConnection, PhaseJobData, getGapFixQueue } from "@/lib/queue";
 import { PhaseStatus, ArtefactType } from "@/generated/prisma/client";
 import {
   enqueueIndexArtefact,
@@ -256,31 +258,157 @@ const worker = new Worker<PhaseJobData>(
         message: `Starting Phase ${phaseNumber} analysis...`,
       });
 
-      for await (const event of runPhase(config)) {
-        await job.updateProgress(event);
-        if (event.usageStats) usageStats = event.usageStats;
-        if (event.type === "complete" && event.content) {
-          finalContent = event.content;
-          console.log(`[phase-runner] Phase ${phaseNumber} agent complete — finalContent: ${event.content.length} chars`);
-        }
-        if (event.type === "error") {
-          console.error(`[phase-runner] Phase ${phaseNumber} agent error: ${event.message}`);
-        }
-      }
+      // Phase 3R: structured critique path (replaces 20-turn agent loop)
+      if (String(phaseNumber) === "3R") {
+        const workDir3R = `/data/engagements/${engagementId}`;
+        try {
+          // Read the estimate file produced by Phase 3
+          const ESTIMATE_CANDIDATES = [
+            "estimates/informed-estimate.md",
+            "estimates/optimistic-estimate.md",
+            "estimates/revised-estimate.md",
+          ];
+          let estimateMd = "";
+          for (const candidate of ESTIMATE_CANDIDATES) {
+            try {
+              estimateMd = await fs.readFile(`${workDir3R}/${candidate}`, "utf-8");
+              if (estimateMd.trim().length > 100) break;
+            } catch { /* try next */ }
+          }
 
-      await job.updateProgress({
-        type: "progress",
-        tool: "Phase Runner",
-        message: "AI agent completed. Processing artefacts...",
-      });
+          // Read TOR excerpts (first found file in tor/)
+          let torExcerpts = "";
+          try {
+            const torFiles = await fs.readdir(`${workDir3R}/tor`);
+            for (const f of torFiles) {
+              if (/\.(md|txt)$/i.test(f)) {
+                torExcerpts = await fs.readFile(`${workDir3R}/tor/${f}`, "utf-8");
+                break;
+              }
+            }
+          } catch { /* tor directory may not exist */ }
 
-      // Enqueue raw TOR/addendum source documents for RAG chatbot retrieval.
-      // Runs after Phase 1 (when syncTorFiles has populated workDir/tor/).
-      // Idempotent: indexArtefact deletes prior chunks before inserting.
-      if (String(phaseNumber) === "1") {
-        const torWorkDir = `/data/engagements/${engagementId}`;
-        await enqueueIndexTorFiles(engagementId, torWorkDir);
-      }
+          // Read Q&A responses if available
+          let responsesQna: string | undefined;
+          try {
+            const qaFiles = await fs.readdir(`${workDir3R}/responses_qna`);
+            const qaContents: string[] = [];
+            for (const f of qaFiles) {
+              if (/\.(md|txt)$/i.test(f)) {
+                qaContents.push(await fs.readFile(`${workDir3R}/responses_qna/${f}`, "utf-8"));
+              }
+            }
+            if (qaContents.length > 0) responsesQna = qaContents.join("\n\n---\n\n");
+          } catch { /* no responses directory */ }
+
+          await job.updateProgress({
+            type: "progress",
+            tool: "Phase 3R Critique",
+            message: "Running structured semantic critique (Sonnet aiJsonCall)…",
+          });
+
+          const findings = await runPhase3RCritique({
+            engagementId,
+            estimateMd,
+            torExcerpts,
+            responsesQna,
+          });
+
+          finalContent = formatFindingsAsMarkdown(findings);
+
+          // Write to disk so artefact persistence picks it up from the file
+          await fs.mkdir(`${workDir3R}/claude-artefacts`, { recursive: true });
+          await fs.writeFile(`${workDir3R}/claude-artefacts/gap-analysis.md`, finalContent, "utf-8");
+
+          await job.updateProgress({
+            type: "progress",
+            tool: "Phase 3R Critique",
+            message: `Critique complete — severity: ${findings.severity} (${findings.semanticGaps.length} semantic gaps, ${findings.contradictions.length} contradictions)`,
+          });
+
+          // If critique found FAIL-level issues, auto-enqueue gap-fix-worker
+          if (findings.severity === "FAIL") {
+            try {
+              const autoCount = await prisma.gapFixRun.count({
+                where: { engagementId, triggeredBy: { startsWith: "auto-phase-" } },
+              });
+              if (autoCount < 2) {
+                const semanticGapItems = findings.semanticGaps
+                  .filter((g) => g.suggestedAction !== "link-existing")
+                  .map((g) => ({ clauseRef: g.clauseRef, title: g.issue, domain: "semantic" }));
+                const contradictionOrphans = findings.contradictions.map((c) => ({ tab: "BACKEND", task: c.itemTask }));
+                const gapsBefore = {
+                  phaseNumber: "3R",
+                  gapCount: semanticGapItems.length,
+                  orphanCount: contradictionOrphans.length,
+                  confFormulaViolations: 0,
+                  noBenchmarkCount: 0,
+                  details: {
+                    coverage: {
+                      details: {
+                        gaps: semanticGapItems,
+                        orphans: contradictionOrphans,
+                      },
+                    },
+                    confFormula: { details: { violations: [] } },
+                    riskRegister: { details: { missing: [] } },
+                  },
+                };
+                const gapFixRun = await prisma.gapFixRun.create({
+                  data: {
+                    engagementId,
+                    status: "QUEUED",
+                    gapsBefore,
+                    scoresBefore: [],
+                    triggeredBy: "auto-phase-3R",
+                  },
+                });
+                const gapJobId = `fix-gaps-${gapFixRun.id}`;
+                await getGapFixQueue().add(
+                  "fix-gaps",
+                  { gapFixRunId: gapFixRun.id, engagementId, techStack },
+                  { jobId: gapJobId }
+                );
+                await prisma.gapFixRun.update({ where: { id: gapFixRun.id }, data: { jobId: gapJobId } });
+                console.log(`[phase-runner] Phase 3R — auto-enqueued gap-fix run ${gapFixRun.id} (iteration ${autoCount + 1}/2)`);
+              } else {
+                console.log(`[phase-runner] Phase 3R — auto-gap-fix cap reached (${autoCount}/2); leaving for manual review`);
+              }
+            } catch (autoErr) {
+              console.warn(`[phase-runner] Phase 3R — auto-gap-fix enqueue failed: ${autoErr instanceof Error ? autoErr.message : String(autoErr)}`);
+            }
+          }
+        } catch (critiqueErr) {
+          console.error(`[phase-runner] Phase 3R critique failed: ${critiqueErr instanceof Error ? critiqueErr.message : String(critiqueErr)}`);
+          finalContent = `# Phase 3R Critique Error\n\n${critiqueErr instanceof Error ? critiqueErr.message : String(critiqueErr)}`;
+        }
+      } else {
+        for await (const event of runPhase(config)) {
+          await job.updateProgress(event);
+          if (event.usageStats) usageStats = event.usageStats;
+          if (event.type === "complete" && event.content) {
+            finalContent = event.content;
+            console.log(`[phase-runner] Phase ${phaseNumber} agent complete — finalContent: ${event.content.length} chars`);
+          }
+          if (event.type === "error") {
+            console.error(`[phase-runner] Phase ${phaseNumber} agent error: ${event.message}`);
+          }
+        }
+
+        await job.updateProgress({
+          type: "progress",
+          tool: "Phase Runner",
+          message: "AI agent completed. Processing artefacts...",
+        });
+
+        // Enqueue raw TOR/addendum source documents for RAG chatbot retrieval.
+        // Runs after Phase 1 (when syncTorFiles has populated workDir/tor/).
+        // Idempotent: indexArtefact deletes prior chunks before inserting.
+        if (String(phaseNumber) === "1") {
+          const torWorkDir = `/data/engagements/${engagementId}`;
+          await enqueueIndexTorFiles(engagementId, torWorkDir);
+        }
+      } // end else (agent-loop path)
 
       // Persist artefact if the phase produced content
       // The agentic loop's finalContent is Claude's summary text.
@@ -656,12 +784,18 @@ const worker = new Worker<PhaseJobData>(
               reqByNormalized.set(r.normalizedClauseRef, r.id);
             }
 
-            // Replace existing line items for this engagement to keep insert idempotent per phase run.
-            await prisma.lineItem.deleteMany({ where: { engagementId } });
-
+            // Pre-compute torIds and orphan justification outside the transaction
+            // so we don't do extra DB reads inside it.
             let inserted = 0;
             let linked = 0;
             let unresolved = 0;
+
+            type LineItemInsert = {
+              torIds: string[];
+              orphanJustification: string | null;
+              li: typeof sidecar.lineItems[number];
+            };
+            const preparedItems: LineItemInsert[] = [];
             for (const li of sidecar.lineItems) {
               const torIds: string[] = [];
               const missing: string[] = [];
@@ -677,39 +811,49 @@ const worker = new Worker<PhaseJobData>(
                   `[phase-runner] Phase ${phaseStr} — LineItem "${li.task}" references unknown clauseRefs: ${missing.join(", ")}`
                 );
               }
-
               const orphanJustification =
                 torIds.length === 0
                   ? li.orphanJustification && li.orphanJustification.trim().length > 0
                     ? li.orphanJustification
                     : "No TOR clause reference provided."
                   : null;
-
-              await prisma.lineItem.create({
-                data: {
-                  engagementId,
-                  tab: li.tab,
-                  task: li.task,
-                  description: li.description ?? "",
-                  hours: li.hours,
-                  conf: li.conf,
-                  lowHrs: li.lowHrs,
-                  highHrs: li.highHrs,
-                  benchmarkRef: li.benchmarkRef ?? null,
-                  integrationTier: li.integrationTier ?? null,
-                  orphanJustification,
-                  sourcePhaseId: phaseId,
-                  benchmarkLowHrs: li.benchmarkLowHrs ?? null,
-                  benchmarkHighHrs: li.benchmarkHighHrs ?? null,
-                  deviationReason: li.deviationReason ?? null,
-                  ...(torIds.length > 0
-                    ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
-                    : {}),
-                },
-              });
-              inserted += 1;
-              linked += torIds.length;
+              preparedItems.push({ torIds, orphanJustification, li });
             }
+
+            // Wrap delete + insert in a transaction so a partial failure doesn't
+            // leave the engagement with zero line items.
+            await prisma.$transaction(
+              async (tx) => {
+                await tx.lineItem.deleteMany({ where: { engagementId } });
+                for (const { torIds, orphanJustification, li } of preparedItems) {
+                  await tx.lineItem.create({
+                    data: {
+                      engagementId,
+                      tab: li.tab,
+                      task: li.task,
+                      description: li.description ?? "",
+                      hours: li.hours,
+                      conf: li.conf,
+                      lowHrs: li.lowHrs,
+                      highHrs: li.highHrs,
+                      benchmarkRef: li.benchmarkRef ?? null,
+                      integrationTier: li.integrationTier ?? null,
+                      orphanJustification,
+                      sourcePhaseId: phaseId,
+                      benchmarkLowHrs: li.benchmarkLowHrs ?? null,
+                      benchmarkHighHrs: li.benchmarkHighHrs ?? null,
+                      deviationReason: li.deviationReason ?? null,
+                      ...(torIds.length > 0
+                        ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
+                        : {}),
+                    },
+                  });
+                  inserted += 1;
+                  linked += torIds.length;
+                }
+              },
+              { timeout: 30_000 }
+            );
             console.log(
               `[phase-runner] Phase ${phaseStr} — inserted ${inserted} LineItem rows (${linked} TOR links, ${unresolved} unresolved clauseRefs).`
             );
@@ -802,6 +946,55 @@ const worker = new Worker<PhaseJobData>(
             console.log(
               `[phase-runner] Phase ${phaseNumber} — validation: ${fullReport.overallStatus} (benchmark: ${fullReport.benchmark.passCount}P/${fullReport.benchmark.warnCount}W/${fullReport.benchmark.failCount}F, structural: ${fullReport.structural.filter(s => s.status === "PASS").length}P/${fullReport.structural.filter(s => s.status === "WARN").length}W/${fullReport.structural.filter(s => s.status === "FAIL").length}F)`
             );
+
+            // Auto-chain gap-fix-worker when validation FAILs (cap at 2 auto-runs per engagement).
+            if (fullReport.overallStatus === "FAIL") {
+              try {
+                const autoCount = await prisma.gapFixRun.count({
+                  where: { engagementId, triggeredBy: { startsWith: "auto-phase-" } },
+                });
+                if (autoCount < 2) {
+                  const gapsBefore = {
+                    phaseNumber: phaseNumber,
+                    gapCount: (fullReport.structured?.coverage?.details?.gapCount as number | undefined) ?? 0,
+                    orphanCount: (fullReport.structured?.coverage?.details?.orphanCount as number | undefined) ?? 0,
+                    confFormulaViolations: (fullReport.structured?.confFormula?.details?.violationCount as number | undefined) ?? 0,
+                    noBenchmarkCount: fullReport.benchmark.noBenchmarkCount,
+                    details: {},
+                  };
+                  const gapFixRun = await prisma.gapFixRun.create({
+                    data: {
+                      engagementId,
+                      status: "QUEUED",
+                      gapsBefore,
+                      scoresBefore: [],
+                      triggeredBy: `auto-phase-${phaseStr}`,
+                    },
+                  });
+                  const gapJobId = `fix-gaps-${gapFixRun.id}`;
+                  await getGapFixQueue().add(
+                    "fix-gaps",
+                    { gapFixRunId: gapFixRun.id, engagementId, techStack },
+                    { jobId: gapJobId }
+                  );
+                  await prisma.gapFixRun.update({
+                    where: { id: gapFixRun.id },
+                    data: { jobId: gapJobId },
+                  });
+                  console.log(
+                    `[phase-runner] Phase ${phaseStr} — auto-enqueued gap-fix run ${gapFixRun.id} (iteration ${autoCount + 1}/2)`
+                  );
+                } else {
+                  console.log(
+                    `[phase-runner] Phase ${phaseStr} — auto-gap-fix cap reached (${autoCount}/2); leaving for manual review`
+                  );
+                }
+              } catch (autoFixErr) {
+                console.warn(
+                  `[phase-runner] Phase ${phaseStr} — auto-gap-fix enqueue failed: ${autoFixErr instanceof Error ? autoFixErr.message : String(autoFixErr)}`
+                );
+              }
+            }
           }
         } catch (err) {
           console.warn(
@@ -1079,6 +1272,10 @@ const worker = new Worker<PhaseJobData>(
           completedAt: new Date(),
         },
       });
+
+      // Fire-and-forget stage summary refresh — errors are logged inside the helper.
+      // Without this, the per-phase summary card stays stale until the next import flow.
+      void generateStageSummary(engagementId, phaseNumber).catch(() => {});
 
       try {
         await notifyReviewNeeded(engagementId, phaseNumber);

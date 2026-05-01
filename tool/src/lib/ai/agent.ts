@@ -45,8 +45,13 @@ const DEFAULT_MODEL =
   process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
 const OPUS_MODEL = "claude-opus-4-20250514";
 
-/** Phases that benefit from Opus-level reasoning */
-const OPUS_PHASES = new Set(["1A", "3", "3R", "4"]);
+/** Phases that need Opus-level generation. 3R is critique-only → Sonnet. */
+const OPUS_PHASES = new Set(["1A", "3", "4"]);
+
+function buildThinkingParam(model: string): { thinking?: { type: "enabled"; budget_tokens: number } } {
+  if (model !== OPUS_MODEL) return {};
+  return { thinking: { type: "enabled", budget_tokens: 8000 } };
+}
 
 /**
  * Determine the model to use for a phase.
@@ -743,13 +748,19 @@ export async function* runPhase(
 
     let response: Anthropic.Messages.Message;
     try {
-      const stream = anthropic.messages.stream({
-        model,
-        max_tokens: 16384,
-        system: enrichedSystemPrompt,
-        tools,
-        messages,
-      });
+      const stream = anthropic.messages.stream(
+        {
+          model,
+          max_tokens: 16384,
+          system: [{ type: "text" as const, text: enrichedSystemPrompt, cache_control: { type: "ephemeral" } }],
+          tools,
+          messages,
+          ...buildThinkingParam(model),
+        },
+        model === OPUS_MODEL
+          ? { headers: { "anthropic-beta": "interleaved-thinking-2025-05-14" } }
+          : undefined
+      );
 
       // Consume the stream event-by-event so we can emit heartbeat progress
       // events during long Opus generations. Without this, the SSE connection
@@ -878,8 +889,9 @@ export async function* runPhase(
     const finalStream = anthropic.messages.stream({
       model,
       max_tokens: 16384,
-      system: enrichedSystemPrompt,
+      system: [{ type: "text" as const, text: enrichedSystemPrompt, cache_control: { type: "ephemeral" } }],
       messages,
+      ...buildThinkingParam(model),
     });
     const finalResponse = await finalStream.finalMessage();
 

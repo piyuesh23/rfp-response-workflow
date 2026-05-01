@@ -675,6 +675,7 @@ model GapFixRun {
   engagementId String
   status       String     @default("QUEUED") // QUEUED | RUNNING | DONE | FAILED
   jobId        String?    // BullMQ job ID for SSE matching
+  triggeredBy  String?    @default("manual") // "manual" | "auto-phase-1A" | "auto-phase-3"
   gapsBefore   Json       // { gapCount, orphanCount, confViolations, noBenchmarkCount, phaseNumber }
   scoresBefore Json?      // { phaseNumber: string, accuracyScore: number }[]
   scoresAfter  Json?      // { phaseNumber: string, accuracyScore: number }[]
