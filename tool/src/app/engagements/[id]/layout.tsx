@@ -11,6 +11,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { cn } from "@/lib/utils"
 import { EngagementAccessProvider, type EffectiveAccessClient } from "@/contexts/engagement-access-context"
 import { SharePanel } from "@/components/engagement/SharePanel"
+import { useQuery } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/query-keys"
 
 const TECH_STACK_LABELS: Record<string, string> = {
   DRUPAL: "Drupal",
@@ -63,9 +65,12 @@ export default function EngagementLayout({ children, params }: EngagementLayoutP
   const router = useRouter()
   const basePath = `/engagements/${id}`
 
-  const [engagement, setEngagement] = React.useState<Engagement | null>(null)
+  const { data: engagement, isPending } = useQuery({
+    queryKey: queryKeys.engagement(id),
+    queryFn: () =>
+      fetch(`/api/engagements/${id}`).then((r) => (r.ok ? r.json() as Promise<Engagement> : Promise.reject(r))),
+  })
   const [deleting, setDeleting] = React.useState(false)
-  const [loading, setLoading] = React.useState(true)
   const [shareOpen, setShareOpen] = React.useState(false)
   const effectiveAccess: EffectiveAccessClient = engagement?.effectiveAccess ?? {
     canRead: true,
@@ -74,15 +79,7 @@ export default function EngagementLayout({ children, params }: EngagementLayoutP
     shareLevel: null,
   }
 
-  React.useEffect(() => {
-    fetch(`/api/engagements/${id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setEngagement(data))
-      .catch(() => setEngagement(null))
-      .finally(() => setLoading(false))
-  }, [id])
-
-  if (loading) {
+  if (isPending) {
     return <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">Loading engagement...</div>
   }
 

@@ -25,6 +25,8 @@ import { usePhaseNotifications } from "@/hooks/usePhaseNotifications"
 import { useEngagementEvents } from "@/hooks/useEngagementEvents"
 import { ProgressStream } from "@/components/phase/ProgressStream"
 import type { WorkflowPath } from "@/lib/phase-chain"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/query-keys"
 
 interface TemplateStatus {
   questionsRfp?: boolean
@@ -134,72 +136,76 @@ function extractPhaseSummary(
   }
 }
 
+function mapEngagementData(data: Record<string, unknown>): EngagementData {
+  return {
+    id: data.id as string,
+    projectName: (data.projectName as string | null) ?? null,
+    workflowPath: (data.workflowPath as WorkflowPath) ?? null,
+    templateFileUrl: (data.templateFileUrl as string | null) ?? null,
+    templateStatus: (data.templateStatus as TemplateStatus | null) ?? null,
+    estimatedBudget: (data.estimatedBudget as number | null) ?? null,
+    financialProposalValue: (data.financialProposalValue as number | null) ?? null,
+    outcome: (data.outcome as string | null) ?? null,
+    lossReason: (data.lossReason as string | null) ?? null,
+    lossReasonDetail: (data.lossReasonDetail as string | null) ?? null,
+    actualContractValue: (data.actualContractValue as number | null) ?? null,
+    competitorWhoWon: (data.competitorWhoWon as string | null) ?? null,
+    winFactors: (data.winFactors as string[]) ?? [],
+    outcomeFeedback: (data.outcomeFeedback as string | null) ?? null,
+    industry: ((data.account as Record<string, unknown> | null)?.industry as string | null) ?? null,
+    rfpSource: (data.rfpSource as string | null) ?? null,
+    estimatedDealValue: (data.estimatedDealValue as number | null) ?? null,
+    submissionDeadline: (data.submissionDeadline as string | null) ?? null,
+    presalesOwner: (data.presalesOwner as string | null) ?? null,
+    salesOwner: (data.salesOwner as string | null) ?? null,
+    isCompetitiveBid: (data.isCompetitiveBid as boolean | null) ?? true,
+    presalesHoursSpent: (data.presalesHoursSpent as number | null) ?? null,
+    phases: ((data.phases as Array<{ id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }>; modelOverride?: string | null }>) ?? []).map(
+      (p) => ({
+        id: p.id,
+        phaseNumber: p.phaseNumber,
+        status: p.status as import("@/components/phase/PhaseCard").PhaseStatus,
+        startedAt: p.startedAt ?? null,
+        completedAt: p.completedAt ?? null,
+        artefactCount: p.artefacts?.length ?? 0,
+        summary: extractPhaseSummary(p.phaseNumber, p.artefacts ?? []),
+        modelOverride: p.modelOverride ?? null,
+      })
+    ),
+  }
+}
+
 export default function EngagementOverviewPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const [engagement, setEngagement] = React.useState<EngagementData | null>(null)
-  const [stats, setStats] = React.useState<EngagementStatsData>(EMPTY_STATS)
-  const [loading, setLoading] = React.useState(true)
+  const queryClient = useQueryClient()
   const [actionLoading, setActionLoading] = React.useState(false)
 
-  const fetchEngagement = React.useCallback(() => {
-    fetch(`/api/engagements/${id}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data) {
-          setEngagement({
-            id: data.id,
-            projectName: data.projectName ?? null,
-            workflowPath: data.workflowPath ?? null,
-            templateFileUrl: data.templateFileUrl ?? null,
-            templateStatus: data.templateStatus ?? null,
-            estimatedBudget: data.estimatedBudget ?? null,
-            financialProposalValue: data.financialProposalValue ?? null,
-            outcome: data.outcome ?? null,
-            lossReason: data.lossReason ?? null,
-            lossReasonDetail: data.lossReasonDetail ?? null,
-            actualContractValue: data.actualContractValue ?? null,
-            competitorWhoWon: data.competitorWhoWon ?? null,
-            winFactors: data.winFactors ?? [],
-            outcomeFeedback: data.outcomeFeedback ?? null,
-            industry: data.account?.industry ?? null,
-            rfpSource: data.rfpSource ?? null,
-            estimatedDealValue: data.estimatedDealValue ?? null,
-            submissionDeadline: data.submissionDeadline ?? null,
-            presalesOwner: data.presalesOwner ?? null,
-            salesOwner: data.salesOwner ?? null,
-            isCompetitiveBid: data.isCompetitiveBid ?? true,
-            presalesHoursSpent: data.presalesHoursSpent ?? null,
-            phases: (data.phases ?? []).map(
-              (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }>; modelOverride?: string | null }) => ({
-                id: p.id,
-                phaseNumber: p.phaseNumber,
-                status: p.status,
-                startedAt: p.startedAt ?? null,
-                completedAt: p.completedAt ?? null,
-                artefactCount: p.artefacts?.length ?? 0,
-                summary: extractPhaseSummary(p.phaseNumber, p.artefacts ?? []),
-                modelOverride: p.modelOverride ?? null,
-              })
-            ),
-          })
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+  const { data: rawEngagement, isPending: loading } = useQuery({
+    queryKey: queryKeys.phases(id),
+    queryFn: () =>
+      fetch(`/api/engagements/${id}`).then((r) => (r.ok ? r.json() : Promise.reject(r))),
+    refetchInterval: (query) => {
+      const phases = (query.state.data?.phases ?? []) as Array<{ status: string }>
+      return phases.some((p) => p.status === "RUNNING") ? 8_000 : false
+    },
+  })
 
-    // Fetch stats in parallel
-    fetch(`/api/engagements/${id}/stats`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data) setStats(data)
-      })
-      .catch(() => {})
-  }, [id])
+  const engagement: EngagementData | null = React.useMemo(
+    () => (rawEngagement ? mapEngagementData(rawEngagement as Record<string, unknown>) : null),
+    [rawEngagement]
+  )
 
-  React.useEffect(() => {
-    fetchEngagement()
-  }, [fetchEngagement])
+  const { data: stats = EMPTY_STATS } = useQuery({
+    queryKey: [...queryKeys.engagement(id), "stats"],
+    queryFn: () =>
+      fetch(`/api/engagements/${id}/stats`).then((r) => (r.ok ? r.json() : EMPTY_STATS)),
+  })
+
+  const invalidateEngagement = React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.engagement(id) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.phases(id) })
+  }, [queryClient, id])
 
   /** Patch engagement fields via the general PATCH endpoint */
   const patchEngagement = React.useCallback(
@@ -209,9 +215,9 @@ export default function EngagementOverviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fields),
       })
-      fetchEngagement()
+      invalidateEngagement()
     },
-    [id, fetchEngagement]
+    [id, invalidateEngagement]
   )
 
   /** Patch outcome-related fields via the dedicated outcome endpoint */
@@ -223,9 +229,9 @@ export default function EngagementOverviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outcome: engagement.outcome, ...fields }),
       })
-      fetchEngagement()
+      invalidateEngagement()
     },
-    [id, engagement?.outcome, fetchEngagement]
+    [id, engagement?.outcome, invalidateEngagement]
   )
 
   // ProgressStream renders its own SSE per running phase and calls fetchEngagement on complete/error.
@@ -233,31 +239,22 @@ export default function EngagementOverviewPage() {
   const anyRunning = (engagement?.phases ?? []).some((p) => p.status === "RUNNING")
 
   // Engagement-scoped event stream: one SSE connection for the whole page.
-  // On phase_status_changed we refetch immediately (no polling delay) and then
-  // do 2 catch-up polls × 5s to pick up async writes (RAG index, stage summary).
+  // On phase_status_changed we invalidate queries immediately (no polling delay) and then
+  // do 2 catch-up invalidations × 5s to pick up async writes (RAG index, stage summary).
   useEngagementEvents(id, React.useCallback((event) => {
     if (event.type === "phase_status_changed") {
-      fetchEngagement()
-      // Catch-up polls for async post-completion writes
+      invalidateEngagement()
+      // Catch-up invalidations for async post-completion writes
       let remaining = 2
       const interval = setInterval(() => {
-        fetchEngagement()
+        invalidateEngagement()
         remaining -= 1
         if (remaining <= 0) clearInterval(interval)
       }, 5000)
       // Cleanup handled by the interval itself
       void interval
     }
-  }, [fetchEngagement]))
-
-  // Fallback polling while a phase is running — covers the case where the SSE
-  // connection hasn't been established yet on first render (e.g. server-side
-  // status flip before the client connects).
-  React.useEffect(() => {
-    if (!anyRunning) return
-    const interval = setInterval(fetchEngagement, 8000)
-    return () => clearInterval(interval)
-  }, [anyRunning, fetchEngagement])
+  }, [invalidateEngagement]))
 
   // Browser notifications for running phase completion
   usePhaseNotifications({
@@ -277,7 +274,7 @@ export default function EngagementOverviewPage() {
         console.error("Failed to run phase:", err.error)
         return
       }
-      fetchEngagement()
+      invalidateEngagement()
     } catch (err) {
       console.error("Failed to run phase:", err)
     } finally {
@@ -288,14 +285,13 @@ export default function EngagementOverviewPage() {
   async function handleSkipPhase(phaseId: string) {
     setActionLoading(true)
     try {
-      // Use approve endpoint but with SKIPPED — we'll use a dedicated skip endpoint
       const res = await fetch(`/api/phases/${phaseId}/skip`, { method: "POST" })
       if (!res.ok) {
         const err = await res.json()
         console.error("Failed to skip phase:", err.error)
         return
       }
-      fetchEngagement()
+      invalidateEngagement()
     } catch (err) {
       console.error("Failed to skip phase:", err)
     } finally {
@@ -312,7 +308,7 @@ export default function EngagementOverviewPage() {
         body: JSON.stringify({ workflowPath: path }),
       })
       if (res.ok) {
-        fetchEngagement()
+        invalidateEngagement()
       }
     } catch (err) {
       console.error("Failed to set workflow path:", err)
@@ -418,8 +414,8 @@ export default function EngagementOverviewPage() {
             </div>
             <ProgressStream
               phaseId={p.id}
-              onComplete={fetchEngagement}
-              onError={fetchEngagement}
+              onComplete={invalidateEngagement}
+              onError={invalidateEngagement}
             />
           </div>
         ))}
@@ -835,7 +831,7 @@ export default function EngagementOverviewPage() {
                             method: "PATCH",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ outcome: val }),
-                          }).then(() => fetchEngagement());
+                          }).then(() => invalidateEngagement());
                         } else {
                           patchEngagement({ outcome: null });
                         }

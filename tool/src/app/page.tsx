@@ -3,10 +3,12 @@
 import * as React from "react"
 import Link from "next/link"
 import { PlusIcon } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { EngagementGrid } from "@/components/engagement/EngagementGrid"
 import { SearchFilter } from "@/components/engagement/SearchFilter"
 import { EmptyState } from "@/components/engagement/EmptyState"
+import { queryKeys } from "@/lib/query-keys"
 import type { EngagementStatus, TechStack } from "@/generated/prisma/client"
 
 interface CostSummary {
@@ -41,51 +43,49 @@ interface GridEngagement {
   importSource?: string | null
 }
 
+const NO_RESPONSE_PHASES = new Set(["0", "1", "1A", "5"])
+const HAS_RESPONSE_PHASES = new Set(["0", "1", "2", "3", "3R", "5"])
+
+function mapEngagement(e: Engagement): GridEngagement {
+  const wp = e.workflowPath
+  const activePhases = wp === "NO_RESPONSE"
+    ? e.phases.filter((p) => NO_RESPONSE_PHASES.has(p.phaseNumber))
+    : wp === "HAS_RESPONSE"
+    ? e.phases.filter((p) => HAS_RESPONSE_PHASES.has(p.phaseNumber))
+    : e.phases
+
+  return {
+    id: e.id,
+    clientName: e.clientName,
+    projectName: e.projectName,
+    techStack: e.techStack,
+    status: e.status,
+    workflowPath: wp,
+    phaseProgress: {
+      completed: activePhases.filter((p) => p.status === "APPROVED" || p.status === "SKIPPED").length,
+      total: activePhases.length,
+    },
+    updatedAt: new Date(e.updatedAt),
+    costSummary: e.costSummary ?? null,
+    importSource: e.importSource ?? null,
+  }
+}
+
 export default function DashboardPage() {
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string | null>("all")
   const [techStackFilter, setTechStackFilter] = React.useState<string | null>("all")
-  const [engagements, setEngagements] = React.useState<GridEngagement[]>([])
-  const [loading, setLoading] = React.useState(true)
 
-  React.useEffect(() => {
-    fetch("/api/engagements")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: Engagement[]) => {
-        setEngagements(
-          data.map((e) => {
-            // Filter phases to only count those on the active workflow path
-            const wp = e.workflowPath
-            // Phases on the inactive path shouldn't count toward progress
-            const NO_RESPONSE_PHASES = new Set(["0", "1", "1A", "5"])
-            const HAS_RESPONSE_PHASES = new Set(["0", "1", "2", "3", "3R", "5"])
-            const activePhases = wp === "NO_RESPONSE"
-              ? e.phases.filter((p) => NO_RESPONSE_PHASES.has(p.phaseNumber))
-              : wp === "HAS_RESPONSE"
-              ? e.phases.filter((p) => HAS_RESPONSE_PHASES.has(p.phaseNumber))
-              : e.phases // No path chosen yet — show all
+  const { data: rawEngagements, isPending } = useQuery({
+    queryKey: queryKeys.engagements(),
+    queryFn: () =>
+      fetch("/api/engagements").then((r) => (r.ok ? r.json() as Promise<Engagement[]> : Promise.reject(r))),
+  })
 
-            return {
-              id: e.id,
-              clientName: e.clientName,
-              projectName: e.projectName,
-              techStack: e.techStack,
-              status: e.status,
-              workflowPath: wp,
-              phaseProgress: {
-                completed: activePhases.filter((p) => p.status === "APPROVED" || p.status === "SKIPPED").length,
-                total: activePhases.length,
-              },
-              updatedAt: new Date(e.updatedAt),
-              costSummary: e.costSummary ?? null,
-              importSource: e.importSource ?? null,
-            }
-          })
-        )
-      })
-      .catch(() => setEngagements([]))
-      .finally(() => setLoading(false))
-  }, [])
+  const engagements: GridEngagement[] = React.useMemo(
+    () => (rawEngagements ?? []).map(mapEngagement),
+    [rawEngagements]
+  )
 
   const filtered = engagements.filter((e) => {
     const matchesSearch =
@@ -102,7 +102,7 @@ export default function DashboardPage() {
     return matchesSearch && matchesStatus && matchesTechStack
   })
 
-  if (loading) {
+  if (isPending) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Loading engagements...

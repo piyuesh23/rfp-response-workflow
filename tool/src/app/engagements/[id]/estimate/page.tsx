@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils"
 import { parseEstimateMarkdown, estimateDataToExcelTabs } from "@/lib/estimate-parser"
 import type { EstimateData } from "@/components/estimate/TabbedEstimate"
 import type { LineItem } from "@/components/estimate/LineItemRow"
+import { useQuery } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/query-keys"
 
 // ─── Risk Register ────────────────────────────────────────────────────────────
 
@@ -153,55 +155,43 @@ interface EngagementResponse {
 
 export default function EstimatePage() {
   const { id } = useParams<{ id: string }>()
-  const [estimateData, setEstimateData] = React.useState<EstimateData | null>(null)
-  const [clientName, setClientName] = React.useState("")
-  const [techStack, setTechStack] = React.useState("")
-  const [engagementType, setEngagementType] = React.useState("")
-  const [updatedAt, setUpdatedAt] = React.useState("")
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    fetch(`/api/engagements/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch engagement")
-        return res.json() as Promise<EngagementResponse>
+  const { data, isPending: loading, isError } = useQuery({
+    queryKey: queryKeys.engagement(id),
+    queryFn: () =>
+      fetch(`/api/engagements/${id}`).then((r) => {
+        if (!r.ok) throw new Error("Failed to fetch engagement")
+        return r.json() as Promise<EngagementResponse>
+      }),
+  })
+
+  const clientName = data?.clientName ?? ""
+  const techStack = data ? data.techStack.replace(/_/g, " + ") : ""
+  const engagementType = data ? data.engagementType.replace(/_/g, " ") : ""
+  const updatedAt = data
+    ? new Date(data.updatedAt).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
       })
-      .then((data) => {
-        setClientName(data.clientName)
-        setTechStack(data.techStack.replace(/_/g, " + "))
-        setEngagementType(data.engagementType.replace(/_/g, " "))
-        setUpdatedAt(
-          new Date(data.updatedAt).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })
+    : ""
+
+  const estimateData: EstimateData | null = React.useMemo(() => {
+    if (!data) return null
+    const estimatePhases = ["1A", "3"]
+    for (const pn of estimatePhases) {
+      const phase = data.phases.find((p) => p.phaseNumber === pn)
+      if (phase) {
+        const artefact = phase.artefacts.find(
+          (a) => a.artefactType === "ESTIMATE" && a.contentMd
         )
-
-        // Find the latest ESTIMATE artefact (from Phase 1A or Phase 3)
-        let estimateContent: string | null = null
-        const estimatePhases = ["1A", "3"]
-        for (const pn of estimatePhases) {
-          const phase = data.phases.find((p) => p.phaseNumber === pn)
-          if (phase) {
-            const artefact = phase.artefacts.find(
-              (a) => a.artefactType === "ESTIMATE" && a.contentMd
-            )
-            if (artefact?.contentMd) {
-              estimateContent = artefact.contentMd
-              break
-            }
-          }
+        if (artefact?.contentMd) {
+          return parseEstimateMarkdown(artefact.contentMd)
         }
-
-        if (estimateContent) {
-          setEstimateData(parseEstimateMarkdown(estimateContent))
-        }
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [id])
+      }
+    }
+    return null
+  }, [data])
 
   async function handleDownloadExcel() {
     if (!estimateData) return
@@ -274,10 +264,10 @@ export default function EstimatePage() {
     )
   }
 
-  if (error) {
+  if (isError) {
     return (
       <div className="flex items-center justify-center py-20">
-        <p className="text-sm text-destructive">{error}</p>
+        <p className="text-sm text-destructive">Failed to fetch engagement</p>
       </div>
     )
   }
