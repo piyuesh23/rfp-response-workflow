@@ -285,19 +285,29 @@ enum ArtefactType {
 }
 
 model Assumption {
-  id                 String           @id @default(cuid())
-  engagement         Engagement       @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  id                 String             @id @default(cuid())
+  engagement         Engagement         @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   engagementId       String
   sourcePhaseId      String
   text               String
   torReference       String?
   impactIfWrong      String
-  status             AssumptionStatus @default(ACTIVE)
+  status             AssumptionStatus   @default(ACTIVE)
   confirmedById      String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  torRequirementRefs TorRequirement[] @relation("AssumptionToTorRequirement")
-  lineItemRefs       LineItem[]       @relation("AssumptionToLineItem")
+  // SA enrichment fields
+  code               String?            // human-readable: A-BE-001 / A-RG-003 — auto-generated on insert
+  category           AssumptionCategory @default(SCOPE)
+  tab                String?            // BACKEND | FRONTEND | FIXED_COST | AI | GENERAL
+  regulationContext  String?            // e.g. "HIPAA §164.312(a)(2)(iv) — encryption at rest"
+  crBoundaryEffect   String?            // typed CR phrasing: "+8-12 hrs if this assumption is invalidated"
+  clauseRef          String?            // normalizedClauseRef pointer to TorRequirement
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  torRequirementRefs TorRequirement[]   @relation("AssumptionToTorRequirement")
+  lineItemRefs       LineItem[]         @relation("AssumptionToLineItem")
+  riskRegisterRefs   RiskRegisterEntry[] @relation("RiskToAssumption")
+
+  @@index([engagementId, code])
 }
 
 enum AssumptionStatus {
@@ -307,9 +317,18 @@ enum AssumptionStatus {
   REJECTED
 }
 
+enum AssumptionCategory {
+  SCOPE
+  REGULATORY
+  INTEGRATION
+  MIGRATION
+  OPERATIONAL
+  PERFORMANCE
+}
+
 model RiskRegisterEntry {
-  id                String     @id @default(cuid())
-  engagement        Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  id                String       @id @default(cuid())
+  engagement        Engagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   engagementId      String
   task              String
   tab               String
@@ -318,7 +337,9 @@ model RiskRegisterEntry {
   openQuestion      String
   recommendedAction String
   hoursAtRisk       Float
-  createdAt         DateTime   @default(now())
+  createdAt         DateTime     @default(now())
+  assumptionRefs    Assumption[] @relation("RiskToAssumption")
+  lineItemRefs      LineItem[]   @relation("RiskToLineItem")
 }
 
 model Benchmark {
@@ -552,10 +573,15 @@ model LineItem {
   integrationTier     String? // T1 | T2 | T3 when the line item represents an integration
   orphanJustification String? // populated only when no TorRequirement is linked
   sourcePhaseId       String?
+  // SA enrichment fields
+  benchmarkLowHrs     Float?  // low hrs from the matched benchmark row
+  benchmarkHighHrs    Float?  // high hrs from the matched benchmark row
+  deviationReason     String? // set when chosen hours fall outside benchmark range
   createdAt           DateTime   @default(now())
 
-  torRefs        TorRequirement[] @relation("LineItemToTorRequirement")
-  assumptionRefs Assumption[]     @relation("AssumptionToLineItem")
+  torRefs          TorRequirement[]    @relation("LineItemToTorRequirement")
+  assumptionRefs   Assumption[]        @relation("AssumptionToLineItem")
+  riskRegisterRefs RiskRegisterEntry[] @relation("RiskToLineItem")
 
   @@index([engagementId, tab])
 }

@@ -206,7 +206,49 @@ export default function EstimatePage() {
   async function handleDownloadExcel() {
     if (!estimateData) return
 
-    const tabs = estimateDataToExcelTabs(estimateData)
+    // Prefer DB line items (richer: benchmark range, deviation, assumption codes).
+    // Fall back to markdown-parsed data if the DB has no rows yet.
+    let tabs = estimateDataToExcelTabs(estimateData)
+    try {
+      const dbRes = await fetch(`/api/engagements/${id}/line-items`)
+      if (dbRes.ok) {
+        const dbItems = await dbRes.json() as Array<{
+          tab: string; task: string; description: string; conf: number;
+          hours: number; lowHrs: number; highHrs: number;
+          benchmarkRange: string | null; deviationReason: string | null;
+          assumptionCodes: string;
+        }>
+        if (dbItems.length > 0) {
+          const tabNameMap: Record<string, string> = {
+            BACKEND: "Backend", FRONTEND: "Frontend",
+            FIXED_COST: "Fixed Cost Items", DESIGN: "Design", AI: "AI",
+          }
+          const grouped: Record<string, typeof dbItems> = {}
+          for (const item of dbItems) {
+            const name = tabNameMap[item.tab] ?? item.tab
+            if (!grouped[name]) grouped[name] = []
+            grouped[name].push(item)
+          }
+          tabs = Object.entries(grouped).map(([name, rows]) => ({
+            name,
+            rows: rows.map((r) => ({
+              task: r.task,
+              description: r.description,
+              conf: r.conf,
+              hours: r.hours,
+              lowHrs: r.lowHrs,
+              highHrs: r.highHrs,
+              benchmarkRange: r.benchmarkRange ?? undefined,
+              deviationReason: r.deviationReason ?? undefined,
+              assumptionCodes: r.assumptionCodes || undefined,
+            })),
+          }))
+        }
+      }
+    } catch {
+      // Non-fatal — use markdown-parsed fallback
+    }
+
     const res = await fetch("/api/export/excel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

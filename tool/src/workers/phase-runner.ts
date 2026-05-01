@@ -9,6 +9,7 @@ import {
   extractPhase1Sidecar,
   extractPhase2Sidecar,
   extractEstimateSidecar,
+  extractAssumptionsSidecar,
   normalizeClauseRef,
 } from "@/lib/ai/sidecar-extractors";
 import { prisma } from "@/lib/db";
@@ -402,20 +403,80 @@ const worker = new Worker<PhaseJobData>(
             }
           }
 
-          const assumptions = extractAssumptions(artefactContent);
-          if (assumptions.length > 0) {
+          // Prefer the structured ASSUMPTIONS-JSON sidecar; fall back to legacy
+          // markdown bullet/table extraction for artefacts that pre-date the sidecar.
+          type AssumptionInput = {
+            text: string;
+            torReference: string | null;
+            impactIfWrong: string;
+            category: string;
+            tab: string;
+            regulationContext?: string | null;
+            crBoundaryEffect?: string | null;
+            clauseRef?: string | null;
+          };
+          let assumptionInputs: AssumptionInput[] = [];
+          const sidecarResult = extractAssumptionsSidecar(artefactContent);
+          if (sidecarResult) {
+            assumptionInputs = sidecarResult.assumptions.map((a) => ({
+              text: a.text,
+              torReference: a.torReference ?? null,
+              impactIfWrong: a.impactIfWrong,
+              category: a.category,
+              tab: a.tab ?? "GENERAL",
+              regulationContext: a.regulationContext ?? null,
+              crBoundaryEffect: a.crBoundaryEffect ?? null,
+              clauseRef: a.clauseRef ?? null,
+            }));
+          } else {
+            // Legacy markdown extractor fallback
+            assumptionInputs = extractAssumptions(artefactContent).map((a) => ({
+              text: a.text,
+              torReference: a.torReference,
+              impactIfWrong: a.impactIfWrong,
+              category: "SCOPE",
+              tab: "GENERAL",
+              regulationContext: null,
+              crBoundaryEffect: null,
+              clauseRef: null,
+            }));
+          }
+
+          if (assumptionInputs.length > 0) {
             await prisma.assumption.deleteMany({ where: { engagementId } });
+
+            // Build sequential codes per category prefix within this engagement.
+            const codeCounts: Record<string, number> = {};
+            function nextCode(category: string): string {
+              const prefix = ({
+                SCOPE: "SC",
+                REGULATORY: "RG",
+                INTEGRATION: "IN",
+                MIGRATION: "MG",
+                OPERATIONAL: "OP",
+                PERFORMANCE: "PF",
+              } as Record<string, string>)[category] ?? "SC";
+              codeCounts[prefix] = (codeCounts[prefix] ?? 0) + 1;
+              return `A-${prefix}-${String(codeCounts[prefix]).padStart(3, "0")}`;
+            }
+
             await prisma.assumption.createMany({
-              data: assumptions.map((a) => ({
+              data: assumptionInputs.map((a) => ({
                 text: a.text,
                 torReference: a.torReference,
                 impactIfWrong: a.impactIfWrong,
+                category: a.category as "SCOPE" | "REGULATORY" | "INTEGRATION" | "MIGRATION" | "OPERATIONAL" | "PERFORMANCE",
+                tab: a.tab,
+                regulationContext: a.regulationContext,
+                crBoundaryEffect: a.crBoundaryEffect,
+                clauseRef: a.clauseRef,
+                code: nextCode(a.category),
                 engagementId,
                 sourcePhaseId: phaseId,
                 status: "ACTIVE",
               })),
             });
-            console.log(`[phase-runner] Phase ${phaseNumber} — created ${assumptions.length} assumption entries`);
+            console.log(`[phase-runner] Phase ${phaseNumber} — created ${assumptionInputs.length} assumption entries${sidecarResult ? " (sidecar)" : " (legacy parser)"}`);
 
             // RAG indexing for assumption rows (non-fatal).
             try {
@@ -423,9 +484,11 @@ const worker = new Worker<PhaseJobData>(
                 where: { engagementId },
                 select: {
                   id: true,
+                  code: true,
                   text: true,
                   torReference: true,
                   impactIfWrong: true,
+                  category: true,
                   status: true,
                 },
               });
@@ -434,8 +497,8 @@ const worker = new Worker<PhaseJobData>(
                   engagementId,
                   sourceType: "ASSUMPTION",
                   sourceId: a.id,
-                  summary: `${a.text} | Impact: ${a.impactIfWrong}`,
-                  metadata: { torReference: a.torReference, status: a.status },
+                  summary: `[${a.code ?? "—"}] ${a.text} | Impact: ${a.impactIfWrong}`,
+                  metadata: { code: a.code, torReference: a.torReference, category: a.category, status: a.status },
                 });
               }
             } catch (ragErr) {
@@ -648,6 +711,9 @@ const worker = new Worker<PhaseJobData>(
                   integrationTier: li.integrationTier ?? null,
                   orphanJustification,
                   sourcePhaseId: phaseId,
+                  benchmarkLowHrs: li.benchmarkLowHrs ?? null,
+                  benchmarkHighHrs: li.benchmarkHighHrs ?? null,
+                  deviationReason: li.deviationReason ?? null,
                   ...(torIds.length > 0
                     ? { torRefs: { connect: torIds.map((id) => ({ id })) } }
                     : {}),

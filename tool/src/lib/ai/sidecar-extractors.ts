@@ -96,6 +96,10 @@ const EstimateLineItemSchema = z.object({
     .transform((v) => v ?? null),
   torClauseRefs: z.array(z.string()).default([]),
   orphanJustification: z.string().nullable().optional(),
+  // SA enrichment fields
+  benchmarkLowHrs: z.number().nonnegative().nullable().optional(),
+  benchmarkHighHrs: z.number().nonnegative().nullable().optional(),
+  deviationReason: z.string().nullable().optional(),
 });
 
 const EstimateSidecarSchema = z.object({
@@ -247,4 +251,101 @@ export function extractPhase2Sidecar(markdown: string): Phase2Sidecar | null {
  */
 export function normalizeClauseRef(clauseRef: string): string {
   return clauseRef.toLowerCase().replace(/\s+/g, "");
+}
+
+/**
+ * Structured assumption sidecar — emitted by Phase 1A / Phase 3.
+ * Replaces the fragile markdown-bullet / table extractor for new runs.
+ *
+ * Embedded at the end of the estimate artefact as:
+ *
+ *   <!-- ASSUMPTIONS-JSON
+ *   { "assumptions": [ { "text", "torReference", "impactIfWrong", "category",
+ *                         "tab", "regulationContext", "crBoundaryEffect",
+ *                         "clauseRef" }, ... ] }
+ *   -->
+ */
+
+const ASSUMPTION_CATEGORY_VALUES = [
+  "SCOPE",
+  "REGULATORY",
+  "INTEGRATION",
+  "MIGRATION",
+  "OPERATIONAL",
+  "PERFORMANCE",
+] as const;
+
+const ASSUMPTION_TAB_VALUES = [
+  "BACKEND",
+  "FRONTEND",
+  "FIXED_COST",
+  "AI",
+  "GENERAL",
+] as const;
+
+const AssumptionSidecarItemSchema = z.object({
+  text: z.string().min(1),
+  torReference: z.string().nullable().optional(),
+  impactIfWrong: z.string().default(""),
+  category: z
+    .enum(ASSUMPTION_CATEGORY_VALUES)
+    .catch("SCOPE")
+    .default("SCOPE"),
+  tab: z
+    .preprocess(
+      (v) => (typeof v === "string" ? normalizeTabValue(v) : v),
+      z
+        .enum(ASSUMPTION_TAB_VALUES)
+        .catch("GENERAL")
+    )
+    .optional()
+    .default("GENERAL"),
+  regulationContext: z.string().nullable().optional(),
+  crBoundaryEffect: z.string().nullable().optional(),
+  clauseRef: z.string().nullable().optional(),
+});
+
+const AssumptionsSidecarSchema = z.object({
+  assumptions: z.array(AssumptionSidecarItemSchema),
+});
+
+export type AssumptionSidecarItem = z.infer<typeof AssumptionSidecarItemSchema>;
+export type AssumptionsSidecar = z.infer<typeof AssumptionsSidecarSchema>;
+
+const ASSUMPTIONS_SIDECAR_RE = /<!--\s*ASSUMPTIONS-JSON\s*([\s\S]*?)-->/;
+
+/**
+ * Extract the structured assumptions sidecar from a Phase 1A / Phase 3 artefact.
+ * Returns null if the sidecar is absent — callers should fall back to the legacy
+ * markdown bullet/table parser in metadata-extractor.ts.
+ */
+export function extractAssumptionsSidecar(markdown: string): AssumptionsSidecar | null {
+  if (!markdown) return null;
+  const match = markdown.match(ASSUMPTIONS_SIDECAR_RE);
+  if (!match || !match[1]) return null;
+  const parsed = safeJsonParse(match[1].trim());
+  if (!parsed) {
+    console.warn("[sidecar-extractors] ASSUMPTIONS-JSON: JSON parse failed");
+    return null;
+  }
+  const result = AssumptionsSidecarSchema.safeParse(parsed);
+  if (!result.success) {
+    console.warn(
+      `[sidecar-extractors] ASSUMPTIONS-JSON: schema validation failed — ${JSON.stringify(result.error.issues)}`
+    );
+    // Per-item salvage
+    const rawItems = (parsed as Record<string, unknown>)?.assumptions;
+    if (!Array.isArray(rawItems) || rawItems.length === 0) return null;
+    const valid: AssumptionSidecarItem[] = [];
+    for (const item of rawItems) {
+      const r = AssumptionSidecarItemSchema.safeParse(item);
+      if (r.success) valid.push(r.data);
+    }
+    if (valid.length === 0) return null;
+    console.warn(
+      `[sidecar-extractors] ASSUMPTIONS-JSON: salvaged ${valid.length} item(s).`
+    );
+    return { assumptions: valid };
+  }
+  return result.data;
 }

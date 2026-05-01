@@ -3,6 +3,16 @@
 These are reference ranges for estimation calibration. They are starting points, not rules.
 Update with actuals from completed engagements via Phase 5 (Knowledge Capture).
 
+## Developer Baseline (IMPORTANT — read before estimating)
+
+**All ranges in this file assume a mid-level developer (3-5 years experience, comfortable with the platform ecosystem, not a specialist).**
+
+- Adjust +20-30% when the team is junior-heavy (0-2 yrs).
+- Adjust -10-15% when the entire team is senior (5+ yrs) with direct platform expertise.
+- When team composition is unknown at estimation time, use the mid-level baseline and note the assumption explicitly.
+
+This baseline applies across all tech-stack benchmark files unless the file states otherwise.
+
 ---
 
 ## Overhead Categories (as % of total development effort)

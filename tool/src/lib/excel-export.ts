@@ -8,6 +8,9 @@ export interface EstimateRow {
   lowHrs: number;
   highHrs: number;
   assumptionRef?: string;
+  assumptionCodes?: string;   // comma-separated codes e.g. "A-SC-001, A-RG-003"
+  benchmarkRange?: string;    // e.g. "4-8h" from matched benchmark
+  deviationReason?: string;   // set when hours fall outside benchmark range
   aiEfficacy?: number;
 }
 
@@ -32,8 +35,11 @@ const HEADER_COLUMNS = [
   { header: "Hours", key: "hours", width: 8 },
   { header: "Low Hrs", key: "lowHrs", width: 9 },
   { header: "High Hrs", key: "highHrs", width: 9 },
+  { header: "Benchmark Range", key: "benchmarkRange", width: 14 },
+  { header: "Deviation", key: "deviationReason", width: 24 },
   { header: "AI Efficacy (%)", key: "aiEfficacy", width: 14 },
-  { header: "Assumption Ref", key: "assumptionRef", width: 20 },
+  { header: "Assumption Codes", key: "assumptionCodes", width: 18 },
+  { header: "Assumption Ref", key: "assumptionRef", width: 28 },
 ];
 
 function confFillColor(conf: number): string {
@@ -97,7 +103,10 @@ export async function generateEstimateXlsx(
         hours: row.hours,
         lowHrs: row.lowHrs,
         highHrs: row.highHrs,
+        benchmarkRange: row.benchmarkRange ?? "",
+        deviationReason: row.deviationReason ?? "",
         aiEfficacy: row.aiEfficacy ?? null,
+        assumptionCodes: row.assumptionCodes ?? "",
         assumptionRef: row.assumptionRef ?? "",
       });
       dataRow.height = 18;

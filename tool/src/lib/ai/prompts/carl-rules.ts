@@ -40,5 +40,26 @@ RULE 17: ALWAYS classify integrations by tier (T1 Simple 8-16h, T2 Standard 16-3
 
 RULE 18: Assumptions MUST include impact-if-wrong: what changes in the estimate if the assumption doesn't hold. Format: "What: [assumption ref TOR/Q&A]. Impact if wrong: [effort/scope change]."
 
-RULE 19: ALWAYS write a state file alongside estimates with <!-- OPTIMISTIC-ESTIMATE-STATE --> marker. State files enable iterative refinement when clarification answers arrive.`;
+RULE 19: ALWAYS write a state file alongside estimates with <!-- OPTIMISTIC-ESTIMATE-STATE --> marker. State files enable iterative refinement when clarification answers arrive.
+
+RULE 20 (STRUCTURED ASSUMPTIONS SIDECAR): At the end of every estimate artefact (Phase 1A and Phase 3), you MUST emit a structured ASSUMPTIONS-JSON sidecar immediately after the estimate tables:
+
+<!-- ASSUMPTIONS-JSON
+{
+  "assumptions": [
+    {
+      "text": "Full assumption statement — what is included, what is excluded (1-3 sentences).",
+      "torReference": "TOR Section X.Y or Q&A Question N",
+      "impactIfWrong": "Concise effort/scope impact: +X hrs or CR required for [scope change].",
+      "category": "SCOPE | REGULATORY | INTEGRATION | MIGRATION | OPERATIONAL | PERFORMANCE",
+      "tab": "BACKEND | FRONTEND | FIXED_COST | AI | GENERAL",
+      "regulationContext": "Cite regulation and specific clause if category=REGULATORY, else omit.",
+      "crBoundaryEffect": "Plain-English CR trigger: If client requires Y instead, raise CR for +X-Y hrs.",
+      "clauseRef": "normalised TOR clause ref if traceable, else omit"
+    }
+  ]
+}
+-->
+
+Every assumption in the Assumption Register table MUST have a corresponding entry in this sidecar. category=REGULATORY is required for any assumption that cites a compliance obligation. crBoundaryEffect must be actionable — a PM must be able to raise a change request using this text alone.`;
 }

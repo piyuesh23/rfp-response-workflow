@@ -356,7 +356,10 @@ writer step can ingest line items into the database. Do NOT wrap in a code fence
       "benchmarkRef": "backend.api.medium",
       "integrationTier": null,
       "torClauseRefs": ["3.2.1"],
-      "orphanJustification": null
+      "orphanJustification": null,
+      "benchmarkLowHrs": 24,
+      "benchmarkHighHrs": 48,
+      "deviationReason": null
     },
     {
       "tab": "FIXED_COST",
@@ -369,7 +372,10 @@ writer step can ingest line items into the database. Do NOT wrap in a code fence
       "benchmarkRef": null,
       "integrationTier": null,
       "torClauseRefs": [],
-      "orphanJustification": "Standard cross-cutting DevOps item not tied to a specific TOR clause."
+      "orphanJustification": "Standard cross-cutting DevOps item not tied to a specific TOR clause.",
+      "benchmarkLowHrs": null,
+      "benchmarkHighHrs": null,
+      "deviationReason": null
     }
   ]
 }
@@ -385,6 +391,10 @@ Sidecar rules:
 - \`conf\`: integer 1-6, matching the markdown.
 - \`benchmarkRef\`: the BenchmarkKey used in the Description column, or \`null\`
   when no benchmark applies.
+- \`benchmarkLowHrs\` / \`benchmarkHighHrs\`: copy the LowHrs/HighHrs from the matched
+  benchmark row. Both \`null\` when benchmarkRef is \`null\`.
+- \`deviationReason\`: populate when chosen \`hours\` falls outside benchmarkLowHrs-benchmarkHighHrs
+  range (e.g. "30+ field content type exceeds standard benchmark max of 20h"). Otherwise \`null\`.
 - \`integrationTier\`: \`"T1"\`, \`"T2"\`, \`"T3"\`, or \`null\`. Required (non-null)
   for every integration line item.
 - \`torClauseRefs\`: array of TOR clause reference strings (NOT DB IDs) that this
@@ -525,6 +535,16 @@ ${isDiscovery ? `This is a DISCOVERY engagement. Estimate the effort to CONDUCT 
 - Confidence (Conf) values should generally be higher than Phase 1A (more info = more certainty).
 - Still-unresolved items may warrant Conf 3–4; flag those explicitly.
 
+### Residual Assumptions
+
+For every assumption (confirmed scope that is still bounded, or remaining ambiguity), write it using the same structured format as Phase 1A:
+- **What is included**: Specific scope covered by this estimate line (1-2 sentences with concrete boundary, e.g. "Includes up to 3 content types with up to 15 fields each")
+- **What is excluded**: What would require a change request (explicit exclusion list)
+- **TOR reference**: The specific TOR clause or Q&A response this assumption relates to
+- **CR boundary effect**: Plain-English trigger for a change request ("If the client requires X instead, raise a CR for +Y hrs")
+- **Category**: SCOPE / REGULATORY / INTEGRATION / MIGRATION / OPERATIONAL / PERFORMANCE
+- If the customer operates in a regulated industry or the TOR cites compliance obligations, every regulated-domain line item must have a corresponding REGULATORY assumption citing the specific clause.
+
 ### Estimate Tabs
 
 Produce four tabs. Write the full estimate to \`estimates/informed-estimate.md\`.
@@ -560,9 +580,11 @@ Write \`estimates/informed-estimate-state.md\` alongside the estimate (use same 
 
 ---
 
-## Step 3 — Machine-Readable Sidecar (MANDATORY)
+## Step 3 — Machine-Readable Sidecars (MANDATORY)
 
-At the VERY END of \`estimates/informed-estimate.md\`, append an HTML comment containing the line-item sidecar. Same format as Phase 1A:
+At the VERY END of \`estimates/informed-estimate.md\`, append two HTML comment blocks in order: first the line-item sidecar, then the assumptions sidecar.
+
+### Sidecar 1: ESTIMATE-LINEITEMS-JSON
 
 \`\`\`
 <!-- ESTIMATE-LINEITEMS-JSON
@@ -576,22 +598,31 @@ At the VERY END of \`estimates/informed-estimate.md\`, append an HTML comment co
       "conf": 5,
       "lowHrs": 24,
       "highHrs": 30,
-      "benchmarkRef": "backend/task-type",
+      "benchmarkRef": "backend/content-type-complex",
       "integrationTier": null,
       "torClauseRefs": ["X.Y"],
-      "orphanJustification": null
+      "orphanJustification": null,
+      "benchmarkLowHrs": 8,
+      "benchmarkHighHrs": 20,
+      "deviationReason": null
     }
   ]
 }
 -->
 \`\`\`
 
-Sidecar rules (identical to Phase 1A):
+Sidecar rules:
 - One row per line item across ALL tabs.
 - \`torClauseRefs\`: TOR clauseRef strings (same values Phase 1 emitted). Required.
 - \`integrationTier\`: \`"T1" | "T2" | "T3" | null\` — required non-null for integration items.
 - \`orphanJustification\`: required non-empty string when \`torClauseRefs\` is empty, else \`null\`.
-- JSON must be strictly valid. HTML comment markers must appear verbatim.`;
+- \`benchmarkLowHrs\` / \`benchmarkHighHrs\`: copy the LowHrs/HighHrs from the matched benchmark row. Set both to \`null\` if benchmarkRef is "N/A".
+- \`deviationReason\`: populate if chosen hours fall outside benchmarkLowHrs–benchmarkHighHrs, else \`null\`.
+- JSON must be strictly valid.
+
+### Sidecar 2: ASSUMPTIONS-JSON
+
+Follow CARL RULE 20 exactly. Emit every assumption from the Assumption Register as a structured entry. category=REGULATORY is mandatory for compliance-related assumptions. crBoundaryEffect must be actionable standalone text a PM can use to raise a CR.`;
 }
 
 /**
@@ -620,6 +651,14 @@ Perform three validation passes:
 - Are residual assumptions consistent with what the customer's Q&A confirmed?
 - Do assumptions reference TOR sections or Q&A responses (not internal artefacts)?
 - Is the Conf buffer formula applied correctly for all Low/High Hrs?
+- Does the ASSUMPTIONS-JSON sidecar exist and cover every Assumption Register entry?
+- Does each assumption include a crBoundaryEffect a PM can use to raise a CR?
+
+**Pass 4: Regulatory Coverage**
+- Scan the TOR and response analysis for compliance obligations: HIPAA, SOC 2, PCI-DSS, GDPR, WCAG-A/AA/AAA, sector-specific regulations, or any explicit compliance statement by the customer.
+- For each identified regulation, confirm that at least one Assumption with category=REGULATORY exists that cites it.
+- Flag any regulated-domain line item (auth, data storage, reporting, accessibility) that lacks a REGULATORY assumption as a COMPLIANCE GAP.
+- Produce a "Regulatory Coverage" table: | Regulation | Applicable | REGULATORY Assumptions | Gap? |
 
 Write review notes to \`claude-artefacts/estimate-review.md\`.`;
 }
