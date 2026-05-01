@@ -1,0 +1,3 @@
+#!/bin/sh
+# Full integration gate before pushing to remote.
+cd tool && npm run test:integration

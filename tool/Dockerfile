@@ -22,7 +22,16 @@ ENV REDIS_HOST=localhost \
     NEXTAUTH_URL=http://localhost:3000
 RUN npm run build
 
-# Stage 3: Runtime
+# Stage 3: Test (CI only — run via: docker build --target tester .)
+FROM node:22-alpine AS tester
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npx prisma generate
+# Unit tests only (no DB required); integration tests need a real DB at runtime
+CMD ["npm", "run", "test:unit"]
+
+# Stage 4: Runtime
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production

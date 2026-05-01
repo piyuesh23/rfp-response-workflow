@@ -1,0 +1,3 @@
+#!/bin/sh
+# Fast gate: unit tests only (<30s target). Fails commit if any unit test fails.
+cd tool && npm run test:unit

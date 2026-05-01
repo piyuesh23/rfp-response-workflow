@@ -206,3 +206,17 @@ Phase transitions are manual. The operator uploads documents and instructs Claud
 - **Phase 3:** "Estimates are in `estimates/`. Review them against requirements and responses"
 - **Phase 4:** "Generate the gap analysis and revised estimates"
 - **Phase 5:** "Capture learnings from this engagement for future reference"
+
+## Test Enforcement (mandatory before reporting completion)
+
+The `tool/` directory has an automated test suite. These rules apply to any agent making code changes:
+
+- After any change touching `tool/prisma/schema.prisma`, `tool/src/lib/ai/**`, `tool/src/workers/**`, or `tool/src/app/api/**`:
+  - Run `cd tool && npm run test:unit` — must pass before reporting the change as done
+  - Run `cd tool && npm run test:integration` — must pass before reporting the change as done
+  - Include the test output in your completion report
+- After any change to UI components (`tool/src/components/**`, `tool/src/app/engagements/**`):
+  - Run `cd tool && npm run test:e2e` in addition to the above
+- A change is **not done** until the relevant test suite is green
+- If a new enum value is added to `AssumptionCategory` in `schema.prisma`, you MUST also update `ASSUMPTION_CATEGORY_VALUES` in `src/lib/ai/sidecar-extractors.ts` and verify `npm run test:unit` passes (the `assumption-category.test.ts` will fail if they diverge)
+- Do not skip pre-commit hooks (`--no-verify`) without explicit user approval

@@ -12,6 +12,7 @@ import {
   extractAssumptionsSidecar,
   normalizeClauseRef,
 } from "@/lib/ai/sidecar-extractors";
+import { createCodeGenerator } from "@/lib/ai/assumption-code";
 import { prisma } from "@/lib/db";
 import { notifyReviewNeeded, sendNotification } from "@/lib/notifications";
 import { redisConnection, PhaseJobData } from "@/lib/queue";
@@ -445,20 +446,7 @@ const worker = new Worker<PhaseJobData>(
           if (assumptionInputs.length > 0) {
             await prisma.assumption.deleteMany({ where: { engagementId } });
 
-            // Build sequential codes per category prefix within this engagement.
-            const codeCounts: Record<string, number> = {};
-            function nextCode(category: string): string {
-              const prefix = ({
-                SCOPE: "SC",
-                REGULATORY: "RG",
-                INTEGRATION: "IN",
-                MIGRATION: "MG",
-                OPERATIONAL: "OP",
-                PERFORMANCE: "PF",
-              } as Record<string, string>)[category] ?? "SC";
-              codeCounts[prefix] = (codeCounts[prefix] ?? 0) + 1;
-              return `A-${prefix}-${String(codeCounts[prefix]).padStart(3, "0")}`;
-            }
+            const nextCode = createCodeGenerator();
 
             await prisma.assumption.createMany({
               data: assumptionInputs.map((a) => ({
