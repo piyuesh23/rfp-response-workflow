@@ -27,7 +27,6 @@ export default defineConfig({
           testTimeout: 30_000,
           fileParallelism: false, // shared DB — run files serially to prevent interference
           pool: "forks",
-          singleFork: true,
         },
       },
     ],

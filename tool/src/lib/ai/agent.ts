@@ -51,7 +51,7 @@ const OPUS_PHASES = new Set(["1A", "3", "4"]);
 /** Phases that use Haiku for cost savings (low-complexity structured output). */
 const HAIKU_PHASES = new Set(["5"]);
 
-function buildThinkingParam(model: string): { thinking?: object } {
+function buildThinkingParam(model: string): { thinking?: Anthropic.Messages.ThinkingConfigParam } {
   if (model === OPUS_MODEL) {
     // Opus 4.7 uses adaptive thinking — budget_tokens causes a 400 error
     return { thinking: { type: "adaptive" } };

@@ -1,4 +1,5 @@
 import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import {
   seedUser,
   seedEngagement,
@@ -17,7 +18,7 @@ export default async function globalSetup() {
     return;
   }
 
-  prismaE2E = new PrismaClient({ datasources: { db: { url: dbUrl } } });
+  prismaE2E = new PrismaClient({ adapter: new PrismaPg({ connectionString: dbUrl }) });
 
   await truncateAll(prismaE2E);
 

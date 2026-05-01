@@ -35,8 +35,8 @@ export function ModelOverrideSelect({
     setLocalOverride(currentOverride ?? null)
   }, [currentOverride])
 
-  async function handleChange(value: string) {
-    const newOverride = value === "" ? null : value
+  async function handleChange(value: string | null) {
+    const newOverride = !value ? null : value
     setIsPending(true)
     try {
       const res = await fetch(`/api/phases/${phaseId}/model`, {

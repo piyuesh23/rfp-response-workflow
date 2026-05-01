@@ -343,7 +343,7 @@ export default function EngagementOverviewPage() {
   // Show all phases - phases from the non-chosen path display as "Skipped"
   const visibleDefs = getVisiblePhases(workflowPath)
   const visiblePhases = visibleDefs
-    .map((def) => {
+    .map((def): PhaseWithId | undefined => {
       const p = phases.find((ph) => ph.phaseNumber === def.number)
       if (!p) return undefined
       // Enrich with cost data and model override UI props
