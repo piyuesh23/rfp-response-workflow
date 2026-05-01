@@ -3,7 +3,7 @@ import { getPhase0Config } from "@/lib/ai/phases/phase0-research";
 import { getPhase1Config } from "@/lib/ai/phases/phase1-analysis";
 import { getPhase1AEstimateConfig } from "@/lib/ai/phases/phase1a-estimate";
 import { getPhase2Config } from "@/lib/ai/phases/phase2-responses";
-import { getPhase3Config, getPhase3RConfig } from "@/lib/ai/phases/phase3-review";
+import { getPhase3Config } from "@/lib/ai/phases/phase3-review";
 import { getPhase4Config } from "@/lib/ai/phases/phase4-gaps";
 import { getPhase5Config } from "@/lib/ai/phases/phase5-capture";
 
@@ -40,22 +40,12 @@ export function getPhaseConfig(
       return getPhase2Config(engagementId, techStack);
     case "3":
       return getPhase3Config(engagementId, techStack, engagementType);
-    case "3R": {
-      // Combined Review & Gap Analysis: validate Phase 3 estimates + full gap analysis
-      const reviewConfig = getPhase3RConfig(engagementId, techStack);
-      const gapConfig = getPhase4Config(engagementId, techStack);
-      return {
-        ...reviewConfig,
-        phase: 3,
-        maxTurns: Math.max(reviewConfig.maxTurns, gapConfig.maxTurns),
-        userPrompt: [
-          reviewConfig.userPrompt,
-          "\n\n---\n\nAfter completing the estimate review above, proceed to produce a full gap analysis:\n\n",
-          gapConfig.userPrompt,
-        ].join(""),
-        tools: [...new Set([...reviewConfig.tools, ...gapConfig.tools])],
-      };
-    }
+    case "3R":
+      // Phase 3R runs as a structured aiJsonCall critique (runPhase3RCritique),
+      // NOT an agent loop. phase-runner.ts branches before calling runPhase for
+      // this phase number. getPhase3Config is returned here only as a fallback
+      // to satisfy the return-type requirement; it is never actually used for 3R.
+      return getPhase3Config(engagementId, techStack, engagementType);
     case "4":
       return getPhase4Config(engagementId, techStack);
     case "5":

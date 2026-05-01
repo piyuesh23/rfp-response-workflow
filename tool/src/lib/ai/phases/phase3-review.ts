@@ -1,7 +1,7 @@
 import { PhaseConfig } from "@/lib/ai/agent";
 import { getBaseSystemPrompt } from "@/lib/ai/prompts/system-base";
 import { getCarlRules } from "@/lib/ai/prompts/carl-rules";
-import { getPhase3Prompt, getPhase3ReviewPrompt } from "@/lib/ai/prompts/phase-prompts";
+import { getPhase3Prompt } from "@/lib/ai/prompts/phase-prompts";
 
 export function getPhase3Config(
   engagementId: string,
@@ -13,7 +13,7 @@ export function getPhase3Config(
     phase: 3,
     techStack,
     tools: ["Read", "Glob", "Grep", "Write"],
-    maxTurns: 80,
+    maxTurns: 40,
     systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
       "\n\n---\n\n"
     ),
@@ -21,19 +21,6 @@ export function getPhase3Config(
   };
 }
 
-export function getPhase3RConfig(
-  engagementId: string,
-  techStack: string
-): PhaseConfig {
-  return {
-    engagementId,
-    phase: 3,
-    techStack,
-    tools: ["Read", "Glob", "Grep", "Write"],
-    maxTurns: 60,
-    systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
-      "\n\n---\n\n"
-    ),
-    userPrompt: getPhase3ReviewPrompt(),
-  };
-}
+// Phase 3R no longer uses an agent loop — it runs runPhase3RCritique
+// (a single aiJsonCall) directly in phase-runner.ts. This file no longer
+// exports getPhase3RConfig.
