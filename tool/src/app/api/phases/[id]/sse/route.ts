@@ -3,6 +3,36 @@ import { QueueEvents, Queue } from "bullmq";
 import { redisConnection } from "@/lib/queue";
 import { prisma } from "@/lib/db";
 
+/**
+ * Build a snapshot of the phase's terminal state for the SSE `done` payload.
+ * Lets clients apply optimistic UI updates without a refetch round-trip.
+ */
+async function buildDoneSnapshot(phaseId: string) {
+  try {
+    const [phase, lineItemCount, assumptionCount] = await Promise.all([
+      prisma.phase.findUnique({
+        where: { id: phaseId },
+        select: {
+          status: true,
+          completedAt: true,
+          artefacts: { select: { id: true, artefactType: true } },
+        },
+      }),
+      prisma.lineItem.count({ where: { sourcePhaseId: phaseId } }),
+      prisma.assumption.count({ where: { sourcePhaseId: phaseId } }),
+    ]);
+    return {
+      status: phase?.status ?? null,
+      completedAt: phase?.completedAt?.toISOString() ?? null,
+      artefacts: phase?.artefacts ?? [],
+      lineItemCount,
+      assumptionCount,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,8 +54,8 @@ export async function GET(
 
       send("connected", { phaseId, message: "SSE stream connected" });
 
-      // Look up the BullMQ job ID for this phase
-      const jobId = `phase-${phaseId}`;
+      // Job IDs are "phase-{phaseId}-{timestamp}" — match by prefix
+      const jobIdPrefix = `phase-${phaseId}`;
 
       let queueEvents: QueueEvents | null = null;
       try {
@@ -42,7 +72,7 @@ export async function GET(
           jobId: string;
           data: unknown;
         }) => {
-          if (eventJobId !== jobId) return;
+          if (!eventJobId.startsWith(jobIdPrefix)) return;
 
           const progressData = data as {
             type?: string;
@@ -62,9 +92,14 @@ export async function GET(
         }: {
           jobId: string;
         }) => {
-          if (eventJobId !== jobId) return;
+          if (!eventJobId.startsWith(jobIdPrefix)) return;
 
-          send("done", { phaseId, message: "Phase completed" });
+          const snapshot = await buildDoneSnapshot(phaseId);
+          send("done", {
+            phaseId,
+            message: "Phase completed",
+            ...(snapshot ?? {}),
+          });
 
           cleanup();
         };
@@ -76,7 +111,7 @@ export async function GET(
           jobId: string;
           failedReason: string;
         }) => {
-          if (eventJobId !== jobId) return;
+          if (!eventJobId.startsWith(jobIdPrefix)) return;
 
           send("error", {
             phaseId,
@@ -116,19 +151,22 @@ export async function GET(
           phase.status !== "RUNNING" &&
           phase.status !== "PENDING"
         ) {
+          const snapshot = await buildDoneSnapshot(phaseId);
           send("done", {
             phaseId,
             message: `Phase already in ${phase.status} state`,
+            ...(snapshot ?? {}),
           });
           cleanup();
           return;
         }
 
-        // Reconnect-friendly: replay the current job progress snapshot so a
-        // page refresh mid-run shows *something* beyond "Waiting for agent...".
+        // Reconnect-friendly: replay the current job progress snapshot.
+        // Job IDs are "phase-{phaseId}-{timestamp}"; scan active jobs for our prefix.
         try {
           const q = new Queue("phase-execution", { connection: redisConnection });
-          const job = await q.getJob(jobId);
+          const activeJobs = await q.getJobs(["active"]);
+          const job = activeJobs.find((j) => j.id?.startsWith(jobIdPrefix));
           if (job) {
             const p = job.progress as { tool?: string; message?: string } | undefined;
             if (p && typeof p === "object" && p.message) {

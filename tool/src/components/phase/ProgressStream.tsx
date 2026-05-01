@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Wrench, CheckCircle, AlertCircle } from "lucide-react"
@@ -48,6 +49,7 @@ export function ProgressStream({
   onError,
   className,
 }: ProgressStreamProps) {
+  const router = useRouter()
   const [entries, setEntries] = React.useState<StreamEntry[]>([])
   const [connected, setConnected] = React.useState(false)
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -90,6 +92,9 @@ export function ProgressStream({
         )
       )
       eventSource.close()
+      // Revalidate any RSC slots on this route (layout, metadata, server components).
+      // Client components must still drive their own refetch via onComplete.
+      router.refresh()
       onComplete?.()
     })
 
@@ -129,7 +134,7 @@ export function ProgressStream({
     return () => {
       eventSource.close()
     }
-  }, [phaseId, onComplete, onError])
+  }, [phaseId, onComplete, onError, router])
 
   React.useEffect(() => {
     if (scrollRef.current) {

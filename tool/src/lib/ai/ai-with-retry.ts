@@ -76,7 +76,7 @@ async function runOnce<T>(
   const response = await client.messages.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
-    system: opts.system,
+    system: [{ type: "text" as const, text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: userContent }],
   });
 
