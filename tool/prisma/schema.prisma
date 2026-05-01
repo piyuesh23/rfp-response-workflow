@@ -239,6 +239,7 @@ model Phase {
   startedAt      DateTime?
   completedAt    DateTime?
   agentSessionId String?
+  modelOverride  String?         // null = use default model; non-null pins a specific Claude model
   artefacts      PhaseArtefact[]
 
   @@unique([engagementId, phaseNumber])
