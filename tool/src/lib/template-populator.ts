@@ -245,7 +245,7 @@ Respond ONLY with valid JSON in this format:
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 8000,
         messages: [{ role: "user", content: prompt }],
       });
@@ -446,7 +446,7 @@ Only include the JSON, no other text.`;
   try {
     const anthropic = new Anthropic();
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 2000,
       messages: [{ role: "user", content: prompt }],
     });

@@ -11,7 +11,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 
-const SONNET_MODEL = "claude-sonnet-4-20250514";
+const SONNET_MODEL = "claude-sonnet-4-6";
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const TAVILY_MAX_RESULTS = 6;
 

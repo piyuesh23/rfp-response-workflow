@@ -19,7 +19,7 @@ import {
   type RiskRegisterRow,
 } from "./estimate-markdown";
 
-const SONNET_MODEL = "claude-sonnet-4-20250514";
+const SONNET_MODEL = "claude-sonnet-4-6";
 const MAX_OUTPUT_TOKENS = 4000;
 
 // -------------------- Patch schema --------------------
