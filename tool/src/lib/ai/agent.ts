@@ -42,15 +42,22 @@ export interface ProgressEvent {
 }
 
 const DEFAULT_MODEL =
-  process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
-const OPUS_MODEL = "claude-opus-4-20250514";
+  process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
+const OPUS_MODEL = "claude-opus-4-7";
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
 /** Phases that need Opus-level generation. 3R is critique-only → Sonnet. */
 const OPUS_PHASES = new Set(["1A", "3", "4"]);
+/** Phases that use Haiku for cost savings (low-complexity structured output). */
+const HAIKU_PHASES = new Set(["5"]);
 
-function buildThinkingParam(model: string): { thinking?: { type: "enabled"; budget_tokens: number } } {
-  if (model !== OPUS_MODEL) return {};
-  return { thinking: { type: "enabled", budget_tokens: 8000 } };
+function buildThinkingParam(model: string): { thinking?: object } {
+  if (model === OPUS_MODEL) {
+    // Opus 4.7 uses adaptive thinking — budget_tokens causes a 400 error
+    return { thinking: { type: "adaptive" } };
+  }
+  // No extended thinking for Sonnet/Haiku phases (latency vs. quality tradeoff)
+  return {};
 }
 
 /**
@@ -61,6 +68,7 @@ function getModelForPhase(config: PhaseConfig): string {
   if (config.model) return config.model;
   if (process.env.CLAUDE_MODEL) return process.env.CLAUDE_MODEL;
   if (OPUS_PHASES.has(String(config.phase))) return OPUS_MODEL;
+  if (HAIKU_PHASES.has(String(config.phase))) return HAIKU_MODEL;
   return DEFAULT_MODEL;
 }
 
