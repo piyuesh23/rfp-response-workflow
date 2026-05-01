@@ -246,6 +246,15 @@ const worker = new Worker<PhaseJobData>(
 
       config = await applyPromptOverrides(config);
 
+      // Apply per-phase model override (highest precedence below global env var)
+      const phaseOverrideRecord = await prisma.phase.findUnique({
+        where: { id: phaseId },
+        select: { modelOverride: true },
+      });
+      if (phaseOverrideRecord?.modelOverride) {
+        config = { ...config, model: phaseOverrideRecord.modelOverride };
+      }
+
       if (revisionFeedback) {
         config.userPrompt += `\n\nREVISION FEEDBACK FROM REVIEWER:\n${revisionFeedback}\n\nPlease address the above feedback in your output.`;
       }
