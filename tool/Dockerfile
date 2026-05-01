@@ -62,19 +62,23 @@ set -e
 echo "Enabling pgvector extension..."
 echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --stdin 2>/dev/null || echo "pgvector enable skipped (extension may already exist or require superuser)"
 
-echo "Checking migration state..."
-set +e
-MIGRATE_STATUS=$(npx prisma migrate status 2>&1)
-set -e
-echo "$MIGRATE_STATUS"
-
-if echo "$MIGRATE_STATUS" | grep -q "P3005"; then
-  echo "Existing schema with no migration history detected — baselining with 0_init..."
-  npx prisma migrate resolve --applied "0_init"
-fi
-
 echo "Applying database migrations..."
-npx prisma migrate deploy
+set +e
+DEPLOY_OUT=$(npx prisma migrate deploy 2>&1)
+DEPLOY_EXIT=$?
+set -e
+echo "$DEPLOY_OUT"
+
+if [ $DEPLOY_EXIT -ne 0 ]; then
+  if echo "$DEPLOY_OUT" | grep -q "P3005"; then
+    echo "Existing schema with no migration history — baselining with 0_init and retrying..."
+    npx prisma migrate resolve --applied "0_init"
+    npx prisma migrate deploy
+  else
+    echo "Migration deploy failed (see output above)"
+    exit $DEPLOY_EXIT
+  fi
+fi
 
 echo "Seeding benchmarks (idempotent)..."
 npx tsx prisma/seed.ts || echo "Seed failed (non-fatal) — benchmarks can be added via admin UI"

@@ -12,6 +12,8 @@ export interface PhaseJobData {
 export const redisConnection = {
   host: process.env.REDIS_HOST ?? "localhost",
   port: parseInt(process.env.REDIS_PORT ?? "6379", 10),
+  maxRetriesPerRequest: null, // required by BullMQ Workers for blocking connections
+  enableReadyCheck: false,
 };
 
 // Lazy singletons — avoid connecting during `next build`
