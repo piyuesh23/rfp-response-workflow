@@ -714,6 +714,7 @@ export async function* runPhase(
   // 4. Build tool definitions and handlers
   const tools = getToolDefinitions(config.tools);
   const handlers = getToolHandlers(config.engagementId, workDir);
+  const allowedHandlerNames = new Set(tools.map((t) => t.name));
 
   // 4. Initialize conversation
   const messages: Anthropic.Messages.MessageParam[] = [
@@ -752,7 +753,10 @@ export async function* runPhase(
         {
           model,
           max_tokens: 16384,
-          system: [{ type: "text" as const, text: enrichedSystemPrompt, cache_control: { type: "ephemeral" } }],
+          system: [
+            { type: "text" as const, text: baseSystemPrompt },
+            { type: "text" as const, text: benchmarks + template, cache_control: { type: "ephemeral" } },
+          ],
           tools,
           messages,
           ...buildThinkingParam(model),
@@ -845,7 +849,7 @@ export async function* runPhase(
         ),
       };
 
-      const handler = handlers[block.name];
+      const handler = allowedHandlerNames.has(block.name) ? handlers[block.name] : undefined;
       let result: string;
 
       if (!handler) {
@@ -889,7 +893,10 @@ export async function* runPhase(
     const finalStream = anthropic.messages.stream({
       model,
       max_tokens: 16384,
-      system: [{ type: "text" as const, text: enrichedSystemPrompt, cache_control: { type: "ephemeral" } }],
+      system: [
+        { type: "text" as const, text: baseSystemPrompt },
+        { type: "text" as const, text: benchmarks + template, cache_control: { type: "ephemeral" } },
+      ],
       messages,
       ...buildThinkingParam(model),
     });

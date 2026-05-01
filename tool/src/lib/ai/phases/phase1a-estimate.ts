@@ -43,8 +43,8 @@ export function getPhase1AEstimateConfig(
     engagementId,
     phase: 1,
     techStack,
-    tools: ["Read", "Write", "Glob", "Grep", "Bash"],
-    maxTurns: 100,
+    tools: ["Read", "Write", "Glob", "Grep"],
+    maxTurns: 30,
     systemPrompt: [getBaseSystemPrompt(techStack), getCarlRules()].join(
       "\n\n---\n\n"
     ),
