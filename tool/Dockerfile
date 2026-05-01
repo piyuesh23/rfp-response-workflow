@@ -52,17 +52,30 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/templates ./templates
 
 # Entrypoint: apply migrations then start.
-# migrate deploy is safe for both fresh and existing DBs:
-#   - Fresh DB: 0_init creates all tables (IF NOT EXISTS), then applies incrementals.
-#   - Existing DB (no migration history): 0_init is a no-op due to IF NOT EXISTS guards,
-#     then incremental migrations apply. Never drops columns implicitly.
+# Three deploy scenarios handled:
+#   1. Fresh DB            — 0_init runs (IF NOT EXISTS guards make it safe), then incrementals.
+#   2. Existing DB, no history (P3005) — baseline: mark 0_init as applied, then deploy incrementals.
+#   3. Existing DB, has history — deploy only unapplied incremental migrations.
 COPY <<'EOF' /app/entrypoint.sh
 #!/bin/sh
 set -e
 echo "Enabling pgvector extension..."
 echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --stdin 2>/dev/null || echo "pgvector enable skipped (extension may already exist or require superuser)"
+
+echo "Checking migration state..."
+set +e
+MIGRATE_STATUS=$(npx prisma migrate status 2>&1)
+set -e
+echo "$MIGRATE_STATUS"
+
+if echo "$MIGRATE_STATUS" | grep -q "P3005"; then
+  echo "Existing schema with no migration history detected — baselining with 0_init..."
+  npx prisma migrate resolve --applied "0_init"
+fi
+
 echo "Applying database migrations..."
 npx prisma migrate deploy
+
 echo "Seeding benchmarks (idempotent)..."
 npx tsx prisma/seed.ts || echo "Seed failed (non-fatal) — benchmarks can be added via admin UI"
 echo "Starting application..."
