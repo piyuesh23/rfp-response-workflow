@@ -502,14 +502,22 @@ export function getPhase3Prompt(techStack?: string, engagementType?: string): st
 
   return `Conduct Phase 3: Informed Estimates.
 
-You have the customer's Q&A responses available. Use them to generate a fully-informed estimate — not an optimistic one. Every scope decision is now grounded in actual customer answers, not assumptions.
+You have the customer's Q&A responses available. Use them to generate a fully-informed solution architecture and estimate — not an optimistic one. Every scope decision is now grounded in actual customer answers, not assumptions.
+
+> ⚠️ IMPORTANT: Do NOT read any files from the \`estimates/\` directory. Phase 1A may have written
+> an optimistic estimate there, but it is NOT an input to this phase. You are creating new
+> informed estimates from scratch. Reading Phase 1A estimates would anchor your thinking to
+> optimistic assumptions and defeat the purpose of this phase.
 
 ## Mandatory Inputs (read in order)
 
 1. Read \`claude-artefacts/tor-assessment.md\` — requirements and clarity ratings from Phase 1.
-2. Read \`claude-artefacts/response-analysis.md\` — Phase 2's unified analysis of all response documents.
-3. Read ALL files in \`responses_qna/\` — for direct reference to customer statements.
-4. Read \`claude-artefacts/solution-architecture.md\` — the v0 architecture from Phase 1 to update.
+2. Read \`initial_questions/questions.md\` if it exists — the original clarifying questions to understand what was ambiguous.
+3. Read \`claude-artefacts/response-analysis.md\` if it exists — Phase 2's unified analysis of all response documents. If this file does not exist, read the raw Q&A files in step 4 directly.
+4. Read ALL files in \`responses_qna/\` — for direct reference to customer statements. These are authoritative; cite them by filename and section when scoping decisions.
+5. Read \`claude-artefacts/solution-architecture.md\` — the v0 architecture from Phase 1 to update.
+
+Do NOT read from \`estimates/\`, \`research/\`, or any other directories not listed above.
 
 ---
 
@@ -576,7 +584,22 @@ Produce four tabs. Write the full estimate to \`estimates/informed-estimate.md\`
 
 ### State File
 
-Write \`estimates/informed-estimate-state.md\` alongside the estimate (use same structure as optimistic-estimate-state.md) with any remaining open questions and their expected impact if still unresolved.
+Write \`estimates/informed-estimate-state.md\` alongside the estimate. Use the following structure:
+
+\`\`\`
+<!-- INFORMED-ESTIMATE-STATE -->
+# Informed Estimate State
+
+## Remaining Open Questions
+| Question | TOR/Q&A Ref | Impact if Unresolved |
+|----------|-------------|----------------------|
+| ...      | ...         | ...                  |
+
+## Scope Boundaries Confirmed by Customer
+| Item | Customer Statement | TOR Ref |
+|------|-------------------|---------|
+| ...  | ...               | ...     |
+\`\`\``
 
 ---
 
