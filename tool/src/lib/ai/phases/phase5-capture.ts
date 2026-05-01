@@ -340,7 +340,7 @@ export function getPhase5Config(
     techStack,
     tools: ["Read", "Write"],
     maxTurns: 60,
-    model: "claude-opus-4-20250514",
+    model: "claude-haiku-4-5-20251001",
     systemPrompt: [
       getBaseSystemPrompt(techStack),
       "You are a Senior Technical Architect writing a client-facing technical proposal. Your proposals are deeply technical, well-structured narrative documents with architecture diagrams, decision rationale, and specific implementation details. You write in flowing prose, not bullet-point lists.",

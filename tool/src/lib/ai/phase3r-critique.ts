@@ -105,7 +105,7 @@ export async function runPhase3RCritique(opts: {
   return aiJsonCall<Phase3RFindings>({
     engagementId: opts.engagementId,
     phase: "3R",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     maxTokens: 2048,
     schema: Phase3RFindingsSchema,
     system: SYSTEM_PROMPT,
