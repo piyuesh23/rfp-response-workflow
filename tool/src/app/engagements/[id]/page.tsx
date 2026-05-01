@@ -22,6 +22,7 @@ import {
   isPhasePathSkipped,
 } from "@/lib/phase-chain"
 import { usePhaseNotifications } from "@/hooks/usePhaseNotifications"
+import { useEngagementEvents } from "@/hooks/useEngagementEvents"
 import { ProgressStream } from "@/components/phase/ProgressStream"
 import type { WorkflowPath } from "@/lib/phase-chain"
 
@@ -37,6 +38,7 @@ interface TemplateStatus {
 
 interface PhaseWithId extends PhaseCardData {
   id: string
+  modelOverride?: string | null
 }
 
 interface EngagementData {
@@ -169,7 +171,7 @@ export default function EngagementOverviewPage() {
             isCompetitiveBid: data.isCompetitiveBid ?? true,
             presalesHoursSpent: data.presalesHoursSpent ?? null,
             phases: (data.phases ?? []).map(
-              (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }> }) => ({
+              (p: { id: string; phaseNumber: string; status: string; startedAt?: string; completedAt?: string; artefacts?: Array<{ metadata?: Record<string, unknown> }>; modelOverride?: string | null }) => ({
                 id: p.id,
                 phaseNumber: p.phaseNumber,
                 status: p.status,
@@ -177,6 +179,7 @@ export default function EngagementOverviewPage() {
                 completedAt: p.completedAt ?? null,
                 artefactCount: p.artefacts?.length ?? 0,
                 summary: extractPhaseSummary(p.phaseNumber, p.artefacts ?? []),
+                modelOverride: p.modelOverride ?? null,
               })
             ),
           })
@@ -227,12 +230,32 @@ export default function EngagementOverviewPage() {
 
   // ProgressStream renders its own SSE per running phase and calls fetchEngagement on complete/error.
   const runningPhase = engagement?.phases.find((p) => p.status === "RUNNING") ?? null
-
-  // Polling while any phase is running — updates templateStatus and other engagement data
   const anyRunning = (engagement?.phases ?? []).some((p) => p.status === "RUNNING")
+
+  // Engagement-scoped event stream: one SSE connection for the whole page.
+  // On phase_status_changed we refetch immediately (no polling delay) and then
+  // do 2 catch-up polls × 5s to pick up async writes (RAG index, stage summary).
+  useEngagementEvents(id, React.useCallback((event) => {
+    if (event.type === "phase_status_changed") {
+      fetchEngagement()
+      // Catch-up polls for async post-completion writes
+      let remaining = 2
+      const interval = setInterval(() => {
+        fetchEngagement()
+        remaining -= 1
+        if (remaining <= 0) clearInterval(interval)
+      }, 5000)
+      // Cleanup handled by the interval itself
+      void interval
+    }
+  }, [fetchEngagement]))
+
+  // Fallback polling while a phase is running — covers the case where the SSE
+  // connection hasn't been established yet on first render (e.g. server-side
+  // status flip before the client connects).
   React.useEffect(() => {
     if (!anyRunning) return
-    const interval = setInterval(fetchEngagement, 5000)
+    const interval = setInterval(fetchEngagement, 8000)
     return () => clearInterval(interval)
   }, [anyRunning, fetchEngagement])
 
@@ -327,10 +350,13 @@ export default function EngagementOverviewPage() {
     .map((def) => {
       const p = phases.find((ph) => ph.phaseNumber === def.number)
       if (!p) return undefined
-      // Enrich with cost data
+      // Enrich with cost data and model override UI props
       const cost = costByPhase.get(p.phaseNumber)
       const enriched = {
         ...p,
+        phaseId: p.id,
+        canEditModel: true,
+        modelOverride: p.modelOverride ?? null,
         ...(cost ? { tokenCount: cost.totalTokens, costUsd: cost.estimatedCostUsd } : {}),
       }
       // Override status to SKIPPED for phases on the inactive workflow path

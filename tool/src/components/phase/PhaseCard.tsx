@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatCost, formatTokens } from "@/lib/format-cost"
+import { ModelOverrideSelect } from "@/components/phase/ModelOverrideSelect"
 
 export type PhaseStatus =
   | "PENDING"
@@ -33,6 +34,12 @@ export interface PhaseCardData {
   locked?: boolean
   tokenCount?: number
   costUsd?: number
+  /** DB id of this phase row (required to enable model override UI) */
+  phaseId?: string
+  /** Current modelOverride value from DB (null = using default) */
+  modelOverride?: string | null
+  /** Allow the operator to change the model override from this card */
+  canEditModel?: boolean
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -193,6 +200,17 @@ export function PhaseCard({ phase, onClick, className }: PhaseCardProps) {
         {phase.summary && (
           <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{phase.summary}</p>
         )}
+        {phase.phaseId &&
+          phase.canEditModel &&
+          (phase.status === "PENDING" ||
+            phase.status === "FAILED" ||
+            phase.status === "APPROVED") && (
+            <ModelOverrideSelect
+              phaseId={phase.phaseId}
+              currentOverride={phase.modelOverride}
+              disabled={false}
+            />
+          )}
       </div>
     </div>
   )
