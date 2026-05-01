@@ -105,6 +105,7 @@ export default async function AccuracyPage({
     assumptions,
     risks,
     reports,
+    recentRuns,
   ] = await Promise.all([
     prisma.torRequirement.findMany({
       where: { engagementId: id },
@@ -136,6 +137,12 @@ export default async function AccuracyPage({
       },
     }),
     getLatestValidationReportsByPhase(id),
+    prisma.gapFixRun.findMany({
+      where: { engagementId: id },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, status: true, triggeredBy: true, createdAt: true, completedAt: true },
+    }),
   ]);
 
   const overall = computeOverallAccuracy(reports);
@@ -473,6 +480,50 @@ export default async function AccuracyPage({
           engagementId={id}
           totalGaps={gaps.length + orphans.length + confViolations.length + riskIssues.length}
         />
+      )}
+
+      {/* Gap-fix run history */}
+      {recentRuns.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Recent fix runs
+          </p>
+          <div className="flex flex-col divide-y rounded-lg border bg-card">
+            {recentRuns.map((run) => {
+              const isAuto = run.triggeredBy?.startsWith("auto-");
+              const phase = run.triggeredBy?.replace("auto-phase-", "");
+              const statusVariant =
+                run.status === "DONE"
+                  ? "default"
+                  : run.status === "FAILED"
+                  ? "destructive"
+                  : "secondary";
+              return (
+                <div key={run.id} className="flex items-center gap-3 px-3 py-2 text-xs">
+                  <Badge variant={isAuto ? "default" : "secondary"} className="shrink-0 text-[10px]">
+                    {isAuto ? `Auto (phase ${phase})` : "Manual"}
+                  </Badge>
+                  <Badge variant={statusVariant} className="shrink-0 text-[10px]">
+                    {run.status}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {new Date(run.createdAt).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  {run.completedAt && (
+                    <span className="text-muted-foreground">
+                      — {Math.round((new Date(run.completedAt).getTime() - new Date(run.createdAt).getTime()) / 1000)}s
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       <Separator />
