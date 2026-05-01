@@ -51,14 +51,18 @@ COPY --from=builder /app/scripts ./scripts
 # Master estimate template (copied from parent repo or mounted as volume)
 COPY --from=builder /app/templates ./templates
 
-# Entrypoint: push schema then start
+# Entrypoint: apply migrations then start.
+# migrate deploy is safe for both fresh and existing DBs:
+#   - Fresh DB: 0_init creates all tables (IF NOT EXISTS), then applies incrementals.
+#   - Existing DB (no migration history): 0_init is a no-op due to IF NOT EXISTS guards,
+#     then incremental migrations apply. Never drops columns implicitly.
 COPY <<'EOF' /app/entrypoint.sh
 #!/bin/sh
 set -e
 echo "Enabling pgvector extension..."
 echo "CREATE EXTENSION IF NOT EXISTS vector;" | npx prisma db execute --stdin 2>/dev/null || echo "pgvector enable skipped (extension may already exist or require superuser)"
-echo "Running prisma db push..."
-npx prisma db push
+echo "Applying database migrations..."
+npx prisma migrate deploy
 echo "Seeding benchmarks (idempotent)..."
 npx tsx prisma/seed.ts || echo "Seed failed (non-fatal) — benchmarks can be added via admin UI"
 echo "Starting application..."
