@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils"
 import { parseEstimateMarkdown, estimateDataToExcelTabs } from "@/lib/estimate-parser"
 import type { EstimateData } from "@/components/estimate/TabbedEstimate"
 import type { LineItem } from "@/components/estimate/LineItemRow"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/query-keys"
 
 // ─── Risk Register ────────────────────────────────────────────────────────────
@@ -153,8 +153,24 @@ interface EngagementResponse {
   phases: Phase[]
 }
 
+// DB line item type returned by /api/engagements/:id/line-items
+interface DbLineItem {
+  id: string
+  tab: string
+  task: string
+  description: string
+  conf: number
+  hours: number
+  lowHrs: number
+  highHrs: number
+  benchmarkRange: string | null
+  deviationReason: string | null
+  assumptionCodes: string
+}
+
 export default function EstimatePage() {
   const { id } = useParams<{ id: string }>()
+  const queryClient = useQueryClient()
 
   const { data, isPending: loading, isError } = useQuery({
     queryKey: queryKeys.engagement(id),
@@ -193,50 +209,69 @@ export default function EstimatePage() {
     return null
   }, [data])
 
+  const { data: lineItems } = useQuery({
+    queryKey: queryKeys.lineItems(id),
+    queryFn: () =>
+      fetch(`/api/engagements/${id}/line-items`).then((r) =>
+        r.ok ? r.json() as Promise<DbLineItem[]> : Promise.reject(r)
+      ),
+  })
+
+  const mutation = useMutation({
+    mutationFn: ({ itemId, hours }: { itemId: string; hours: number }) =>
+      fetch(`/api/engagements/${id}/line-items`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, hours }),
+      }).then((r) => (r.ok ? r.json() : Promise.reject(r))),
+    onMutate: async ({ itemId, hours }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.lineItems(id) })
+      const previous = queryClient.getQueryData<DbLineItem[]>(queryKeys.lineItems(id))
+      queryClient.setQueryData<DbLineItem[]>(queryKeys.lineItems(id), (old) =>
+        old?.map((item) => (item.id === itemId ? { ...item, hours } : item)) ?? old
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      queryClient.setQueryData(queryKeys.lineItems(id), ctx?.previous)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lineItems(id) })
+    },
+  })
+
   async function handleDownloadExcel() {
     if (!estimateData) return
 
     // Prefer DB line items (richer: benchmark range, deviation, assumption codes).
     // Fall back to markdown-parsed data if the DB has no rows yet.
     let tabs = estimateDataToExcelTabs(estimateData)
-    try {
-      const dbRes = await fetch(`/api/engagements/${id}/line-items`)
-      if (dbRes.ok) {
-        const dbItems = await dbRes.json() as Array<{
-          tab: string; task: string; description: string; conf: number;
-          hours: number; lowHrs: number; highHrs: number;
-          benchmarkRange: string | null; deviationReason: string | null;
-          assumptionCodes: string;
-        }>
-        if (dbItems.length > 0) {
-          const tabNameMap: Record<string, string> = {
-            BACKEND: "Backend", FRONTEND: "Frontend",
-            FIXED_COST: "Fixed Cost Items", DESIGN: "Design", AI: "AI",
-          }
-          const grouped: Record<string, typeof dbItems> = {}
-          for (const item of dbItems) {
-            const name = tabNameMap[item.tab] ?? item.tab
-            if (!grouped[name]) grouped[name] = []
-            grouped[name].push(item)
-          }
-          tabs = Object.entries(grouped).map(([name, rows]) => ({
-            name,
-            rows: rows.map((r) => ({
-              task: r.task,
-              description: r.description,
-              conf: r.conf,
-              hours: r.hours,
-              lowHrs: r.lowHrs,
-              highHrs: r.highHrs,
-              benchmarkRange: r.benchmarkRange ?? undefined,
-              deviationReason: r.deviationReason ?? undefined,
-              assumptionCodes: r.assumptionCodes || undefined,
-            })),
-          }))
-        }
+    const dbItems = lineItems
+    if (dbItems && dbItems.length > 0) {
+      const tabNameMap: Record<string, string> = {
+        BACKEND: "Backend", FRONTEND: "Frontend",
+        FIXED_COST: "Fixed Cost Items", DESIGN: "Design", AI: "AI",
       }
-    } catch {
-      // Non-fatal — use markdown-parsed fallback
+      const grouped: Record<string, typeof dbItems> = {}
+      for (const item of dbItems) {
+        const name = tabNameMap[item.tab] ?? item.tab
+        if (!grouped[name]) grouped[name] = []
+        grouped[name].push(item)
+      }
+      tabs = Object.entries(grouped).map(([name, rows]) => ({
+        name,
+        rows: rows.map((r) => ({
+          task: r.task,
+          description: r.description,
+          conf: r.conf,
+          hours: r.hours,
+          lowHrs: r.lowHrs,
+          highHrs: r.highHrs,
+          benchmarkRange: r.benchmarkRange ?? undefined,
+          deviationReason: r.deviationReason ?? undefined,
+          assumptionCodes: r.assumptionCodes || undefined,
+        })),
+      }))
     }
 
     const res = await fetch("/api/export/excel", {
@@ -302,7 +337,10 @@ export default function EstimatePage() {
       <Separator className="mb-6" />
 
       {/* Tabbed estimate */}
-      <TabbedEstimate initialData={estimateData} />
+      <TabbedEstimate
+        initialData={estimateData}
+        onHoursSave={(itemId, hours) => mutation.mutate({ itemId, hours })}
+      />
 
       {/* Risk Register */}
       <div className="mt-6">

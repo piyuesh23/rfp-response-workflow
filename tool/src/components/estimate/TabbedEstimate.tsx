@@ -24,6 +24,8 @@ export interface EstimateData {
 interface TabbedEstimateProps {
   initialData: EstimateData
   onSave?: (markdown: string) => Promise<void>
+  /** Called immediately when a cell hours value is committed — used for optimistic DB updates */
+  onHoursSave?: (itemId: string, hours: number) => void
 }
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -105,7 +107,7 @@ function GrandTotalBar({ data }: { data: EstimateData }) {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
+export function TabbedEstimate({ initialData, onSave, onHoursSave }: TabbedEstimateProps) {
   const [data, setData] = React.useState<EstimateData>(initialData)
   const [dirty, setDirty] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
@@ -118,6 +120,9 @@ export function TabbedEstimate({ initialData, onSave }: TabbedEstimateProps) {
       ),
     }))
     setDirty(true)
+    if (field === "hours") {
+      onHoursSave?.(id, value)
+    }
   }
 
   async function handleSave() {
